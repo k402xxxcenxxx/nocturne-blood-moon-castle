@@ -1,2 +1,84 @@
-# Prototype
-A place to put prototype 
+# NOCTURNE — 血月之城
+
+可在手機與桌面瀏覽器遊玩的哥德像素風 2D 橫向動作 Roguelike。純 HTML、CSS、原生 JavaScript／Canvas 2D／Web Audio；**不需要後端、框架、套件安裝或建置**。可直接放上 GitHub Pages，所有資源均使用相對路徑。
+
+## 遊戲內容
+
+- 一輪五關：荒廢城門 → 禁忌書庫 → 永夜鐘塔 → 緋紅聖堂 → 血月王座。
+- 每輪隨機敵人配置、平台位置與三選一聖物；共 10 種可疊加強化。死亡重置本輪能力。
+- 三段連斬、二段跳、無敵衝刺、月蝕範圍魔法；骷髏、蝙蝠、重甲騎士、法師與最終頭目。
+- 逐關提高敵人數值和攻擊頻率；最後一關包含半血加速、三向彈幕與重斬的墮落之王。
+- 擊中停頓、命中閃白、擊退、劍光、粒子、暴擊數字、螢幕震動，以及分層合成音效與原創暗黑配樂。
+- 原創程式像素美術，參考提供圖片的哥德城堡、月夜、書庫與鐘塔方向；沒有擷取或包含原遊戲素材。
+- 手機多指觸控、寬螢幕自適應視野、全螢幕；鍵盤操作；失焦自動暫停。
+- 設定、最高到達關卡、完成輪次保存在本機瀏覽器。關閉頁面不保留當前一輪進度。
+
+## 開始遊玩
+
+推薦手機橫向握持，按右上角全螢幕，再按「踏入黑夜」。清除當關所有敵人後，走進最右方月之門；前四關各選一件聖物並恢復 20 HP 和全部 MP，第五關通關後結算。
+
+| 動作 | 鍵盤 | 手機 |
+| --- | --- | --- |
+| 左右移動 | A / D 或 ← / → | 按住左下方向鍵 |
+| 跳躍／二段跳 | Space / W / ↑ | 輕點跳躍；空中可再點一次 |
+| 三段連斬 | J / Z，長按連續攻擊 | 長按連斬 |
+| 無敵衝刺 | K / Shift / X | 輕點衝刺 |
+| 月蝕魔法 | L / C | 輕點月蝕 |
+| 暫停 | Esc / P | 右上暫停按鈕 |
+| 選擇聖物 | 點擊或 1 / 2 / 3 | 點擊聖物卡 |
+
+月蝕基礎消耗 35 MP，可消除附近敵方飛彈。魔力會自然恢復，命中與擊殺也會恢復魔力。敵人頭頂出現 `!` 表示攻擊即將發生，可跳開或衝刺閃避。
+
+**瀏覽器差異：**音訊在第一次按下開始按鈕後啟用。震動依 `navigator.vibrate` 支援，iPhone／iPad Safari 目前沒有此 API；音效、停頓與視覺回饋仍正常。全螢幕 API 不可用時會改成頁面內全螢幕。設定可獨立關閉震動與畫面晃動；預設遵守系統減少動態效果偏好。
+
+## 本機啟動
+
+在此目錄開啟終端機：
+
+```bash
+python3 -m http.server 8080
+```
+
+開啟 `http://localhost:8080`。請透過 HTTP 開啟，直接雙擊 `index.html` 的 `file://` 路徑會受到瀏覽器 ES module 限制。
+
+若手機與電腦在同一區域網路，可用 `http://電腦的區網IP:8080` 測試；正式部署的 GitHub Pages 使用 HTTPS。
+
+## GitHub Pages 部署
+
+已附 `.github/workflows/pages.yml`：
+
+1. 將本專案提交到 GitHub repository 的 `main` 或 `master` 分支。
+2. Repository → **Settings → Actions → General → Workflow permissions**，允許 Actions 修改 pages environment 與部署 artifact。
+3. 首次推送會執行 `.github/workflows/pages.yml`：先執行核心測試，再啟用 GitHub Pages 並部署遊戲。
+4. 後續推送 `main`／`master` 會自動更新網站。網址以工作流程的 `github-pages` 環境連結為準。
+
+本 workspace 的既有 repository 為 `k402xxxcenxxx/Prototype`；工作流程部署成功後，預期網址為 `https://k402xxxcenxxx.github.io/Prototype/`。若 GitHub 帳戶方案不允許從私人 repository 發佈 Pages，或 repository 管理設定封鎖 Actions 部署，GitHub 將回報相應錯誤。
+
+也可使用 **Deploy from a branch → main/master → / (root)**。遊戲可直接由根目錄載入，無須 `npm install`。如果改用分支部署，可移除 Actions 部署 workflow，避免兩種部署方式混用。
+
+## 驗證
+
+Node.js 22+：
+
+```bash
+npm test
+```
+
+原生 `node:test` 涵蓋完整五關流程、有效聖物選擇、難度遞增、攻擊方向與距離、單次傷害、衝刺無敵、二段跳與平台、魔力消耗／清彈、死亡及暫停。沒有測試框架依賴。
+
+另有 `tests/browser-smoke.mjs`，供已安裝 Playwright／Chromium 的開發環境進行操作與流程測試；設定方式見該檔案。遊戲執行本身不需要 Playwright。測試網址的 `?test` 會提供測試用遊戲狀態物件，正常網址沒有此介面。
+
+實際手機硬體震動與各裝置音量仍須在目標裝置體驗確認；自動化瀏覽器可檢查 API 執行，不能代替手感調校。
+
+## 檔案
+
+| 檔案 | 用途 |
+| --- | --- |
+| `index.html` / `style.css` | 繁中介面、HUD、觸控按鈕、自適應版面 |
+| `core.js` | 五關、物理、戰鬥、敵人 AI、聖物與通關邏輯 |
+| `game.js` | 輸入、動畫、特效、UI、存檔與遊戲迴圈 |
+| `art.js` | 原創像素場景與角色，靜態場景快取 |
+| `audio.js` | 原創 Web Audio 音效、配樂與震動 |
+| `tests/` | 核心邏輯與瀏覽器操作驗證 |
+
+本階段聚焦完整的五關單機循環；沒有伺服器帳號、付費功能或連線需求。

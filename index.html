@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0b0d13">
+  <meta name="description" content="血月之城 NOCTURNE — 哥德像素風橫向動作 Roguelike。五重夜境、隨機聖物、三段連斬，為手機與鍵盤打造。">
+  <title>NOCTURNE — 血月之城</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%230b0d13'/%3E%3Cpath d='M24 4A17 17 0 1 0 35 29A16 16 0 0 1 24 4' fill='%23bfa16d'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-sword" viewBox="0 0 24 24"><path d="m5 19 4-4m-5-2 7 7m-4-7L19 2l2 1-1 3L10 17M3 21l2-2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.7 14.1A9 9 0 0 1 9.9 3.3 9 9 0 1 0 20.7 14.1Z"/><path d="m17 2 .7 2.3L20 5l-2.3.7L17 8l-.7-2.3L14 5l2.3-.7Z"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h12c5 0 5-6 1-6m-9 10h12c4 0 3 6 0 5M2 16h10c5 0 4 6 0 5"/></symbol>
+  <symbol id="i-jump" viewBox="0 0 24 24"><path d="m6 11 6-6 6 6m-6-6v14M5 21h14"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21 3 12C-3 4 7-1 12 6c5-7 15-2 9 6Z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path d="m12 2 8 10-8 10-8-10Zm0 0v20M4 12h16"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 2s-7 9-7 13a7 7 0 0 0 14 0c0-4-7-13-7-13Z"/><path d="M9 15c0 2 1 3 3 3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6Zm0 5v10m-4-6h8"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M11 4 5 9H2v6h3l6 5Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 4 5 9H2v6h3l6 5Zm5 5 6 6m0-6-6 6"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-.6 3-2 .9L3.7 6l-2 3.5L4 11v2l-2.3 1.5 2 3.5 2.7-.9 2 .9.6 3h6l.6-3 2-.9 2.7.9 2-3.5L20 13v-2l2.3-1.5-2-3.5-2.7.9-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></symbol>
+</defs></svg>
+<div class="app">
+  <header class="masthead">
+    <a class="brand" href="./" aria-label="血月之城首頁"><span class="brand-seal"><svg><use href="#i-moon"/></svg></span><span>NOCTURNE<small>血 月 之 城</small></span></a>
+    <div class="masthead-center"><span></span> A GOTHIC ROGUELIKE <span></span></div>
+    <div class="header-actions"><span class="version">CHAPTER I <i>·</i> v1.0</span><button class="icon-button" id="settings-button" aria-label="遊戲設定" title="遊戲設定"><svg><use href="#i-settings"/></svg></button></div>
+  </header>
+  <main>
+    <div class="game-topline"><span><i class="live-dot"></i> THE NIGHT AWAITS</span><span id="best-label">五重夜境 · 一次命運</span></div>
+    <section class="game-frame" id="game-frame" aria-label="血月之城遊戲區域">
+      <canvas id="game" width="960" height="540" aria-label="遊戲畫面。使用方向鍵或 A D 移動，空白鍵跳躍，J 攻擊，K 衝刺，L 魔法。"></canvas>
+      <div class="screen-grain" aria-hidden="true"></div>
+      <div class="hud" id="hud">
+        <div class="vitals"><div class="portrait"><svg><use href="#i-sword"/></svg><span>I</span></div><div class="bars"><div class="health-label"><span>夜行者</span><span id="hp-text">100 <em>/ 100</em></span></div><div class="meter health"><div id="hp-bar"></div></div><div class="meter mana"><div id="mp-bar"></div></div><div class="mana-label">MP <span id="mp-text">100 / 100</span></div></div></div>
+        <div class="chapter-hud"><span id="stage-number">I — V</span><strong id="stage-name">荒廢城門</strong><div id="stage-dots"><i class="current"></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="hud-right"><div class="soul-counter"><svg><use href="#i-gem"/></svg><span id="souls">0</span></div><button class="hud-button" id="sound-button" aria-label="關閉聲音" title="聲音"><svg><use href="#i-sound"/></svg></button><button class="hud-button" id="pause-button" aria-label="暫停遊戲" title="暫停 Esc"><svg><use href="#i-pause"/></svg></button><button class="hud-button fullscreen-button" id="fullscreen-button" aria-label="全螢幕" title="全螢幕"><svg><use href="#i-expand"/></svg></button></div>
+      </div>
+      <div class="objective" id="objective" hidden><span class="objective-mark">◇</span><span id="objective-text">擊敗守衛，開啟城門</span><span id="enemy-count">0 / 7</span></div>
+      <div class="boss-hud" id="boss-hud" hidden><span>墮落之王 · 瑟雷斯</span><div><i id="boss-bar"></i></div></div>
+      <div class="relic-tray" id="relic-tray"></div>
+      <div class="stage-announcement" id="stage-announcement"><small></small><strong></strong><span></span></div>
+      <div class="combo-display" id="combo-display"><strong>3</strong><span>連 斬</span></div>
+      <div class="toast" id="toast" role="status"></div>
+      <div class="title-screen" id="title-screen">
+        <div class="title-content"><div class="eyebrow"><span></span> THE BLOODMOON CHRONICLES <span></span></div><div class="title-emblem"><svg><use href="#i-moon"/></svg><i></i></div><h1>血月之城</h1><div class="english-title">N O C T U R N E</div><p>當永夜降臨，以劍刃喚醒黎明。</p><button class="primary-button" id="start-button"><svg><use href="#i-sword"/></svg>踏入黑夜<svg class="arrow"><use href="#i-arrow"/></svg></button><button class="text-button" id="help-button">初次遠征？<span>查看操作指南</span></button><div class="title-tags"><span>五關遠征</span><i>✦</i><span>隨機聖物</span><i>✦</i><span>一命通關</span></div></div>
+        <div class="scene-caption"><span>01 / 05</span><strong>荒廢城門</strong><small>THE FORSAKEN GATE</small></div>
+      </div>
+      <div class="touch-controls" id="touch-controls" hidden aria-label="觸控操作">
+        <div class="movement-controls"><button data-control="left" class="move-button" aria-label="向左移動"><svg><use href="#i-arrow"/></svg></button><span class="move-divider"></span><button data-control="right" class="move-button" aria-label="向右移動"><svg><use href="#i-arrow"/></svg></button></div>
+        <div class="action-controls"><button data-control="magic" class="action-button magic-button" aria-label="月蝕魔法"><svg><use href="#i-moon"/></svg><span>月蝕</span><small>L</small></button><button data-control="dash" class="action-button dash-button" aria-label="無敵衝刺"><svg><use href="#i-wind"/></svg><span>衝刺</span><small>K</small></button><button data-control="jump" class="action-button jump-button" aria-label="跳躍與二段跳"><svg><use href="#i-jump"/></svg><span>跳躍</span><small>SPACE</small></button><button data-control="attack" class="action-button attack-button" aria-label="連斬，長按持續攻擊"><svg><use href="#i-sword"/></svg><span>連斬</span><small>J</small></button></div>
+      </div>
+      <div class="modal-backdrop" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-panel" id="modal-panel"></div></div>
+      <div class="frame-corner tl"></div><div class="frame-corner tr"></div><div class="frame-corner bl"></div><div class="frame-corner br"></div>
+    </section>
+    <div class="under-game"><span><svg><use href="#i-sound"/></svg> 戴上耳機，聽見黑夜。</span><span class="rotate-hint">橫向握持，沉浸夜境</span><span class="keyboard-hint"><kbd>A</kbd><kbd>D</kbd> 移動 <i>·</i> <kbd>SPACE</kbd> 二段跳 <i>·</i> <kbd>J</kbd> 連斬 <i>·</i> <kbd>K</kbd> 衝刺 <i>·</i> <kbd>L</kbd> 月蝕</span></div>
+    <nav class="journey" aria-label="五關遠征路線"><div class="journey-intro"><span>THE EXPEDITION</span><strong>五重夜境</strong></div><ol id="journey-stages"><li class="active"><span>I</span><div>荒廢城門<small>THE GATE</small></div></li><li><span>II</span><div>禁忌書庫<small>THE ARCHIVE</small></div></li><li><span>III</span><div>永夜鐘塔<small>THE BELFRY</small></div></li><li><span>IV</span><div>緋紅聖堂<small>THE CATHEDRAL</small></div></li><li><span>V</span><div>血月王座<small>THE THRONE</small></div></li></ol></nav>
+  </main>
+  <footer><span>每一次隕落，都是下一次黎明的序章。</span><span>DESIGNED FOR THE DARK <i>✦</i></span></footer>
+</div>
+<script type="module" src="./game.js"></script>
+</body>
+</html>
