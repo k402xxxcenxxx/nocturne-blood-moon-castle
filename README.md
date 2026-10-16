@@ -52,7 +52,7 @@ python3 -m http.server 8080
 3. 首次推送會執行 `.github/workflows/pages.yml`：先執行核心測試，再啟用 GitHub Pages 並部署遊戲。
 4. 後續推送 `main`／`master` 會自動更新網站。網址以工作流程的 `github-pages` 環境連結為準。
 
-本 workspace 的既有 repository 為 `k402xxxcenxxx/Prototype`；工作流程部署成功後，預期網址為 `https://k402xxxcenxxx.github.io/Prototype/`。若 GitHub 帳戶方案不允許從私人 repository 發佈 Pages，或 repository 管理設定封鎖 Actions 部署，GitHub 將回報相應錯誤。
+本專案的 repository 為 `k402xxxcenxxx/nocturne-blood-moon-castle`；工作流程部署成功後，預期網址為 `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`。若 GitHub 帳戶方案不允許從私人 repository 發佈 Pages，或 repository 管理設定封鎖 Actions 部署，GitHub 將回報相應錯誤。
 
 也可使用 **Deploy from a branch → main/master → / (root)**。遊戲可直接由根目錄載入，無須 `npm install`。如果改用分支部署，可移除 Actions 部署 workflow，避免兩種部署方式混用。
 
