@@ -33,12 +33,12 @@ The visual rules (style, palette, sizes, the anchor set) live in [`docs/art-bibl
 
 ## Animation frames
 
-ChatGPT keeps a character consistent across a multi-panel sheet better than across separate requests, but it still drifts. The approach that works:
+Tested on the hero's run cycle. A whole sheet in one image keeps the character consistent but ignores the poses (legs never alternate, "down" frames turn into squats). Generating frame by frame follows the poses, but ChatGPT cannot reliably choose which leg is the near one: asking for the opposite leg forward failed twice and also drifted the costume. So:
 
 1. Generate or reuse the character's **identity anchor**: a neutral, right-facing idle frame at the art bible's size.
-2. Generate the **animation sheet** in one image, attaching the identity anchor (Image 1) and the matching layout guide from `docs/art-bible/guides/` (Image 2). Describe every frame by number.
-3. **Refine bad frames individually**: attach the anchor plus the good neighboring frames and regenerate only the broken frame. For hard poses, attach a pose reference (a mannequin-style drawing of the pose) as Image 1 and the character as Image 2 and ask for a pose transfer.
-4. If frames vary too much, attach the assembled sheet and ask: `Normalize the style, character consistency and size for this sprite sheet, keeping all the poses intact.`
+2. **Generate every animation frame by frame.** Each request attaches the identity anchor (Image 1) and a single-frame **mannequin pose guide** (Image 2): a stick figure drawn in code at the frame's exact joint angles, with the near limbs in bright colors, the far limbs darker, and the ground line dashed. Once the first frames are accepted, also attach them as references for the next frames. Ask for the far-side limbs to be shaded one step darker so the legs stay readable.
+3. **Loops generate only half a cycle.** A side-view run is 3 frames (contact, down, passing with the swinging knee raised) played as a loop: both legs look alike from the side, so the passing leg reads as the next front leg. Never ask ChatGPT for the opposite-leg half.
+4. **Actions that truly need the opposite leg** (for example a future attack that steps with the other foot) reuse an accepted frame and swap the near and far legs' shading during normalization, instead of generating it.
 5. **Normalize** (below). Image generation is roughly 20% of the work; normalization is the rest.
 
 Frame counts and timings come from the game, not from the image: check `docs/game-design.md` and `core.js` (for example the attack lasts 0.24 s and the dash 0.18 s) and list the frames the animation needs before generating.
@@ -49,14 +49,15 @@ Raw generated images are not game assets. Before an image enters `assets/`:
 
 1. **Recover frames** using each subject's alpha bounding box, not the nominal grid.
 2. **Remove the chroma background** into real transparency.
-3. **Measure** each frame: visible width and height, center x, and foot baseline (lowest opaque row).
+3. **Measure** each frame: visible width and height, foot baseline (lowest opaque row), and the body's center x measured on the torso band **without** cloak or hair pixels (they change shape every frame, so including them makes the body wobble sideways).
 4. **Correct scale** to the character's approved height in the art bible.
 5. **Re-pad** every frame onto a fixed cell with the same center x and foot baseline.
+   For a frame that needs the opposite leg forward (step 4 of "Animation frames"), start from an accepted frame and swap the near and far legs' shading here.
 6. **Downscale to the logical size** with nearest-neighbor so pixels stay crisp, and snap colors to the palette.
 7. **Pack** the frames into the runtime sheet (one row per animation, frame order left to right).
 8. **Verify** with a contact sheet and an animated preview at real size: no drift, no scale jump between animations.
 
-Normalization must not add dependencies or a build step. The tool for it is a dependency-free browser page, `tools/sprite-normalizer.html` (Canvas only; not deployed). Until it exists, building it is part of the first art bible Issue.
+Normalization must not add dependencies or a build step. The tool for it is a dependency-free browser page, `tools/sprite-normalizer.html` (Canvas only; not deployed). The mannequin pose guides come from a second page, `tools/pose-guide.html`, which draws a frame's stick figure from joint angles. Until they exist, building both is part of the first art bible Issue.
 
 ## Files
 
@@ -64,7 +65,7 @@ Normalization must not add dependencies or a build step. The tool for it is a de
 | --- | --- | --- |
 | `docs/art-bible.md` | Style rules, palette, sizes, anchor index | No |
 | `docs/art-bible/anchors/` | Approved anchor images | No |
-| `docs/art-bible/guides/` | Layout guides (frame grids, pixel grids) | No |
+| `docs/art-bible/guides/` | Mannequin pose guides per animation frame, pixel grids | No |
 | `docs/art-bible/raw/` | Raw generations kept for re-normalization | No |
 | `docs/art-log.md` | One row per generated asset: prompt, anchors attached, ChatGPT conversation title, result | No |
 | `assets/` | Normalized runtime images only | Yes |
@@ -90,31 +91,22 @@ Background: solid #FF00FF outside the silhouette.
 Avoid: effects or glows, extra characters, scenery, text, logos, watermarks, painterly blending, anti-aliased halos, photorealism.
 ```
 
-### Animation sheet
+### Animation frame (one request per frame)
+
+This wording produced correct, consistent run frames in testing. Send it once per frame, with that frame's pose guide.
 
 ```text
-Intended use: a {FRAME_COUNT}-frame {ANIMATION} animation for {NAME} in a 2D side-scrolling game, as a {COLUMNS}x{ROWS} sprite sheet of equal {CELL_SIZE} cells.
+Please generate an image. This is frame {N} of {FRAME_COUNT} of {NAME}'s side-view {ANIMATION}; I will ask for each frame separately. Output one sprite frame, {OUTPUT_SIZE}.
 
-Image 1 role: identity anchor for {NAME}. Preserve the exact identity, outfit, proportions, weapon placement, silhouette, palette and right-facing direction in every frame.
-Image 2 role: layout guide for {COLUMNS}x{ROWS} equal cells. Use it only for the grid; do not draw its lines.
+Image 1 role: identity anchor. Preserve the exact identity, {KEY_FEATURES}, proportions, pixel-art style, palette, right-facing direction and the same character size as Image 1.
+Image 2 role: pose guide. Copy the mannequin's pose exactly: leg and arm angles, knee bends, which foot touches the dashed line, and torso lean. BLUE = the character's right leg, nearer to the viewer, in front of the body. DARK BROWN = the left leg, farther away, behind the body. CYAN = right arm. DARK YELLOW = left arm.
+(Image 3 and later, once accepted: earlier frames of this animation, for consistency only.)
 
-Frame order: left to right across each row, then the next row.
-Frame 1: {POSE}.
-Frame 2: {POSE}.
-… (one line per frame)
-
-Rules: same scale, camera and foot baseline in every cell; full body visible in each cell; character faces right in every frame; effects only where listed; solid #FF00FF background.
-Avoid: direction changes, camera changes, merged cells, comic panels, recentering per frame, cropped feet or weapons, scenery, text, grid lines, watermarks.
+Pose for this frame: {POSE_IN_WORDS}.
+Shade the far-side left leg and left arm one step darker than the near-side ones so the legs are easy to tell apart. Feet on the dashed line, character horizontally centered. Do not draw the mannequin, its colors or the dashed line. {WEAPON_RULE}. Solid flat #FF00FF background. Avoid effects, dust, shadows, scenery, text, watermarks.
 ```
 
-### Single-frame repair or pose transfer
-
-```text
-Image 1 role: target pose. Copy only the body pose and limb positions.
-Image 2 role: identity anchor for {NAME}. Preserve identity, outfit, palette, proportions and scale exactly.
-
-Draw {NAME} in the pose from Image 1, facing right, same pixel-art style and size as Image 2, feet on the same baseline, solid #FF00FF background, no effects, no text.
-```
+Describe the pose in words as well as in the guide, naming which leg is forward and which foot is planted. For the passing frame, say explicitly that the legs cross under the body with the swinging knee raised, "not a wide stride".
 
 ### Stage scene
 

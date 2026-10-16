@@ -47,9 +47,9 @@ Every approved image that other assets must match. Attach the relevant anchors t
 | --- | --- | --- |
 | *none yet* | | |
 
-## Layout guides
+## Pose guides
 
-*TBD*: frame-grid and pixel-grid images in `docs/art-bible/guides/`, one per sheet layout used.
+*TBD*: one mannequin pose guide per animation frame in `docs/art-bible/guides/`, drawn by `tools/pose-guide.html` from joint angles (near limbs bright, far limbs dark, dashed ground line). Loops list only half a cycle, for example the run as contact, down, passing.
 
 ## Review checklist
 
