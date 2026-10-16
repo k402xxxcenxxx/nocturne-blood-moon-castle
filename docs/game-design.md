@@ -42,8 +42,11 @@ Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×
 | Skeleton `skeleton` | 43 | 72 | Closes in for a melee attack, range 82 | 0.43 s |
 | Bat `bat` | 27 | 115 | Tracks the player in the air, then swoops | 0.3 s |
 | Armored knight `knight` | 65 | 57 | Melee; appears from stage 2 | 0.6 s |
+| Shield bearer `shield` | 55 | 50 | Faces the player; shield bash (range 70), then a 0.6 s turn delay where it keeps its old facing and stands still; replaces some knights from stage 2 | 0.55 s |
 | Mage `mage` | 43 | 72 (×0.6 while moving) | Keeps its distance and fires projectiles; appears from stage 3 | 0.65 s |
 | The Fallen King `boss` | 640 | 75 | Heavy cleave (range 155), or a three-way barrage every 3rd action; 1.5× speed below half health | 0.72 s, 0.48 s below half health |
+
+Shield bearer guard: sword hits from the side it faces deal ×0.15 damage (minimum 1), push the player back 40 and cause no stun, knockback or bash interruption. Sword hits from behind and Eclipse deal full damage. An Eclipse hit breaks the guard for 1.5 s, during which frontal sword hits also deal full damage. Dashes pass through it like any enemy (no body collision; dash invulnerability covers the bash).
 
 Kills have a 25% chance to drop a heal that restores 14 HP.
 

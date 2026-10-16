@@ -459,7 +459,7 @@ export function drawEnemy(ctx, e = {}, time = 0) {
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
-  else if (e.type === 'knight') knight(ctx, e, time, white);
+  else if (e.type === 'knight' || e.type === 'shield') knight(ctx, e, time, white); // shield: placeholder until its own sprite
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
   ctx.restore();
