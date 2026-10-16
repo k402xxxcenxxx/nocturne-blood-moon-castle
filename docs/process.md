@@ -9,7 +9,7 @@ NOCTURNE is built by a producer (the main session running `/produce`) leading 7 
 | Producer | `.claude/skills/produce/SKILL.md` (main session) | main session | Issues, branches, PRs, merging, `docs/process.md` |
 | Game Designer | `game-designer` | Opus | Proposal Issues, `docs/game-design.md`, the `STAGES` / `RELICS` numbers in `core.js` |
 | Gameplay Engineer | `gameplay-engineer` | Sonnet | `core.js`, `tests/core.test.js`; input, game loop and `handleEvent` wiring in `game.js` |
-| Technical Artist | `technical-artist` | Sonnet | `art.js`; `render`, particles, sword trails and screen effects in `game.js` |
+| Technical Artist | `technical-artist` | Sonnet | `art.js`, `assets/`, `docs/art-bible.md` and `docs/art-bible/`, `docs/art-log.md`, `tools/`; `render`, particles, sword trails and screen effects in `game.js`; all image generation |
 | Audio Designer | `audio-designer` | Sonnet | `audio.js` (sound effects, music, vibration patterns) |
 | UX Designer | `ux-designer` | Sonnet | `index.html`, `style.css`, `i18n.js`; HUD, modals, touch and accessibility in `game.js` |
 | QA Playtester | `qa-playtester` | Haiku | `tests/` (regression tests, `browser-smoke.mjs`), playtest reports |
@@ -18,6 +18,8 @@ NOCTURNE is built by a producer (the main session running `/produce`) leading 7 
 `game.js` is shared by three roles, so work on one branch is dispatched **sequentially**, never in parallel. Parallel work is only allowed when the files do not overlap at all, such as `art.js` and `audio.js`.
 
 Any role that adds player-visible text adds the key to every language in `i18n.js`. The UX Designer owns key naming, tone and the final wording.
+
+The Technical Artist is the only role that generates images, so every asset passes through the same anchors and checklist. Other roles describe what they need (for example the UX Designer specifies a button's size and states) in the Issue's feedback needs. Image generation follows `docs/art-pipeline.md` and needs a local session with Claude in Chrome; see "Requirements and limits" there.
 
 ## Milestones
 
@@ -51,6 +53,10 @@ The producer decides milestone changes from the exit criteria without user appro
 **When GitHub Actions cannot run**: if the CI job fails without starting (for example GitHub reports a billing or spending-limit problem and the job has no steps), local tests may substitute. The producer runs `npm test` on the PR's latest commit, posts the result as a PR comment (`Local CI substitute: <commit SHA> npm test N/N passed`), and may then merge. Pages does not deploy in this case, so note "not deployed" in a PR comment after merging. If CI actually ran tests and they failed, this substitute does not apply.
 
 **Rework limit**: after an Issue has been sent back twice in total across steps 6 and 7, there is no third self-correction. The producer labels it `status:blocked`, writes in the Issue where it is stuck, and asks the user to decide.
+
+**Art conversion**: replacing existing code-drawn art with generated art is a `type:proposal` labeled `role:art`, one scope per proposal (scenes, then UI, then characters). The first one builds the art bible. Proposals may embed concept images so the user reviews the idea and the look together.
+
+**Art review**: the Technical Artist accepts generated assets by the art bible's checklist without waiting for the user, and asks the user on the Issue only when unsure or after 10 accepted assets since the last review (see "Self-review and escalation" in `docs/art-pipeline.md`).
 
 **Tuning and bugs**: `type:tuning` and `type:bug` skip the proposal and approval and start at step 3, but still go through steps 6 to 8 — unless the change touches the core design.
 

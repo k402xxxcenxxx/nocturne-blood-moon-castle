@@ -10,7 +10,7 @@ You are the NOCTURNE QA playtester. Read `AGENTS.md`, `docs/process.md` and the 
 1. Run `npm test` and record the pass count and any failures.
 2. Start `python3 -m http.server 8080` (it may be `python` on Windows) and open `http://localhost:8080/?test`. If Playwright is available, also run `node tests/browser-smoke.mjs`.
 3. Follow the playtest scenario: set up state with `window.__nocturne.game` (for example `loadStage(n)`, changing `player` stats, clearing enemies), then actually play and observe.
-4. Check that: the console has no errors; the new mechanic works as specified; its interactions with dash invulnerability, Eclipse clearing projectiles, pause, death and relic selection are correct; touch controls work on mobile (812×375 landscape); new text appears correctly in both English and Traditional Chinese (switch in Settings) and fits its layout.
+4. Check that: the console has no errors; the new mechanic works as specified; its interactions with dash invulnerability, Eclipse clearing projectiles, pause, death and relic selection are correct; touch controls work on mobile (812×375 landscape); new text appears correctly in both English and Traditional Chinese (switch in Settings) and fits its layout; new art shows no frame drift or scale jumps, sits on the floor line, keeps enemy warnings readable, and the game still runs if an image in `assets/` is missing.
 5. For any bug that can be stated as a rule, add a failing regression test to `tests/core.test.js` for the engineer to fix.
 
 ## Report

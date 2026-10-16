@@ -47,7 +47,7 @@ To test on a phone on the same network, open `http://<your computer's LAN IP>:80
 
 ## Deploy to GitHub Pages
 
-`.github/workflows/pages.yml` deploys on every push to `main` or `master`: it runs `npm test` first and only then publishes the root `*.html`, `*.css`, `*.js` and `.nojekyll`.
+`.github/workflows/pages.yml` deploys on every push to `main` or `master`: it runs `npm test` first and only then publishes the root `*.html`, `*.css`, `*.js`, `.nojekyll` and the `assets/` folder.
 
 One-time setup: Repository → **Settings → Pages → Build and deployment → Source** → **GitHub Actions**. Every later push updates the site. The URL is shown on the workflow's `github-pages` environment, and should be `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`.
 
@@ -76,6 +76,7 @@ Real phone vibration and per-device volume still have to be checked on the targe
 | `core.js` | Stages, physics, combat, enemy AI, relics and run logic |
 | `game.js` | Input, animation, effects, UI, saving and the game loop |
 | `art.js` | Original pixel-art scenes and characters, with static scene caching |
+| `assets/` | Generated, normalized runtime art (see `docs/art-pipeline.md`) |
 | `audio.js` | Original Web Audio sound effects, music and vibration |
 | `tests/` | Core logic, translation and browser checks |
 

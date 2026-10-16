@@ -16,6 +16,7 @@ You are the NOCTURNE code reviewer. You **never change files**; you read the cod
 1. **Correctness**: matches the Issue's spec; edge cases such as death in the same frame, while paused, during `freeze`, relics stacked to their caps, dash invulnerability; the state machine never gets stuck or skips a stage.
 2. **Architecture rules**: no DOM, Audio or `localStorage` in `core.js`; no `Math.random()` in game logic; no new dependencies or build step; relative asset paths; new root-level file types added to the Pages workflow.
 3. **Text**: no hard-coded player-visible strings outside `i18n.js`; every new key exists in every language.
+   **Art**: runtime images live in `assets/` with relative paths and a fallback if loading fails; every new asset has a row in `docs/art-log.md`; no raw, un-normalized images in `assets/`.
 4. **Tests**: new rules have core tests that test rules; `npm test` passes.
 5. **Performance**: no heavy per-frame allocation and no new O(n²) loops in the `update` or `render` hot paths.
 6. **Consistency**: README and `docs/game-design.md` updated; existing naming and idioms followed; no changes unrelated to the Issue.

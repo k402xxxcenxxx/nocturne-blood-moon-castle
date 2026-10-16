@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir public
           cp *.html *.css *.js .nojekyll public/
+          if [ -d assets ]; then cp -r assets public/; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

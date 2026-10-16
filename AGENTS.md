@@ -8,7 +8,8 @@ For agents taking over development. Goal: **keep adding fun, good-feeling gamepl
 - Every asset uses a relative path (GitHub Pages serves the game under `/nocturne-blood-moon-castle/`).
 - `core.js` never touches the DOM, Canvas, Audio or `localStorage`, so it can run in Node tests.
 - Game-logic randomness always goes through `game.rand()` (seeded and reproducible), never `Math.random()`. Purely visual effects may use `Math.random()`.
-- Art and audio are generated in code; no external or commercial game assets. `docs/references/` holds original AI-generated concept art used only to align mood and palette. It never goes into the game and is not deployed. The concept art is far more detailed than the in-game pixel art: take the atmosphere and colors, not the resolution.
+- **Art is generated with `/chatgpt-image-gen`** following [`docs/art-pipeline.md`](docs/art-pipeline.md) and [`docs/art-bible.md`](docs/art-bible.md): attach the approved anchors to every generation so assets stay consistent, normalize the results, and ship them from `assets/`. Particles, trails, flashes and other per-frame effects stay in Canvas code, and existing code-drawn art is replaced only through approved art conversion proposals. Audio stays synthesized in code. Never use external or commercial game assets.
+- `docs/references/` holds original AI-generated concept art used only to align mood and palette. It never goes into the game and is not deployed. The concept art is far more detailed than the in-game pixel art: take the atmosphere and colors, not the resolution.
   - `library-mobile-ui.jpg`: layering of the library scene (warm wooden platforms over a cold green background) and the mobile layout (d-pad, round skill buttons on the right).
   - `castle-rooftop-night.jpg`: castle roof, night rain, violet-blue sky and moon, cold rim light on stone plus warm torchlight.
   - `clock-tower-hud.jpg`: giant clock face and gargoyles, and the top-left HUD (portrait, HP and MP bars).
@@ -28,7 +29,8 @@ input (game.js) → Game.update(dt, input) (core.js) → emit(event) → game.js
 | `core.js` | State machine `title/playing/paused/upgrade/dead/won`, physics, combat, enemy AI, `STAGES`, `RELICS` | Any rule or number |
 | `game.js` | Keyboard and touch input, turning events into feedback (`handleEvent`'s `switch`), modal UI, saving, game loop, camera | Feedback for new events, new UI |
 | `i18n.js` | `STRINGS` per language, `t()`, language detection | Any player-visible text |
-| `art.js` | `drawScene/drawHero/drawEnemy/drawPortal`, with static scene caching | New enemy or scene visuals |
+| `art.js` | `drawScene/drawHero/drawEnemy/drawPortal`, with static scene caching; draws generated images from `assets/` as they replace code-drawn art | New enemy or scene visuals |
+| `assets/` | Normalized runtime images generated through the art pipeline | New art |
 | `audio.js` | `AudioSystem.play(name, intensity)`: synthesized sounds plus vibration patterns | New sounds |
 | `index.html` / `style.css` | HUD, touch buttons, SVG icons (`#i-<name>`) | New buttons, new icons |
 
@@ -40,7 +42,8 @@ Logic and presentation talk only through events: core calls `this.emit('type', d
 - **New enemy**: `spawnEnemy` (health, damage, speed) → a branch in `updateEnemy` (movement, and setting the `tell` warning) → `enemyAttack` (hit check) → a visual in `art.js`'s `drawEnemy` dispatch → the type roll in `loadStage` decides which stages it appears in. Every attack must have a `tell` warning (the `!` overhead) so the player can react.
 - **Feedback for a new event**: core `emit` → a `case` in game.js `handleEvent` → an `audio.play` sound name if needed.
 - **Adding or removing stages**: the stage count of five is hard-coded in several places: `index === 4` and `stage === 4` in `core.js`, the `roman` array and `/ V` strings in `game.js`, the stage-based scene themes in `art.js`, `STAGES.length === 5` in `tests/core.test.js`, and the `stage.<i>.*` keys in `i18n.js`. Change them together.
-- **New root-level files**: the Pages workflow only deploys root `*.html *.css *.js` and `.nojekyll`. Add any other file type (images, folders) to `.github/workflows/pages.yml`.
+- **New art**: follow `docs/art-pipeline.md`; runtime images go in `assets/` and are drawn from `art.js`. Load images with relative paths and keep the game playable if one fails to load.
+- **New root-level files**: the Pages workflow only deploys root `*.html *.css *.js`, `.nojekyll` and the `assets/` folder. Add any other file type or folder to `.github/workflows/pages.yml`.
 
 ## Tests
 
