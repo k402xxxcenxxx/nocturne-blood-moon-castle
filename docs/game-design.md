@@ -70,3 +70,5 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 ## Playtest verdicts
 
 After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.
+
+#2 Shield bearer — keep (automated playtest; pending the user's hands-on feel check): head-on costs 22–64 HP while all three answers work at 0 damage (jump behind 2.5–3.3 s, dash through the wind-up 0.7–1.5 s, Eclipse 0.4–0.7 s for 35 MP), so it forces the intended choice; open: P3 turn delay during stun, `!` contrast and turn-cue taste notes, real-device check, generated sprite.
