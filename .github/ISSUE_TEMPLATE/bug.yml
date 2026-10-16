@@ -1,0 +1,22 @@
+name: Bug
+description: The game behaves differently than expected
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: ["P1 crash, soft-lock, data loss or the core is unplayable", "P2 clearly wrong but has a workaround", "P3 polish"]
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Device, browser, language, stage, sequence of actions
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations: { required: true }

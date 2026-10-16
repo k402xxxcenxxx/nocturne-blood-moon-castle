@@ -1,22 +1,23 @@
 export const FLOOR = 438;
+// Display text for stages and relics lives in i18n.js, keyed by stage index and relic id.
 export const STAGES = [
-  { name: '荒廢城門', en: 'THE FORSAKEN GATE', subtitle: '血月初升，長夜將至。', count: 7, width: 2260 },
-  { name: '禁忌書庫', en: 'THE FORBIDDEN ARCHIVE', subtitle: '那些書頁，仍在低聲呼吸。', count: 9, width: 2500 },
-  { name: '永夜鐘塔', en: 'THE TIMELESS BELFRY', subtitle: '午夜的鐘聲，為誰而鳴。', count: 11, width: 2740 },
-  { name: '緋紅聖堂', en: 'THE CRIMSON CATHEDRAL', subtitle: '祈禱已逝，唯有利刃。', count: 13, width: 3000 },
-  { name: '血月王座', en: 'THE BLOODMOON THRONE', subtitle: '以你的劍，終結這場永夜。', count: 9, width: 2800 },
+  { count: 7, width: 2260 },
+  { count: 9, width: 2500 },
+  { count: 11, width: 2740 },
+  { count: 13, width: 3000 },
+  { count: 9, width: 2800 },
 ];
 export const RELICS = [
-  { id: 'edge', icon: 'sword', name: '渴血之刃', type: '力量', text: '所有普通攻擊傷害提升 25%。', apply: p => p.damage *= 1.25 },
-  { id: 'haste', icon: 'wind', name: '疾風之羽', type: '迅捷', text: '連斬速度提升 18%，移動速度提升 8%。', apply: p => { p.attackSpeed *= .82; p.speed *= 1.08; } },
-  { id: 'crit', icon: 'star', name: '獵人的凝視', type: '暴擊', text: '暴擊機率增加 18%。暴擊造成雙倍傷害。', apply: p => p.crit = Math.min(.8, p.crit + .18) },
-  { id: 'vital', icon: 'heart', name: '不朽之心', type: '生存', text: '生命上限增加 30，並恢復 40 點生命。', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
-  { id: 'leech', icon: 'drop', name: '猩紅契約', type: '汲取', text: '每次擊殺敵人，額外恢復 5 點生命。', apply: p => p.leech += 5 },
-  { id: 'arcane', icon: 'moon', name: '月蝕秘典', type: '魔法', text: '月蝕魔法傷害提升 45%，魔力消耗降低 5。', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
-  { id: 'reach', icon: 'sword', name: '幽魂長鋒', type: '範圍', text: '劍刃攻擊範圍增加 28，擊退效果提升。', apply: p => { p.reach += 28; p.knockback += 70; } },
-  { id: 'mana', icon: 'gem', name: '星夜結晶', type: '魔力', text: '魔力上限增加 30，魔力恢復速度提升 50%。', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
-  { id: 'dash', icon: 'wind', name: '渡鴉之影', type: '閃避', text: '衝刺冷卻縮短 30%，無敵時間延長。', apply: p => { p.dashCooldown *= .7; p.dashShield += .1; } },
-  { id: 'armor', icon: 'shield', name: '黯銀護符', type: '防禦', text: '受到的傷害降低 20%，並恢復 20 點生命。', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
+  { id: 'edge', icon: 'sword', apply: p => p.damage *= 1.25 },
+  { id: 'haste', icon: 'wind', apply: p => { p.attackSpeed *= .82; p.speed *= 1.08; } },
+  { id: 'crit', icon: 'star', apply: p => p.crit = Math.min(.8, p.crit + .18) },
+  { id: 'vital', icon: 'heart', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
+  { id: 'leech', icon: 'drop', apply: p => p.leech += 5 },
+  { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
+  { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; } },
+  { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
+  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown *= .7; p.dashShield += .1; } },
+  { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }

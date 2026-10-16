@@ -1,0 +1,20 @@
+name: Tuning / chore
+description: Number tuning, docs or tooling work that needs no proposal approval
+labels: []
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: ["type:tuning number tuning", "type:chore docs, tooling, refactoring"]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+    validations: { required: true }
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+    validations: { required: true }

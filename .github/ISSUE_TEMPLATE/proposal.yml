@@ -1,0 +1,46 @@
+name: Gameplay proposal
+description: Design proposal for a new mechanic or content (needs user approval)
+title: "[Proposal] "
+labels: ["type:proposal", "status:needs-approval"]
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: New decision for the player
+      description: One or two sentences. When does the player now have to make what new choice?
+    validations: { required: true }
+  - type: textarea
+    id: pillar
+    attributes:
+      label: Design pillar served
+      description: See docs/game-design.md
+    validations: { required: true }
+  - type: textarea
+    id: rules
+    attributes:
+      label: Rules and numbers
+      description: Triggers, numbers, cooldowns, caps, and interactions with dash invulnerability, Eclipse clearing projectiles, relic stacking, pause and death
+    validations: { required: true }
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback needs
+      description: What art, audio and UX each need; write "none" if nothing. Give new player-visible text in English and Traditional Chinese.
+      value: |
+        - Art:
+        - Audio:
+        - UX:
+        - Text (en / zh-Hant):
+    validations: { required: true }
+  - type: textarea
+    id: playtest
+    attributes:
+      label: Playtest scenario
+      description: How to set it up on the ?test URL and what to watch for to call it a success
+    validations: { required: true }
+  - type: checkboxes
+    id: core
+    attributes:
+      label: Core design
+      options:
+        - label: Changes the core design (death reset, cross-run progression, stage count, controls, win/loss conditions, platforms, dependencies); add the core-design label

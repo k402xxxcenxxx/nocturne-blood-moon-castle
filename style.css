@@ -1121,6 +1121,29 @@ kbd {
   left:20px;
   background:#d2b47f;
 }
+.language-options {
+  display:flex;
+  gap:6px;
+  flex-shrink:0;
+}
+.language-option {
+  border:1px solid #665b4a;
+  background:#171923;
+  color:#8f8587;
+  border-radius:16px;
+  min-height:28px;
+  padding:4px 11px;
+  font:11px var(--sans);
+}
+.language-option[aria-pressed=true] {
+  background:#a78e5e33;
+  border-color:#a78e5e;
+  color:var(--gold-bright);
+}
+/* Wrappers that only exist to carry a translatable string. */
+b[data-i18n] {
+  font-weight:inherit;
+}
 .result-stats {
   display:flex;
   justify-content:center;

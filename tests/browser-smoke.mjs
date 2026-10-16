@@ -136,9 +136,9 @@ try {
     }
   }
   await state(page, 'won');
-  assert.match(await page.locator('#modal-title').innerText(), /黎明/);
+  assert.match(await page.locator('#modal-title').innerText(), /黎明|dawn/i);
   await settingsRoundTrip(page, 'won', '[data-command="restart"]', true);
-  assert.match(await page.locator('#modal-title').innerText(), /黎明/);
+  assert.match(await page.locator('#modal-title').innerText(), /黎明|dawn/i);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('nocturne-records')).wins), 1);
   passed('five stages, four actual relic UI choices, final victory, and record saving');
 
@@ -154,9 +154,9 @@ try {
     game.hurt(9999, 1);
   });
   await state(page, 'dead');
-  assert.match(await page.locator('#modal-title').innerText(), /止步/);
+  assert.match(await page.locator('#modal-title').innerText(), /止步|ends here/i);
   await settingsRoundTrip(page, 'dead', '[data-command="restart"]');
-  assert.match(await page.locator('#modal-title').innerText(), /止步/);
+  assert.match(await page.locator('#modal-title').innerText(), /止步|ends here/i);
   await page.locator('[data-command="title"]').click();
   await state(page, 'title');
   assert.equal(await page.locator('#start-button').isVisible(), true);
@@ -167,13 +167,19 @@ try {
     const toggle = page.locator(`[data-setting="${setting}"]`);
     if (await toggle.getAttribute('aria-pressed') === 'true') await toggle.click();
   }
+  await page.locator('[data-language="zh-Hant"]').click();
+  assert.equal(await page.locator('#modal-title').innerText(), '夜境設定', 'settings re-render in the new language');
+  assert.equal(await page.locator('[data-setting="sound"]').getAttribute('aria-pressed'), 'false', 'toggles survive a language switch');
+  await page.locator('[data-language="en"]').click();
   await page.locator('[data-command="resume"]').click();
+  assert.equal(await page.locator('[data-i18n="title.start"]').innerText(), 'Enter the Night');
   await page.reload();
   await page.waitForFunction(() => window.__nocturne);
-  assert.deepEqual(await page.evaluate(() => window.__nocturne.settings), { sound: false, music: false, haptics: false, shake: false });
+  assert.deepEqual(await page.evaluate(() => window.__nocturne.settings), { sound: false, music: false, haptics: false, shake: false, lang: 'en' });
+  assert.equal(await page.evaluate(() => document.documentElement.lang), 'en');
   await page.locator('#settings-button').click();
   for (const setting of ['sound', 'music', 'haptics', 'shake']) assert.equal(await page.locator(`[data-setting="${setting}"]`).getAttribute('aria-pressed'), 'false');
-  passed('all four settings persist across reload and their UI reflects saved values');
+  passed('all settings, including language, persist across reload and their UI reflects saved values');
   await page.goto(baseUrl);
   assert.equal(await page.evaluate(() => '__nocturne' in window), false);
   passed('test handle is absent from the normal URL');

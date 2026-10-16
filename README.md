@@ -1,83 +1,86 @@
-# NOCTURNE — 血月之城
+# NOCTURNE — City of the Blood Moon
 
-可在手機與桌面瀏覽器遊玩的哥德像素風 2D 橫向動作 Roguelike。純 HTML、CSS、原生 JavaScript／Canvas 2D／Web Audio；**不需要後端、框架、套件安裝或建置**。可直接放上 GitHub Pages，所有資源均使用相對路徑。
+A gothic pixel-art 2D side-scrolling action roguelike for mobile and desktop browsers. Plain HTML, CSS and vanilla JavaScript with Canvas 2D and Web Audio: **no backend, framework, package install or build step**. It runs straight from GitHub Pages and every asset uses a relative path.
 
-## 遊戲內容
+The interface is available in English and Traditional Chinese (繁體中文). The game picks one from the browser language, and you can switch at any time in Settings.
 
-- 一輪五關：荒廢城門 → 禁忌書庫 → 永夜鐘塔 → 緋紅聖堂 → 血月王座。
-- 每輪隨機敵人配置、平台位置與三選一聖物；共 10 種可疊加強化。死亡重置本輪能力。
-- 三段連斬、二段跳、無敵衝刺、月蝕範圍魔法；骷髏、蝙蝠、重甲騎士、法師與最終頭目。
-- 逐關提高敵人數值和攻擊頻率；最後一關包含半血加速、三向彈幕與重斬的墮落之王。
-- 擊中停頓、命中閃白、擊退、劍光、粒子、暴擊數字、螢幕震動，以及分層合成音效與原創暗黑配樂。
-- 原創程式像素美術，風格方向見 `docs/references/` 的原創概念圖（哥德城堡、月夜、書庫、鐘塔）；概念圖不會部署。
-- 手機多指觸控、寬螢幕自適應視野、全螢幕；鍵盤操作；失焦自動暫停。
-- 設定、最高到達關卡、完成輪次保存在本機瀏覽器。關閉頁面不保留當前一輪進度。
+## Features
 
-## 開始遊玩
+- Five stages per run: The Forsaken Gate → The Forbidden Archive → The Timeless Belfry → The Crimson Cathedral → The Bloodmoon Throne.
+- Each run randomizes enemy placement, platforms and relic offers; 10 stackable relics, offered three at a time. Dying resets the run.
+- Three-hit combo, double jump, invulnerable dash and the Eclipse area spell; skeletons, bats, armored knights, mages and a final boss.
+- Enemy stats and attack rate rise each stage; the last stage holds the Fallen King, with a half-health speed-up, a three-way barrage and a heavy cleave.
+- Hit-stop, hit flashes, knockback, sword trails, particles, critical numbers, screen shake, layered synthesized sound effects and an original dark score.
+- Original pixel art drawn in code. The style direction is in the original concept art in `docs/references/` (gothic castle, moonlit night, library, clock tower); the concept art is not deployed.
+- Multi-touch controls, adaptive widescreen view and fullscreen; keyboard controls; auto-pause when the window loses focus.
+- Settings (including language), deepest stage reached and completed runs are saved in the browser. The current run is not kept when the page closes.
 
-推薦手機橫向握持，按右上角全螢幕，再按「踏入黑夜」。清除當關所有敵人後，走進最右方月之門；前四關各選一件聖物並恢復 20 HP 和全部 MP，第五關通關後結算。
+## How to play
 
-| 動作 | 鍵盤 | 手機 |
+On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the Night**. Clear every enemy in a stage, then walk into the Moon Gate on the far right. After each of the first four stages you pick one relic and recover 20 HP and all MP; clearing stage five wins the run.
+
+| Action | Keyboard | Touch |
 | --- | --- | --- |
-| 左右移動 | A / D 或 ← / → | 按住左下方向鍵 |
-| 跳躍／二段跳 | Space / W / ↑ | 輕點跳躍；空中可再點一次 |
-| 三段連斬 | J / Z，長按連續攻擊 | 長按連斬 |
-| 無敵衝刺 | K / Shift / X | 輕點衝刺 |
-| 月蝕魔法 | L / C | 輕點月蝕 |
-| 暫停 | Esc / P | 右上暫停按鈕 |
-| 選擇聖物 | 點擊或 1 / 2 / 3 | 點擊聖物卡 |
+| Move | A / D or ← / → | Hold the bottom-left pad |
+| Jump / double jump | Space / W / ↑ | Tap Jump; tap again in the air |
+| Three-hit combo | J / Z, hold to keep attacking | Hold Slash |
+| Invulnerable dash | K / Shift / X | Tap Dash |
+| Eclipse magic | L / C | Tap Eclipse |
+| Pause | Esc / P | Top-right pause button |
+| Pick a relic | Click or 1 / 2 / 3 | Tap a relic card |
 
-月蝕基礎消耗 35 MP，可消除附近敵方飛彈。魔力會自然恢復，命中與擊殺也會恢復魔力。敵人頭頂出現 `!` 表示攻擊即將發生，可跳開或衝刺閃避。
+Eclipse costs 35 MP and also destroys nearby enemy projectiles. Mana regenerates over time, and hits and kills restore extra mana. A `!` above an enemy means an attack is coming: jump away or dash through it.
 
-**瀏覽器差異：**音訊在第一次按下開始按鈕後啟用。震動依 `navigator.vibrate` 支援，iPhone／iPad Safari 目前沒有此 API；音效、停頓與視覺回饋仍正常。全螢幕 API 不可用時會改成頁面內全螢幕。設定可獨立關閉震動與畫面晃動；預設遵守系統減少動態效果偏好。
+**Browser differences:** audio starts after the first press of the start button. Vibration needs `navigator.vibrate`, which iPhone and iPad Safari do not have; sound, hit-stop and visual feedback still work. If the Fullscreen API is unavailable the game switches to an in-page fullscreen. Vibration and screen shake can each be turned off in Settings, and both follow the system reduced-motion preference by default.
 
-## 本機啟動
+## Run locally
 
-在此目錄開啟終端機：
+From this directory:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-開啟 `http://localhost:8080`。請透過 HTTP 開啟，直接雙擊 `index.html` 的 `file://` 路徑會受到瀏覽器 ES module 限制。
+Open `http://localhost:8080`. Use HTTP: opening `index.html` directly from `file://` is blocked by the browser's ES module rules.
 
-若手機與電腦在同一區域網路，可用 `http://電腦的區網IP:8080` 測試；正式部署的 GitHub Pages 使用 HTTPS。
+To test on a phone on the same network, open `http://<your computer's LAN IP>:8080`. The deployed GitHub Pages site uses HTTPS.
 
-## GitHub Pages 部署
+## Deploy to GitHub Pages
 
-由 `.github/workflows/pages.yml` 部署：推送到 `main`／`master` 時先執行 `npm test`，通過後才把根目錄的 `*.html`、`*.css`、`*.js` 與 `.nojekyll` 發佈。
+`.github/workflows/pages.yml` deploys on every push to `main` or `master`: it runs `npm test` first and only then publishes the root `*.html`, `*.css`, `*.js` and `.nojekyll`.
 
-首次設定只需一步：Repository → **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**。之後每次推送都會自動更新，網址以工作流程 `github-pages` 環境的連結為準，預期為 `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`。
+One-time setup: Repository → **Settings → Pages → Build and deployment → Source** → **GitHub Actions**. Every later push updates the site. The URL is shown on the workflow's `github-pages` environment, and should be `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`.
 
-若帳戶方案不允許從私人 repository 發佈 Pages，部署步驟會失敗並由 GitHub 回報原因。
+If your plan does not allow Pages for private repositories, or GitHub Actions cannot run on the account, the deploy fails and GitHub reports why.
 
-## 驗證
+## Tests
 
-Node.js 22+：
+With Node.js 22+:
 
 ```bash
 npm test
 ```
 
-原生 `node:test` 涵蓋完整五關流程、有效聖物選擇、難度遞增、攻擊方向與距離、單次傷害、衝刺無敵、二段跳與平台、魔力消耗／清彈、死亡及暫停。沒有測試框架依賴。
+Built-in `node:test` covers a full five-stage run, valid relic choices, rising difficulty, attack direction and reach, one hit per swing, dash invulnerability, double jump and platforms, mana cost and projectile clearing, death, pause, and translation completeness. No test framework is needed.
 
-另有 `tests/browser-smoke.mjs`，供已安裝 Playwright／Chromium 的開發環境進行操作與流程測試；設定方式見該檔案。遊戲執行本身不需要 Playwright。測試網址的 `?test` 會提供測試用遊戲狀態物件，正常網址沒有此介面。
+`tests/browser-smoke.mjs` drives the game in a real browser where Playwright and Chromium are installed; see the top of that file for setup. The game itself never needs Playwright. Adding `?test` to the URL exposes a test handle on `window.__nocturne`; the normal URL does not.
 
-實際手機硬體震動與各裝置音量仍須在目標裝置體驗確認；自動化瀏覽器可檢查 API 執行，不能代替手感調校。
+Real phone vibration and per-device volume still have to be checked on the target hardware: automated browsers can confirm the APIs run, not how they feel.
 
-## 檔案
+## Files
 
-| 檔案 | 用途 |
+| File | Purpose |
 | --- | --- |
-| `index.html` / `style.css` | 繁中介面、HUD、觸控按鈕、自適應版面 |
-| `core.js` | 五關、物理、戰鬥、敵人 AI、聖物與通關邏輯 |
-| `game.js` | 輸入、動畫、特效、UI、存檔與遊戲迴圈 |
-| `art.js` | 原創像素場景與角色，靜態場景快取 |
-| `audio.js` | 原創 Web Audio 音效、配樂與震動 |
-| `tests/` | 核心邏輯與瀏覽器操作驗證 |
+| `index.html` / `style.css` | HUD, touch buttons, responsive layout |
+| `i18n.js` | Interface text for every language, and language detection |
+| `core.js` | Stages, physics, combat, enemy AI, relics and run logic |
+| `game.js` | Input, animation, effects, UI, saving and the game loop |
+| `art.js` | Original pixel-art scenes and characters, with static scene caching |
+| `audio.js` | Original Web Audio sound effects, music and vibration |
+| `tests/` | Core logic, translation and browser checks |
 
-本階段聚焦完整的五關單機循環；沒有伺服器帳號、付費功能或連線需求。
+This stage focuses on a complete five-stage single-player loop; there are no accounts, payments or online features.
 
-## 接手開發
+## Contributing
 
-開發規則、架構、擴充方式與玩法開發流程見 [`AGENTS.md`](AGENTS.md)。
+Development rules and architecture are in [`AGENTS.md`](AGENTS.md), the development process and roles in [`docs/process.md`](docs/process.md), and the current rules and numbers in [`docs/game-design.md`](docs/game-design.md). In Claude Code, run `/produce` to continue development.
