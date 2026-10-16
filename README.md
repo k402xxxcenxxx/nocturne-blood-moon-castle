@@ -9,7 +9,7 @@
 - 三段連斬、二段跳、無敵衝刺、月蝕範圍魔法；骷髏、蝙蝠、重甲騎士、法師與最終頭目。
 - 逐關提高敵人數值和攻擊頻率；最後一關包含半血加速、三向彈幕與重斬的墮落之王。
 - 擊中停頓、命中閃白、擊退、劍光、粒子、暴擊數字、螢幕震動，以及分層合成音效與原創暗黑配樂。
-- 原創程式像素美術，參考提供圖片的哥德城堡、月夜、書庫與鐘塔方向；沒有擷取或包含原遊戲素材。
+- 原創程式像素美術，風格方向見 `docs/references/` 的原創概念圖（哥德城堡、月夜、書庫、鐘塔）；概念圖不會部署。
 - 手機多指觸控、寬螢幕自適應視野、全螢幕；鍵盤操作；失焦自動暫停。
 - 設定、最高到達關卡、完成輪次保存在本機瀏覽器。關閉頁面不保留當前一輪進度。
 
@@ -45,16 +45,11 @@ python3 -m http.server 8080
 
 ## GitHub Pages 部署
 
-已附 `.github/workflows/pages.yml`：
+由 `.github/workflows/pages.yml` 部署：推送到 `main`／`master` 時先執行 `npm test`，通過後才把根目錄的 `*.html`、`*.css`、`*.js` 與 `.nojekyll` 發佈。
 
-1. 將本專案提交到 GitHub repository 的 `main` 或 `master` 分支。
-2. Repository → **Settings → Actions → General → Workflow permissions**，允許 Actions 修改 pages environment 與部署 artifact。
-3. 首次推送會執行 `.github/workflows/pages.yml`：先執行核心測試，再啟用 GitHub Pages 並部署遊戲。
-4. 後續推送 `main`／`master` 會自動更新網站。網址以工作流程的 `github-pages` 環境連結為準。
+首次設定只需一步：Repository → **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**。之後每次推送都會自動更新，網址以工作流程 `github-pages` 環境的連結為準，預期為 `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`。
 
-本專案的 repository 為 `k402xxxcenxxx/nocturne-blood-moon-castle`；工作流程部署成功後，預期網址為 `https://k402xxxcenxxx.github.io/nocturne-blood-moon-castle/`。若 GitHub 帳戶方案不允許從私人 repository 發佈 Pages，或 repository 管理設定封鎖 Actions 部署，GitHub 將回報相應錯誤。
-
-也可使用 **Deploy from a branch → main/master → / (root)**。遊戲可直接由根目錄載入，無須 `npm install`。如果改用分支部署，可移除 Actions 部署 workflow，避免兩種部署方式混用。
+若帳戶方案不允許從私人 repository 發佈 Pages，部署步驟會失敗並由 GitHub 回報原因。
 
 ## 驗證
 
@@ -82,3 +77,7 @@ npm test
 | `tests/` | 核心邏輯與瀏覽器操作驗證 |
 
 本階段聚焦完整的五關單機循環；沒有伺服器帳號、付費功能或連線需求。
+
+## 接手開發
+
+開發規則、架構、擴充方式與玩法開發流程見 [`AGENTS.md`](AGENTS.md)。
