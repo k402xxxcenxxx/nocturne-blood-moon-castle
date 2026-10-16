@@ -1,14 +1,15 @@
 Closes #
 
-## 摘要
+## Summary
 
-## 各角色改動
-- 玩法程式：
-- 美術：
-- 音效：
-- UX：
+## Changes by role
+- Gameplay:
+- Art:
+- Audio:
+- UX / text:
 
-## 驗證
-- [ ] `npm test` 通過
-- [ ] QA 試玩報告沒有 P1
-- [ ] README／`docs/game-design.md` 已同步（如有玩家看得到的改動，或規則、數值改動）
+## Verification
+- [ ] `npm test` passes
+- [ ] QA playtest report has no P1 issues
+- [ ] New player-visible text exists in every language in `i18n.js`
+- [ ] README / `docs/game-design.md` updated (for player-visible, rule or number changes)

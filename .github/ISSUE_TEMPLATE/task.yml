@@ -1,20 +1,20 @@
-name: 數值調整／雜項
-description: 不需要提案核准的數值調整、文件或工具工作
+name: Tuning / chore
+description: Number tuning, docs or tooling work that needs no proposal approval
 labels: []
 body:
   - type: dropdown
     id: kind
     attributes:
-      label: 類型
-      options: ["type:tuning 數值調整", "type:chore 文件、工具、重構"]
+      label: Kind
+      options: ["type:tuning number tuning", "type:chore docs, tooling, refactoring"]
     validations: { required: true }
   - type: textarea
     id: what
     attributes:
-      label: 要做什麼、為什麼
+      label: What and why
     validations: { required: true }
   - type: textarea
     id: done
     attributes:
-      label: 完成條件
+      label: Done when
     validations: { required: true }

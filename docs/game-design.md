@@ -1,67 +1,67 @@
-# NOCTURNE 遊戲設計文件（GDD）
+# NOCTURNE Game Design Document (GDD)
 
-由 Game Designer 維護。這份文件記錄**目前實際的**規則與數值；只是計畫中的東西寫在 Issue。數值以 `core.js` 為準，兩邊不一致時改這份文件。
+Maintained by the Game Designer. This document records the rules and numbers **as they are now**; anything only planned lives in Issues. `core.js` is the source of truth for numbers: when the two disagree, fix this document. Display names come from `i18n.js` (English shown here).
 
-## 核心樂趣與設計支柱
+## Core fun and design pillars
 
-> M0 Prototype 的完成條件之一，就是把這一節定案。下面是目前的暫定版本。
+> Locking this section is one of the M0 Prototype exit criteria. Below is the current draft.
 
-- **核心樂趣（暫定）**：在敵人預警的空檔裡，用連斬、衝刺、月蝕打出漂亮的一輪，然後挑一件聖物，讓下一關換一種打法。
-- **支柱（暫定）**
-  1. **讀招與反應**：敵人的每個攻擊都有可見的預警（`tell`），閃避靠技巧，不靠運氣。
-  2. **打擊回饋**：每次命中都要有停頓、閃白、擊退、音效和數字。
-  3. **每輪不同**：聖物組合與隨機配置，讓每一輪都改變玩法決策。
+- **Core fun (draft)**: read the gaps between enemy warnings, chain combos, dashes and Eclipse into a clean run, then pick a relic that changes how the next stage plays.
+- **Pillars (draft)**
+  1. **Read and react**: every enemy attack has a visible warning (`tell`); dodging takes skill, not luck.
+  2. **Impact feedback**: every hit gets hit-stop, a flash, knockback, sound and a number.
+  3. **Every run differs**: relic combinations and random placement change the decisions in each run.
 
-## 一輪的流程
+## Run structure
 
-- 五關，依序是：荒廢城門、禁忌書庫、永夜鐘塔、緋紅聖堂、血月王座。
-- 每關的敵人全部清除後，最右邊的月之門才會開。
-- 前四關過關時，從 10 件聖物中隨機出 3 件選 1 件；聖物可以重複抽到並疊加。選完後回復 20 HP，MP 補滿。
-- 第五關過關就勝利。死亡時這一輪的聖物與進度全部重置。跨輪只保留紀錄：最深到達關卡、完成次數、開局次數。
-- `souls`（靈魂）會累計，但目前沒有任何用途。
+- Five stages in order: The Forsaken Gate, The Forbidden Archive, The Timeless Belfry, The Crimson Cathedral, The Bloodmoon Throne.
+- The Moon Gate at the far right opens only after every enemy in the stage is defeated.
+- After each of the first four stages, 3 of the 10 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
+- Clearing stage five wins. Dying resets the run's relics and progress. Only records persist between runs: deepest stage reached, completed runs, runs started.
+- `souls` accumulate but currently have no use.
 
-## 玩家
+## Player
 
-| 項目 | 數值 |
+| Stat | Value |
 | --- | --- |
-| HP／MP | 100／100；MP 每秒回復 8，攻擊命中 +2，擊殺 +6 |
-| 移動 | 速度 245，攻擊時降為 65%；重力 1550 |
-| 跳躍 | 二段跳：第一段初速 -575，第二段 -520；衝刺中不能跳 |
-| 三段連斬 | 基礎傷害 24；連段倍率 1／1.15／1.6；第三段距離 +24；攻擊冷卻 0.29 秒，第三段 0.39 秒；連段的間隔窗口 0.8 秒 |
-| 暴擊 | 機率 12%，傷害 2 倍，機率上限 80% |
-| 衝刺 | 持續 0.18 秒，速度 730；冷卻 0.85 秒；無敵 0.23 秒；穿過敵方飛彈時不受傷 |
-| 月蝕魔法 | 消耗 35 MP；傷害 58；範圍半徑 210；清除半徑 230 內的飛彈；冷卻 0.65 秒；施放時無敵 0.28 秒 |
-| 受傷 | 受傷後無敵 0.8 秒；畫面停頓 0.06 秒 |
+| HP / MP | 100 / 100; MP regenerates 8 per second, +2 per hit, +6 per kill |
+| Movement | Speed 245, 65% while attacking; gravity 1550 |
+| Jump | Double jump: first jump velocity -575, second -520; no jumping while dashing |
+| Three-hit combo | Base damage 24; combo multipliers 1 / 1.15 / 1.6; third hit +24 reach; attack cooldown 0.29 s, 0.39 s on the third hit; 0.8 s combo window |
+| Critical | 12% chance, double damage, capped at 80% |
+| Dash | Lasts 0.18 s at speed 730; 0.85 s cooldown; 0.23 s invulnerability; passes through enemy projectiles unharmed |
+| Eclipse magic | Costs 35 MP; 58 damage; radius 210; clears projectiles within 230; 0.65 s cooldown; 0.28 s invulnerability on cast |
+| Taking damage | 0.8 s invulnerability afterwards; 0.06 s hit-stop |
 
-## 敵人
+## Enemies
 
-一般敵人隨關卡 `stage`（0 到 4）成長：血量 +12×stage，傷害 8＋2.5×stage。頭目固定為 640 HP、22 傷害。
+Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×stage. The boss is fixed at 640 HP and 22 damage.
 
-| 類型 | 基礎血量 | 速度 | 行為 | 預警時間 |
+| Type | Base health | Speed | Behavior | Warning time |
 | --- | --- | --- | --- | --- |
-| 骷髏 skeleton | 43 | 72 | 靠近後近戰，距離 82 | 0.43 秒 |
-| 蝙蝠 bat | 27 | 115 | 在空中追蹤玩家後撲擊 | 0.3 秒 |
-| 重甲騎士 knight | 65 | 57 | 近戰，從第 2 關開始出現 | 0.6 秒 |
-| 法師 mage | 43 | 72（移動時 ×0.6） | 保持距離，射出飛彈；從第 3 關開始出現 | 0.65 秒 |
-| 墮落之王 boss | 640 | 75 | 重斬（距離 155），或每 3 次行動射一次三向彈幕；血量低於一半時加速 1.5 倍 | 0.72 秒，半血後 0.48 秒 |
+| Skeleton `skeleton` | 43 | 72 | Closes in for a melee attack, range 82 | 0.43 s |
+| Bat `bat` | 27 | 115 | Tracks the player in the air, then swoops | 0.3 s |
+| Armored knight `knight` | 65 | 57 | Melee; appears from stage 2 | 0.6 s |
+| Mage `mage` | 43 | 72 (×0.6 while moving) | Keeps its distance and fires projectiles; appears from stage 3 | 0.65 s |
+| The Fallen King `boss` | 640 | 75 | Heavy cleave (range 155), or a three-way barrage every 3rd action; 1.5× speed below half health | 0.72 s, 0.48 s below half health |
 
-擊殺有 25% 機率掉落補血，回復 14 HP。
+Kills have a 25% chance to drop a heal that restores 14 HP.
 
-## 聖物
+## Relics
 
-| id | 名稱 | 效果 |
+| id | Name | Effect |
 | --- | --- | --- |
-| edge | 渴血之刃 | 普攻傷害 ×1.25 |
-| haste | 疾風之羽 | 攻擊冷卻 ×0.82，移動速度 ×1.08 |
-| crit | 獵人的凝視 | 暴擊機率 +18%（上限 80%） |
-| vital | 不朽之心 | HP 上限 +30，並回復 40 |
-| leech | 猩紅契約 | 每次擊殺回復 5 HP |
-| arcane | 月蝕秘典 | 魔法傷害 ×1.45，MP 消耗 -5（下限 15） |
-| reach | 幽魂長鋒 | 攻擊距離 +28，擊退 +70 |
-| mana | 星夜結晶 | MP 上限 +30，MP 回復速度 ×1.5 |
-| dash | 渡鴉之影 | 衝刺冷卻 ×0.7，衝刺無敵時間 +0.1 秒 |
-| armor | 黯銀護符 | 受到的傷害 ×0.8，並回復 20 HP |
+| edge | Bloodthirst Edge | Basic attack damage ×1.25 |
+| haste | Gale Feather | Attack cooldown ×0.82, movement speed ×1.08 |
+| crit | Hunter's Gaze | Critical chance +18% (cap 80%) |
+| vital | Undying Heart | Max HP +30 and restore 40 |
+| leech | Crimson Pact | Restore 5 HP per kill |
+| arcane | Eclipse Codex | Magic damage ×1.45, MP cost -5 (floor 15) |
+| reach | Phantom Glaive | Attack reach +28, knockback +70 |
+| mana | Starnight Crystal | Max MP +30, MP regeneration ×1.5 |
+| dash | Raven Shadow | Dash cooldown ×0.7, dash invulnerability +0.1 s |
+| armor | Darksilver Charm | Damage taken ×0.8 and restore 20 HP |
 
-## 試玩結論紀錄
+## Playtest verdicts
 
-每個提案試玩後，在這裡加一行：`#<issue> <名稱> — 保留／調整／丟棄：<一句理由>`。
+After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.

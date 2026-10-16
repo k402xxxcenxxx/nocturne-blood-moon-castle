@@ -1,45 +1,46 @@
-name: 玩法提案
-description: 新機制或新內容的設計提案（需使用者核准）
-title: "[提案] "
+name: Gameplay proposal
+description: Design proposal for a new mechanic or content (needs user approval)
+title: "[Proposal] "
 labels: ["type:proposal", "status:needs-approval"]
 body:
   - type: textarea
     id: decision
     attributes:
-      label: 玩家多了什麼決策
-      description: 一兩句話。這個提案讓玩家在什麼時候要做什麼新選擇？
+      label: New decision for the player
+      description: One or two sentences. When does the player now have to make what new choice?
     validations: { required: true }
   - type: textarea
     id: pillar
     attributes:
-      label: 符合哪條設計支柱
-      description: 對照 docs/game-design.md
+      label: Design pillar served
+      description: See docs/game-design.md
     validations: { required: true }
   - type: textarea
     id: rules
     attributes:
-      label: 規則與數值
-      description: 觸發條件、數值、冷卻、上限，以及和衝刺無敵、月蝕清彈、聖物疊加、暫停、死亡的互動
+      label: Rules and numbers
+      description: Triggers, numbers, cooldowns, caps, and interactions with dash invulnerability, Eclipse clearing projectiles, relic stacking, pause and death
     validations: { required: true }
   - type: textarea
     id: feedback
     attributes:
-      label: 回饋需求
-      description: 美術、音效、UX 各需要什麼；不需要的寫「無」
+      label: Feedback needs
+      description: What art, audio and UX each need; write "none" if nothing. Give new player-visible text in English and Traditional Chinese.
       value: |
-        - 美術：
-        - 音效：
-        - UX：
+        - Art:
+        - Audio:
+        - UX:
+        - Text (en / zh-Hant):
     validations: { required: true }
   - type: textarea
     id: playtest
     attributes:
-      label: 試玩情境
-      description: 在 ?test 網址下怎麼設定、要觀察什麼才算成功
+      label: Playtest scenario
+      description: How to set it up on the ?test URL and what to watch for to call it a success
     validations: { required: true }
   - type: checkboxes
     id: core
     attributes:
-      label: 核心設計
+      label: Core design
       options:
-        - label: 會改到核心設計（死亡重置、跨輪成長、關卡數、操作、勝負條件、平台、依賴），需加 core-design 標籤
+        - label: Changes the core design (death reset, cross-run progression, stage count, controls, win/loss conditions, platforms, dependencies); add the core-design label

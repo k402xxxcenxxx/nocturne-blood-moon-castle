@@ -1,84 +1,84 @@
 ---
 name: produce
-description: NOCTURNE 的製作人流程。由主對話執行，依 docs/process.md 從 GitHub Issues 挑工作、派給角色 subagent、開 PR、審查通過後合併。使用者說「繼續開發」「做下一個功能」「處理 #n」「提一個新玩法」或執行 /produce 時使用。
+description: NOCTURNE producer loop. Run by the main session: picks work from GitHub Issues per docs/process.md, dispatches role subagents, opens the PR, and merges after review. Use when the user says "continue development", "build the next feature", "work on #n", "propose a new mechanic", or runs /produce.
 ---
 
-# 製作人 Producer
+# Producer
 
-你是主對話，負責調度。subagent 不能再呼叫其他 subagent，所以**所有派工都由你發出**。先讀 `AGENTS.md` 和 `docs/process.md`。
+You are the main session and you orchestrate. Subagents cannot call other subagents, so **every dispatch comes from you**. Read `AGENTS.md` and `docs/process.md` first.
 
-參數：`/produce`（自動挑下一件工作）、`/produce #<n>`（處理指定 Issue）、`/produce idea <描述>`（把點子變成提案）。
+Arguments: `/produce` (pick the next piece of work), `/produce #<n>` (work on a specific Issue), `/produce idea <description>` (turn an idea into a proposal).
 
-## 1. 看狀態
+## 1. Check the state
 
 ```bash
 gh issue list --state open --json number,title,labels,milestone --limit 50
 gh pr list --state open
 ```
 
-依下列優先順序挑**一件**工作：
-1. 有 open PR 的工作：接續它，從第 7 步審查開始，或處理審查留言。
-2. `status:in-progress` 的 Issue：從它的最後一則 Handoff 留言接續。
-3. 目前 milestone 裡的 `P1` bug。
-4. 目前 milestone 裡的 `status:approved` 提案，或 `type:tuning`、`type:bug`。
-5. 都沒有：如果 `status:needs-approval` 的提案少於 3 個，就派 `game-designer` 依目前 milestone 的完成條件寫新提案。然後停下來，告訴使用者有哪些提案在等核准。
+Pick **one** piece of work, in this order:
+1. Work with an open PR: continue it, from step 7 review or by addressing review comments.
+2. An Issue labeled `status:in-progress`: continue from its latest Handoff comment.
+3. A `P1` bug in the current milestone.
+4. An approved proposal (`status:approved`), `type:tuning` or `type:bug` in the current milestone.
+5. Nothing else: if fewer than 3 proposals are `status:needs-approval`, dispatch `game-designer` to write new proposals toward the current milestone's exit criteria. Then stop and tell the user which proposals are waiting for approval.
 
-標 `status:needs-approval`、`status:blocked`，或標了 `core-design` 卻沒有 `status:approved` 的 Issue，**一律跳過**。
+**Always skip** Issues labeled `status:needs-approval` or `status:blocked`, and `core-design` Issues without `status:approved`.
 
-## 2. 開工
+## 2. Start
 
 ```bash
 gh issue edit <n> --remove-label status:approved --add-label status:in-progress
-git switch main && git pull && git switch -c feat/<n>-<短名>
+git switch main && git pull && git switch -c feat/<n>-<short-name>
 ```
 
-## 3. 派工
+## 3. Dispatch
 
-依 `docs/process.md` 的功能流程，用 Agent 工具依序派給 subagent。每次派工的 prompt 都要包含：
-- Issue 編號，以及 `gh issue view <n>` 的完整內容（或叫 subagent 自己讀）。
-- 目前的分支名稱。
-- 前一個角色 Handoff 的「備註」原文。
-- 這一步完成的定義。
+Follow the feature loop in `docs/process.md`, dispatching subagents with the Agent tool one at a time. Every dispatch prompt includes:
+- The Issue number and the full output of `gh issue view <n>` (or tell the subagent to read it).
+- The current branch name.
+- The previous role's Handoff Notes, verbatim.
+- What done means for this step.
 
-一般順序：`gameplay-engineer` → 視回饋需求派 `technical-artist`、`audio-designer`、`ux-designer` → `qa-playtester`。只有檔案完全不重疊時才能並行，例如只改 `art.js` 和只改 `audio.js`；動到 `game.js` 的派工一律依序執行。
+Usual order: `gameplay-engineer` → `technical-artist`, `audio-designer` and `ux-designer` as the feedback needs require → `qa-playtester`. Run in parallel only when files do not overlap at all (for example, one change only in `art.js` and another only in `audio.js`); anything touching `game.js` or `i18n.js` runs sequentially.
 
-每收到一份 Handoff：
-- 把重點貼到 Issue：`gh issue comment <n> --body "<角色>: <結果> — <備註>"`。
-- `blocked`：標 `status:blocked`，停下來問使用者。
-- `needs-changes`：退回 Handoff 指定的角色，並附上問題清單。
-- 用 `git add` 加入改動的檔案，然後 commit。一個角色的工作一個 commit，訊息是英文祈使句。
+For each Handoff:
+- Post the gist to the Issue: `gh issue comment <n> --body "<role>: <result> — <notes>"`.
+- `blocked`: label `status:blocked`, stop, and ask the user.
+- `needs-changes`: send it back to the role the Handoff names, with the list of problems.
+- `git add` the changed files and commit: one commit per role's work, with an imperative English message.
 
-## 4. PR 與審查
+## 4. PR and review
 
 ```bash
 git push -u origin <branch>
-gh pr create --fill --body "Closes #<n>\n\n<摘要、各角色的改動、QA 結果>"
+gh pr create --fill --body "Closes #<n>\n\n<summary, each role's changes, QA results>"
 gh issue edit <n> --remove-label status:in-progress --add-label status:in-review
 ```
 
-派 `code-reviewer` 審查這個 PR。它的結論是 `CHANGES REQUESTED` 時，把「必須修正」的項目退回給對應角色，修完後重新派 QA（只測受影響的部分）和 reviewer。
+Dispatch `code-reviewer` on the PR. On `CHANGES REQUESTED`, send the "must fix" items to the responsible roles, then re-run QA (affected areas only) and the reviewer after the fixes.
 
-**退回上限**：QA 與審查合計退回 2 次後，第 3 次就停手。標 `status:blocked`，在 Issue 總結卡在哪裡，然後問使用者。
+**Rework limit**: after QA and review have sent the work back twice in total, stop on the third. Label `status:blocked`, summarize in the Issue where it is stuck, and ask the user.
 
-## 5. 合併
+## 5. Merge
 
-條件：`gh pr checks <n>` 全部通過，且最新的 reviewer 留言是 `APPROVED`。
+Conditions: every check in `gh pr checks <n>` passes and the latest reviewer comment is `APPROVED`.
 
-如果 CI 失敗，先查原因：`gh api repos/{owner}/{repo}/check-runs/<id>/annotations`。訊息是帳單或支出上限、且 job 沒有任何步驟時，就照 `docs/process.md` 第 8 步改用本機替代：在 PR 的最新 commit 上跑 `npm test`，結果貼到 PR，然後合併，並註明 Pages 未部署。CI 實際跑了測試卻失敗的話，一律退回給 gameplay-engineer。
+If CI fails, find out why first: `gh api repos/{owner}/{repo}/check-runs/<id>/annotations`. If the message is about billing or a spending limit and the job has no steps, use the local substitute from step 8 of `docs/process.md`: run `npm test` on the PR's latest commit, post the result on the PR, merge, and note that Pages did not deploy. If CI actually ran tests and they failed, always send it back to gameplay-engineer.
 
 ```bash
 gh pr merge <n> --squash --delete-branch
 ```
 
-合併後：
-- 如果是 `type:proposal` 或 `type:feature`，派 `game-designer` 在 `docs/game-design.md` 的「試玩結論紀錄」補一行，並另開 `chore/` PR。也可以把這一行放進同一個 PR。
-- 檢查目前 milestone 的完成條件。全部達成時，在 milestone 留言說明，並把新 Issue 歸到下一個 milestone。
+After merging:
+- For `type:proposal` or `type:feature`, dispatch `game-designer` to add a line under "Playtest verdicts" in `docs/game-design.md`, in a separate `chore/` PR. The line can also go into the same PR.
+- Check the current milestone's exit criteria. When all are met, explain so in a comment on the milestone and assign new Issues to the next milestone.
 
-## 6. 回報使用者
+## 6. Report to the user
 
-用三到五行說明：做了哪個 Issue、PR 連結、是否已合併（合併就等於上線）、有哪些提案在等核准、下一步建議。
+In three to five lines, in the user's language: which Issue was done, the PR link, whether it merged (merging means it is live), which proposals are waiting for approval, and the suggested next step.
 
-## 不要做
-- 不要自己寫遊戲程式，實作一律派給對應角色。
-- 不要替使用者核准提案或 `core-design`。
-- 不要 force push `main`，也不要跳過 CI 或審查。
+## Do not
+- Write game code yourself; implementation always goes to the matching role.
+- Approve proposals or `core-design` work on the user's behalf.
+- Force-push `main`, or skip CI or review.
