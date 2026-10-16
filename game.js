@@ -108,11 +108,13 @@ function handleEvent(e) {
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
-    case 'block': // metal sparks kicked off the shield face toward the attacker
+    case 'block': { // metal sparks kicked off the shield face toward the attacker
+      e = { ...e, x: e.x + e.dir * 13 }; // core sends the body edge; the drawn shield face sits 13 px further out
       audio.play('block'); rumble(2, .07); flashNumber(e, '#9aa3b5');
       burst(e.x, e.y, '#ffe6a0', 10, 170, e.dir); burst(e.x, e.y, '#cfd6e6', 5, 120, e.dir);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .1, max: .1, dir: e.dir });
       break;
+    }
     case 'guardBreak':
       audio.play('guardBreak'); rumble(8, .26); if (settings.shake) whiteFlash = .06;
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
@@ -332,10 +334,10 @@ function render(dt) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime);
       if (e.type !== 'boss' && e.hp < e.maxHp) {
-        const barY = e.y - e.h - (e.type === 'knight' ? 29 : e.type === 'mage' ? 17 : 9);
+        const barY = e.y - e.h - (e.type === 'knight' ? 29 : e.type === 'mage' ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
       }
-      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - 15)); }
+      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15))); }
     }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
     if (p.attack > 0) drawSlash(p.x, p.y - 33, p.dir, 1 - p.attack / .24, p.combo === 3);
