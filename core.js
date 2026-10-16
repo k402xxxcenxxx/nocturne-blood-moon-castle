@@ -68,7 +68,7 @@ export class Game {
   spawnEnemy(type, x, stage) {
     const boss = type === 'boss';
     const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, turn: 0, phase: this.rand() * 6, action: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0 });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -173,6 +173,8 @@ export class Game {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
       p.x = clamp(p.x + e.dir * 40, 25, this.worldWidth - 30);
+      // Shield shove: the bearer follows the pushback so blocking never opens distance.
+      e.x = clamp(e.x + e.dir * Math.min(40, Math.max(0, Math.abs(p.x - e.x) - 30)), 30, this.worldWidth - 40);
       this.freeze = Math.max(this.freeze, .035);
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
     } else {
@@ -196,10 +198,16 @@ export class Game {
     e.cd = Math.max(0, e.cd - dt);
     e.stun = Math.max(0, e.stun - dt);
     e.guardBreak = Math.max(0, e.guardBreak - dt);
+    const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt);
     if (e.stun > 0) { e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     const dx = p.x - e.x, distance = Math.abs(dx);
-    if (e.turn <= 0) e.dir = dx >= 0 ? 1 : -1;
+    const face = dx >= 0 ? 1 : -1;
+    if (e.type !== 'shield') e.dir = face;
+    else if (e.tell > 0 || e.turn > 0) e.reface = 0; // facing locked during the bash warning and the post-bash turn delay
+    else if (wasTurning) e.dir = face; // the turn delay just ended: face at once, no re-face delay on top
+    else if (dx * e.dir >= 0) e.reface = 0;
+    else if ((e.reface += dt) >= .25) { e.dir = face; e.reface = 0; } // player behind: re-face delay
     if (distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; }
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
@@ -217,8 +225,8 @@ export class Game {
     } else if (e.type === 'boss') {
       if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
       else { e.vx = distance > 95 ? e.dir * e.speed * (e.hp < e.maxHp / 2 ? 1.5 : 1) : 0; e.x += e.vx * dt; }
-    } else if (e.turn > 0) {
-      e.vx = 0; // shield bearer recovering from a bash: holds its old facing, leaving its back open
+    } else if (e.turn > 0 || e.reface > 0) {
+      e.vx = 0; // shield bearer recovering from a bash or about to turn: holds its old facing, leaving its back open
     } else {
       if (distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
       else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
@@ -234,7 +242,7 @@ export class Game {
       const range = e.type === 'boss' ? 155 : e.type === 'bat' ? 43 : e.type === 'shield' ? 70 : 82;
       if (e.type === 'shield') e.turn = .6;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: e.type === 'boss' });
-      if (Math.abs(p.x - e.x) < range && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(e.damage, e.dir);
+      if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(e.damage, e.dir);
     }
     e.action++;
   }

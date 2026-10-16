@@ -314,3 +314,58 @@ test('shield bearers appear from stage 2 and never in stage 1', () => {
   for (let i = 0; i < 20 && !seen; i++) seen = types(1 + i % 4).includes('shield');
   assert.ok(seen);
 });
+
+test('a shield bearer cannot be beaten head-on by standing still and attacking (it gets to bash)', () => {
+  // QA #2: in open floor, block pushback (40) plus reach (100) keeps the player outside bash range (70).
+  const { game, player, events } = arena();
+  Object.assign(player, { x: 900, dir: 1 }); // room to be pushed back, away from the wall
+  const shield = enemy(game, player.x + 80, { type: 'shield', hp: 60 });
+  shield.cd = 0;
+  for (let time = 0; time < 20 && shield.hp > 0; time += 1 / 120) game.update(1 / 120, { attack: true });
+  assert.ok(events.some(e => e.type === 'enemySwing'), 'the bearer bashes at least once before dying to frontal hits');
+});
+
+test('a blocked hit shoves the shield bearer forward with the player, never closer than 30', () => {
+  const { game, player } = arena();
+  player.x = 500; player.dir = 1; player.crit = 0;
+  const shield = enemy(game, player.x + 55, { type: 'shield' });
+  shield.dir = -1;
+  game.attack();
+  assert.equal(player.x, 460);
+  assert.equal(shield.x, 515, 'it steps forward up to 40');
+
+  const { game: g2, player: p2 } = arena();
+  p2.x = 500; p2.dir = 1;
+  const close = enemy(g2, p2.x + 20, { type: 'shield' });
+  close.dir = -1;
+  g2.attack();
+  assert.equal(close.x - p2.x, 30, 'the shove stops 30 from the player');
+});
+
+test('a shield bearer keeps its facing during the bash warning, and the bash whiffs behind it', () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x + 60, { type: 'shield' });
+  shield.cd = 0;
+  game.update(1 / 120);
+  assert.ok(shield.tell > 0);
+  const facing = shield.dir;
+  player.x = shield.x + 40; // crossed behind it during the wind-up
+  advance(game, .6);
+  assert.equal(shield.dir, facing, 'facing is locked during the warning');
+  assert.ok(shield.turn > 0, 'the bash went off');
+  assert.equal(player.hp, player.maxHp, 'the bash only hits its front');
+});
+
+test('a player behind a shield bearer gets a 0.25 s re-face delay before it turns', () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x + 200, { type: 'shield' });
+  shield.dir = 1; // facing away from the player
+  const x = shield.x;
+  advance(game, .2);
+  assert.equal(shield.dir, 1, 'it has not turned yet');
+  assert.equal(shield.x, x, 'it stands still while turning');
+  advance(game, .1);
+  assert.equal(shield.dir, -1);
+});
