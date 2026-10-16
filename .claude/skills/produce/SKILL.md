@@ -64,6 +64,8 @@ gh issue edit <n> --remove-label status:in-progress --add-label status:in-review
 
 條件：`gh pr checks <n>` 全部通過，且最新的 reviewer 留言是 `APPROVED`。
 
+如果 CI 失敗，先查原因：`gh api repos/{owner}/{repo}/check-runs/<id>/annotations`。訊息是帳單或支出上限、且 job 沒有任何步驟時，就照 `docs/process.md` 第 8 步改用本機替代：在 PR 的最新 commit 上跑 `npm test`，結果貼到 PR，然後合併，並註明 Pages 未部署。CI 實際跑了測試卻失敗的話，一律退回給 gameplay-engineer。
+
 ```bash
 gh pr merge <n> --squash --delete-branch
 ```

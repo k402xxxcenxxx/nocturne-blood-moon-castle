@@ -46,6 +46,8 @@ NOCTURNE 由一位製作人（主對話執行 `/produce`）帶 7 個角色 subag
 7. **審查**：製作人開 PR（內文寫 `Closes #<n>`），標籤改成 `status:in-review`，再派 Code Reviewer。審查結論是 `APPROVED` 或 `CHANGES REQUESTED`，以 PR 留言呈現。
 8. **合併**：CI 綠燈且最新審查結論是 `APPROVED`，製作人就 squash merge 並刪除分支。合併到 `main` 等於部署。
 
+**Actions 無法執行時**：如果 CI job 沒有啟動就失敗（例如 GitHub 回報帳單或支出上限問題，job 沒有任何步驟），可以改用本機測試代替。製作人在 PR 的最新 commit 上跑 `npm test`，把結果貼成 PR 留言（`本機 CI 替代：<commit SHA> npm test N/N 通過`），然後就可以合併。這時 Pages 不會部署，合併後要在 PR 留言註明「未部署」。如果 CI 有實際跑測試而且失敗，就不能用這個替代方式。
+
 **退回上限**：同一個 Issue 在第 6、7 步合計被退回 2 次之後，第 3 次不再自行修正。製作人改標 `status:blocked`，在 Issue 寫明卡在哪裡，並請使用者決定。
 
 **數值調整與 bug**：`type:tuning` 和 `type:bug` 不需要提案和核准，直接從第 3 步開始，但仍要經過第 6 到第 8 步。除非這個改動動到核心設計。
@@ -84,7 +86,7 @@ NOCTURNE 由一位製作人（主對話執行 `/produce`）帶 7 個角色 subag
 
 ## Definition of Done（可以合併）
 
-- `npm test` 與 CI 通過；新規則有對應的 core 測試。
+- `npm test` 與 CI 通過（Actions 無法執行時，依第 8 步改用本機替代）；新規則有對應的 core 測試。
 - QA 試玩報告沒有未解決的 P1 問題。
 - Code Reviewer 的最新結論是 `APPROVED`。
 - 玩家看得到的改動已經更新 `README.md`；規則或數值的改動已經更新 `docs/game-design.md`。
