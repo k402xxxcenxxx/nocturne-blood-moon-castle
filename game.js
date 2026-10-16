@@ -59,10 +59,10 @@ function getInput() {
   return input;
 }
 function toast(message) { $('toast').textContent = message; toastTime = 2.6; $('toast').classList.add('show'); }
-function burst(x, y, color, count = 12, power = 150) {
+function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2, speed = power * (.25 + Math.random());
-    particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, life: .25 + Math.random() * .4, max: .65, color, size: Math.random() > .7 ? 3 : 2 });
+    particles.push({ x, y, vx: Math.cos(angle) * speed + dir * power * .7, vy: Math.sin(angle) * speed - 30, life: .25 + Math.random() * .4, max: .65, color, size: size || (Math.random() > .7 ? 3 : 2) });
   }
   if (particles.length > 300) particles.splice(0, particles.length - 300);
 }
@@ -108,7 +108,16 @@ function handleEvent(e) {
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
-    case 'block': flashNumber(e, '#9aa3b5'); break; // placeholder; artist/audio add sparks and clang
+    case 'block': // metal sparks kicked off the shield face toward the attacker
+      audio.play('block'); rumble(2, .07); flashNumber(e, '#9aa3b5');
+      burst(e.x, e.y, '#ffe6a0', 10, 170, e.dir); burst(e.x, e.y, '#cfd6e6', 5, 120, e.dir);
+      effects.push({ type: 'impact', x: e.x, y: e.y, life: .1, max: .1, dir: e.dir });
+      break;
+    case 'guardBreak':
+      audio.play('guardBreak'); rumble(8, .26); if (settings.shake) whiteFlash = .06;
+      burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
+      effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
+      break;
     case 'enemySwing': effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
