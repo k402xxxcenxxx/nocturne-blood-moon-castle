@@ -1,6 +1,7 @@
-import { Game, STAGES, RELICS, FLOOR, clamp } from './core.js';
+import { Game, RELICS, FLOOR, clamp } from './core.js';
 import { drawScene, drawHero, drawEnemy, drawPortal } from './art.js';
 import { AudioSystem } from './audio.js';
+import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
@@ -10,7 +11,7 @@ const roman = ['I', 'II', 'III', 'IV', 'V'];
 function readSaved(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Private browsing can disable storage. The run still works. */ } }
 const storedSettings = readSaved('nocturne-settings', {});
-const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, ...storedSettings };
+const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, lang: detectLanguage(navigator.language), ...storedSettings };
 const records = { runs: 0, wins: 0, best: 0, ...readSaved('nocturne-records', {}) };
 let game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
 let shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, hitCount = 0, comboTime = 0;
@@ -21,11 +22,22 @@ const impulseControls = new Set(['jump', 'dash', 'magic']);
 function applySettings() {
   audio.setMuted(!settings.sound); audio.setMusic(settings.music); audio.setHaptics(settings.haptics);
   $('sound-button').innerHTML = icon(settings.sound ? 'sound' : 'mute');
-  $('sound-button').setAttribute('aria-label', settings.sound ? '關閉聲音' : '開啟聲音');
+  $('sound-button').setAttribute('aria-label', t(settings.sound ? 'hud.soundOff' : 'hud.soundOn'));
   frame.classList.toggle('reduced-motion', !settings.shake);
   save('nocturne-settings', settings);
 }
-function updateBest() { $('best-label').textContent = records.best ? `最深夜境 ${roman[Math.min(records.best, 5) - 1]} / V · 完成 ${records.wins} 次遠征` : '五重夜境 · 一次命運'; }
+function updateBest() { $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
+function relicTray() { return game.relics.map(id => `<span class="relic-icon" title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}</span>`).join(''); }
+function applyLanguage() {
+  setLanguage(settings.lang); document.documentElement.lang = language();
+  document.title = t('meta.title'); document.querySelector('meta[name="description"]').content = t('meta.description');
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  $('stage-name').textContent = t(`stage.${game.stage}.name`); $('relic-tray').innerHTML = relicTray();
+  applySettings(); updateBest();
+}
 function clearInput() { held.clear(); buffered.clear(); document.querySelectorAll('[data-control]').forEach(b => b.classList.remove('active')); }
 function press(control, source) {
   if (game.state !== 'playing') return;
@@ -62,15 +74,15 @@ function handleEvent(e) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
-      $('stage-number').textContent = `${roman[e.stage]} — V`; $('stage-name').textContent = STAGES[e.stage].name;
+      $('stage-number').textContent = `${roman[e.stage]} — V`; $('stage-name').textContent = t(`stage.${e.stage}.name`);
       const announcement = $('stage-announcement');
-      announcement.querySelector('small').textContent = `CHAPTER ${roman[e.stage]} · ${STAGES[e.stage].en}`;
-      announcement.querySelector('strong').textContent = STAGES[e.stage].name;
-      announcement.querySelector('span').textContent = STAGES[e.stage].subtitle;
+      announcement.querySelector('small').textContent = t('decor.announce', { stage: roman[e.stage], name: t(`decor.stage.${e.stage}`) });
+      announcement.querySelector('strong').textContent = t(`stage.${e.stage}.name`);
+      announcement.querySelector('span').textContent = t(`stage.${e.stage}.subtitle`);
       announcement.classList.add('show'); announceTime = 2.8;
       [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === e.stage ? 'current' : i < e.stage ? 'done' : ''; });
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
-      $('relic-tray').innerHTML = game.relics.map(id => { const r = RELICS.find(r => r.id === id); return `<span class="relic-icon" title="${r.name}：${r.text}">${icon(r.icon)}</span>`; }).join('');
+      $('relic-tray').innerHTML = relicTray();
       records.best = Math.max(records.best, e.stage + 1); save('nocturne-records', records); updateBest();
       audio.play(e.stage ? 'portal' : 'ui');
       break;
@@ -87,7 +99,7 @@ function handleEvent(e) {
       break;
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
-      if (e.boss) { rumble(9, .4); toast('墮落之王已隕落 · 前往月之門'); }
+      if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
       break;
     case 'hurt':
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
@@ -97,9 +109,9 @@ function handleEvent(e) {
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
     case 'enemySwing': effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
-    case 'noMana': toast('魔力不足 · 稍候恢復，或擊殺敵人汲取魔力'); break;
+    case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
-    case 'clear': audio.play('portal'); toast('守衛已盡數擊敗 · 向右進入月之門 →'); break;
+    case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); recordResult(false); openResult(false); break;
     case 'win': clearInput(); audio.play('win'); recordResult(true); openResult(true); break;
@@ -131,29 +143,30 @@ function closeModal(resume = true) {
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
-  openModal(`<div class="modal-eyebrow">A MOMENT IN THE DARK</div><h2 id="modal-title">讓黑夜稍候</h2><p>第 ${roman[game.stage]} 夜 · ${STAGES[game.stage].name} · 聖物 ${game.relics.length} 件</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}繼續遠征</button><button class="secondary-button" data-command="settings">遊戲設定</button><button class="secondary-button" data-command="help">操作指南</button></div><button class="text-button" data-command="restart-confirm">放棄本次遠征</button>`, 'pause');
+  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t('pause.info', { stage: roman[game.stage], name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
 }
 function openSettings() {
   if (['upgrade', 'dead', 'won'].includes(modalKind)) modalReturn = modalKind;
-  const list = [ ['sound', '遊戲聲音', '劍刃、命中與環境音效'], ['music', '夜境配樂', '原創暗黑管風琴'], ['haptics', '震動回饋', '支援震動 API 的手機瀏覽器'], ['shake', '打擊震動與閃光', '關閉可減少畫面晃動'] ];
-  openModal(`<div class="modal-eyebrow">YOUR NIGHT, YOUR WAY</div><h2 id="modal-title">夜境設定</h2><div class="settings-list">${list.map(([id,name,desc]) => `<div class="setting"><div><strong>${name}</strong><small>${desc}</small></div><button class="toggle" data-setting="${id}" aria-label="${name}" aria-pressed="${settings[id]}"></button></div>`).join('')}</div><p class="modal-footnote">${'vibrate' in navigator ? '震動效果依裝置與瀏覽器支援而異。' : '此瀏覽器不支援震動，音效與視覺回饋仍可正常使用。'}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">返回夜境</button></div>`, 'settings');
+  const list = ['sound', 'music', 'haptics', 'shake'];
+  const languages = Object.entries(LANGUAGES).map(([code, name]) => `<button class="language-option" data-language="${code}" lang="${code}" aria-pressed="${settings.lang === code}">${name}</button>`).join('');
+  openModal(`<div class="modal-eyebrow">${t('decor.settings')}</div><h2 id="modal-title">${t('settings.title')}</h2><div class="settings-list"><div class="setting"><div><strong>${t('settings.language')}</strong><small>${t('settings.languageDesc')}</small></div><div class="language-options" role="group" aria-label="${t('settings.language')}">${languages}</div></div>${list.map(id => `<div class="setting"><div><strong>${t(`settings.${id}`)}</strong><small>${t(`settings.${id}Desc`)}</small></div><button class="toggle" data-setting="${id}" aria-label="${t(`settings.${id}`)}" aria-pressed="${settings[id]}"></button></div>`).join('')}</div><p class="modal-footnote">${t('vibrate' in navigator ? 'settings.vibrateYes' : 'settings.vibrateNo')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('settings.back')}</button></div>`, 'settings');
 }
 function openHelp() {
-  const items = [ ['wind', '移動', '<kbd>A</kbd> <kbd>D</kbd> 或 ← →<br>手機：按住左下方向鍵'], ['jump', '二段跳', '<kbd>SPACE</kbd> / W / ↑<br>空中再次輕點可二段跳'], ['sword', '三段連斬', '<kbd>J</kbd> / Z，長按連斬<br>第三擊範圍更大、擊退更強'], ['wind', '無敵衝刺', '<kbd>K</kbd> / SHIFT / X<br>穿過攻擊，冷卻後可再施放'], ['moon', '月蝕魔法', '<kbd>L</kbd> / C，消耗 35 MP<br>範圍傷害並消除附近飛彈'], ['gem', '隨機聖物', '擊敗所有守衛，向右進門<br>三選一強化，並恢復 20 HP'] ];
-  openModal(`<div class="modal-eyebrow">THE NIGHTWALKER'S GUIDE</div><h2 id="modal-title">以劍刃，穿越黑夜</h2><div class="help-grid">${items.map(([symbol,name,text]) => `<div class="help-item">${icon(symbol)}<strong>${name}</strong><p>${text}</p></div>`).join('')}</div><p class="modal-footnote">五關一輪 · 第五關迎戰墮落之王 · 死亡後本輪聖物重置<br>手機支援多指操作，橫向與全螢幕遊玩效果最佳。</p><div class="modal-buttons"><button class="primary-button" data-command="resume">已準備好</button></div>`, 'help');
+  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', 'magic'], ['gem', 'relics'] ];
+  openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">CHAPTER ${roman[game.stage]} COMPLETE</div><h2 id="modal-title">黑夜的饋贈</h2><p>選擇一件聖物。讓命運，在你的劍鋒上改寫。</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${r.type}</small><strong>${r.name}</strong><p>${r.text}</p></button>`).join('')}</div><p class="modal-footnote">獲得聖物後，恢復 20 點生命與全部魔力 · 效果持續至本輪結束</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t('upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${win ? 'THE DAWN IS YOURS' : 'THE NIGHT REMEMBERS'}</div><h2 id="modal-title">${win ? '黎明，終於降臨' : '今夜，止步於此'}</h2><p>${win ? '墮落之王已隕落。你走過五重夜境，將黎明帶回這座城。' : '黑夜收下了你的足跡。下一次遠征，將是全新的命運。'}</p><div class="result-stats"><div><strong>${roman[game.stage]} / V</strong><span>最深夜境</span></div><div><strong>${game.kills}</strong><span>擊敗敵人</span></div><div><strong>${duration(game.elapsed)}</strong><span>遠征時間</span></div><div><strong>${game.relics.length}</strong><span>獲得聖物</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}再次遠征</button><button class="secondary-button" data-command="title">返回主畫面</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${t(win ? 'result.winText' : 'result.loseText')}</p><div class="result-stats"><div><strong>${roman[game.stage]} / V</strong><span>${t('result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 function showTitle() {
   closeModal(false); game = new Game(handleEvent); camera = 0;
   $('title-screen').hidden = false; $('touch-controls').hidden = true; $('objective').hidden = true;
   $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
-  $('stage-name').textContent = STAGES[0].name; $('stage-number').textContent = 'I — V';
+  $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = 'I — V';
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
   [...$('journey-stages').children].forEach((e,i) => e.className = i === 0 ? 'active' : '');
   particles = []; effects = []; trails = []; numbers = []; hitCount = 0; comboTime = 0;
@@ -175,6 +188,13 @@ $('fullscreen-button').addEventListener('click', async () => {
 });
 $('modal').addEventListener('click', e => {
   const button = e.target.closest('button'); if (!button) return;
+  if (button.dataset.language) {
+    // Re-render the open settings panel in the new language without losing the modal it returns to.
+    settings.lang = button.dataset.language; applyLanguage();
+    const back = modalReturn; openSettings(); modalReturn = back;
+    requestAnimationFrame(() => $('modal-panel').querySelector(`[data-language="${settings.lang}"]`)?.focus({ preventScroll: true }));
+    return;
+  }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
   if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.play('upgrade'); game.chooseRelic(id); } return; }
   switch (button.dataset.command) {
@@ -183,7 +203,7 @@ $('modal').addEventListener('click', e => {
     case 'help': openHelp(); break;
     case 'restart': startRun(); break;
     case 'title': showTitle(); break;
-    case 'restart-confirm': openModal(`<div class="modal-eyebrow">LEAVE THIS EXPEDITION</div><h2 id="modal-title">讓這段遠征落幕？</h2><p>本輪進度與聖物將重置，最佳紀錄仍會保留。</p><div class="modal-buttons"><button class="primary-button" data-command="resume">繼續遠征</button><button class="secondary-button" data-command="title">返回主畫面</button></div>`, 'confirm'); break;
+    case 'restart-confirm': openModal(`<div class="modal-eyebrow">${t('decor.confirm')}</div><h2 id="modal-title">${t('confirm.title')}</h2><p>${t('confirm.text')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('pause.resume')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, 'confirm'); break;
   }
 });
 document.querySelectorAll('[data-control]').forEach(button => {
@@ -230,7 +250,7 @@ function updateHud() {
   $('souls').textContent = game.souls;
   const remaining = game.enemies.filter(e => e.hp > 0).length;
   $('enemy-count').textContent = `${game.totalEnemies - remaining} / ${game.totalEnemies}`;
-  $('objective-text').textContent = game.portalOpen ? '月之門已開啟 · 向右前進 →' : '擊敗守衛，開啟月之門';
+  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : 'objective.fight');
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
@@ -334,6 +354,6 @@ function tick(now) {
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
 }
-applySettings(); updateBest(); game = new Game(handleEvent); updateHud(); requestAnimationFrame(tick);
+game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
 if (new URLSearchParams(location.search).has('test')) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput };
