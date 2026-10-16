@@ -40,6 +40,8 @@ Follow the feature loop in `docs/process.md`, dispatching subagents with the Age
 - The previous role's Handoff Notes, verbatim.
 - What done means for this step.
 
+Art generation needs this session to be local with Claude in Chrome connected (see `docs/art-pipeline.md`). If it is not, tell `technical-artist` to use code placeholders and keep the Issue's art item open.
+
 Usual order: `gameplay-engineer` → `technical-artist`, `audio-designer` and `ux-designer` as the feedback needs require → `qa-playtester`. Run in parallel only when files do not overlap at all (for example, one change only in `art.js` and another only in `audio.js`); anything touching `game.js` or `i18n.js` runs sequentially.
 
 For each Handoff:
