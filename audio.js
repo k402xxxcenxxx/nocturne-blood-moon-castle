@@ -125,7 +125,8 @@ export class AudioSystem {
   play(name, intensity = 1) {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
-      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6 };
+      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
+      block: 12, guardBreak: [25, 20, 55] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -156,6 +157,23 @@ export class AudioSystem {
         }
         break;
       }
+      case 'block': {
+        // Inharmonic partials read as metal; random detune keeps spammed blocks from sounding identical.
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 5200, 0.04, 0.12, 1800);
+        tone('sine', 210 * d, 0.08, 0.14, 120);
+        tone('square', 1180 * d, 0.08, 0.035, 1110 * d);
+        tone('triangle', 1870 * d, 0.12, 0.08, 1800 * d);
+        tone('sine', 2960 * d, 0.14, 0.035);
+        break;
+      }
+      case 'guardBreak':
+        tone('noise', 6200, 0.34, 0.3, 260);
+        tone('sine', 110, 0.45, 0.48, 32);
+        tone('sawtooth', 160, 0.24, 0.1, 48);
+        [2350, 1720, 3100, 1390].forEach((f, i) => tone('triangle', f, 0.18, 0.07, f * 0.92, 0.025 * (i + 1)));
+        notes([147, 220], 0.08, 0.06);
+        break;
       case 'hurt':
         tone('sawtooth', 140, 0.25, 0.15, 48);
         tone('noise', 1800, 0.2, 0.3, 180);
