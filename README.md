@@ -8,7 +8,7 @@ The interface is available in English and Traditional Chinese (繁體中文). Th
 
 - Five stages per run: The Forsaken Gate → The Forbidden Archive → The Timeless Belfry → The Crimson Cathedral → The Bloodmoon Throne.
 - Each run randomizes enemy placement, platforms and relic offers; 10 stackable relics, offered three at a time. Dying resets the run.
-- Three-hit combo, double jump, invulnerable dash and the Eclipse area spell; skeletons, bats, armored knights, mages and a final boss.
+- Three-hit combo, double jump, invulnerable dash and the Eclipse area spell; skeletons, bats, armored knights, shield bearers (from stage two), mages and a final boss.
 - Enemy stats and attack rate rise each stage; the last stage holds the Fallen King, with a half-health speed-up, a three-way barrage and a heavy cleave.
 - Hit-stop, hit flashes, knockback, sword trails, particles, critical numbers, screen shake, layered synthesized sound effects and an original dark score.
 - Original pixel art drawn in code. The style direction is in the original concept art in `docs/references/` (gothic castle, moonlit night, library, clock tower); the concept art is not deployed.
@@ -29,7 +29,7 @@ On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the 
 | Pause | Esc / P | Top-right pause button |
 | Pick a relic | Click or 1 / 2 / 3 | Tap a relic card |
 
-Eclipse costs 35 MP and also destroys nearby enemy projectiles. Mana regenerates over time, and hits and kills restore extra mana. A `!` above an enemy means an attack is coming: jump away or dash through it.
+Eclipse costs 35 MP and also destroys nearby enemy projectiles. Mana regenerates over time, and hits and kills restore extra mana. A `!` above an enemy means an attack is coming: jump away or dash through it. Shield bearers block sword hits from the front: strike from behind, dash through them, or break their guard with Eclipse.
 
 **Browser differences:** audio starts after the first press of the start button. Vibration needs `navigator.vibrate`, which iPhone and iPad Safari do not have; sound, hit-stop and visual feedback still work. If the Fullscreen API is unavailable the game switches to an in-page fullscreen. Vibration and screen shake can each be turned off in Settings, and both follow the system reduced-motion preference by default.
 

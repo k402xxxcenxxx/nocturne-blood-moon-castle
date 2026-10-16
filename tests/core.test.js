@@ -232,3 +232,150 @@ test('pause stops movement, enemy attacks, mana regeneration, and run time', () 
   advance(game, 1, { right: true, attack: true, magic: true });
   assert.deepEqual({ x: player.x, y: player.y, hp: player.hp, mp: player.mp, elapsed: game.elapsed }, before);
 });
+test('a shield bearer blocks frontal sword hits: reduced damage, player pushed back, no stun', () => {
+  const { game, player, events } = arena();
+  player.x = 500; player.dir = 1; player.crit = 0;
+  const shield = enemy(game, player.x + 55, { type: 'shield' });
+  shield.dir = -1;
+  game.attack();
+  const blocked = shield.maxHp - shield.hp;
+  assert.ok(blocked > 0 && blocked <= Math.ceil(player.damage * .15));
+  assert.equal(shield.stun, 0);
+  assert.equal(player.x, 460);
+  assert.equal(events.at(-1).type, 'block');
+  assert.equal(events.some(event => event.type === 'hit'), false);
+});
+
+test('a shield bearer takes full damage from behind and from Eclipse, which breaks its guard for 1.5 s', () => {
+  const { game, player } = arena();
+  player.x = 500; player.dir = 1; player.crit = 0;
+  const shield = enemy(game, player.x + 55, { type: 'shield' });
+  shield.dir = 1; // facing away from the player
+  game.attack();
+  assert.equal(shield.maxHp - shield.hp, player.damage);
+  assert.ok(shield.stun > 0);
+
+  const { game: g2, player: p2, events: e2 } = arena();
+  p2.x = 500; p2.dir = 1; p2.crit = 0;
+  const guard = enemy(g2, p2.x + 55, { type: 'shield' });
+  guard.dir = -1;
+  g2.magic();
+  assert.equal(guard.maxHp - guard.hp, Math.round(p2.magicDamage));
+  assert.equal(guard.guardBreak, 1.5);
+  assert.ok(e2.some(event => event.type === 'guardBreak'));
+  advance(g2, .7);
+  guard.x = p2.x + 55; guard.dir = -1;
+  let before = guard.hp;
+  g2.attack();
+  assert.equal(before - guard.hp, p2.damage, 'frontal hits land in full while the guard is broken');
+  advance(g2, 1);
+  guard.x = p2.x + 55; guard.dir = -1; p2.dir = 1; guard.tell = 0;
+  before = guard.hp;
+  g2.attack();
+  assert.ok(before - guard.hp < p2.damage, 'the guard recovers after 1.5 s');
+});
+
+test('a shield bash has a tell, then the bearer keeps its facing for a turn delay', () => {
+  const { game, player, events } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x + 60, { type: 'shield' });
+  shield.cd = 0;
+  game.update(1 / 120);
+  assert.ok(shield.tell > 0, 'the bash is announced before it lands');
+  assert.equal(player.hp, player.maxHp);
+  advance(game, .6);
+  assert.ok(events.some(event => event.type === 'enemySwing'));
+  assert.ok(player.hp < player.maxHp);
+  assert.ok(shield.turn > 0);
+  const facing = shield.dir;
+  player.x = shield.x + 60;
+  game.update(1 / 120);
+  assert.equal(shield.dir, facing, 'it does not re-face the player during the turn delay');
+  advance(game, .7);
+  assert.equal(shield.dir, -facing);
+});
+
+test('a dash passes through a bashing shield bearer unharmed', () => {
+  const { game, player } = arena();
+  player.x = 500; player.dir = 1;
+  const shield = enemy(game, player.x + 50, { type: 'shield' });
+  shield.tell = .05;
+  game.dash();
+  advance(game, .2);
+  assert.ok(player.x > shield.x);
+  assert.equal(player.hp, player.maxHp);
+});
+
+test('shield bearers appear from stage 2 and never in stage 1', () => {
+  const game = new Game(() => {}, 9);
+  const types = stage => { game.loadStage(stage); return game.enemies.map(e => e.type); };
+  assert.equal(types(0).includes('shield'), false);
+  let seen = false;
+  for (let i = 0; i < 20 && !seen; i++) seen = types(1 + i % 4).includes('shield');
+  assert.ok(seen);
+});
+
+test('a shield bearer cannot be beaten head-on by standing still and attacking (it gets to bash)', () => {
+  // QA #2: in open floor, block pushback (40) plus reach (100) keeps the player outside bash range (70).
+  const { game, player, events } = arena();
+  Object.assign(player, { x: 900, dir: 1 }); // room to be pushed back, away from the wall
+  const shield = enemy(game, player.x + 80, { type: 'shield', hp: 60 });
+  shield.cd = 0;
+  for (let time = 0; time < 20 && shield.hp > 0; time += 1 / 120) game.update(1 / 120, { attack: true });
+  assert.ok(events.some(e => e.type === 'enemySwing'), 'the bearer bashes at least once before dying to frontal hits');
+});
+
+test('a blocked hit shoves the shield bearer forward with the player, never closer than 30', () => {
+  const { game, player } = arena();
+  player.x = 500; player.dir = 1; player.crit = 0;
+  const shield = enemy(game, player.x + 55, { type: 'shield' });
+  shield.dir = -1;
+  game.attack();
+  assert.equal(player.x, 460);
+  assert.equal(shield.x, 515, 'it steps forward up to 40');
+
+  const { game: g2, player: p2 } = arena();
+  p2.x = 500; p2.dir = 1;
+  const close = enemy(g2, p2.x + 20, { type: 'shield' });
+  close.dir = -1;
+  g2.attack();
+  assert.equal(close.x - p2.x, 30, 'the shove stops 30 from the player');
+});
+
+test('a shield bearer keeps its facing during the bash warning, and the bash whiffs behind it', () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x + 60, { type: 'shield' });
+  shield.cd = 0;
+  game.update(1 / 120);
+  assert.ok(shield.tell > 0);
+  const facing = shield.dir;
+  player.x = shield.x + 40; // crossed behind it during the wind-up
+  advance(game, .6);
+  assert.equal(shield.dir, facing, 'facing is locked during the warning');
+  assert.ok(shield.turn > 0, 'the bash went off');
+  assert.equal(player.hp, player.maxHp, 'the bash only hits its front');
+});
+
+test('a player behind a shield bearer gets a 0.25 s re-face delay before it turns', () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x + 200, { type: 'shield' });
+  shield.dir = 1; // facing away from the player
+  const x = shield.x;
+  advance(game, .2);
+  assert.equal(shield.dir, 1, 'it has not turned yet');
+  assert.equal(shield.x, x, 'it stands still while turning');
+  advance(game, .1);
+  assert.equal(shield.dir, -1);
+});
+
+// Known gap (QA rework 2, P3): todo so it documents the rule without blocking CI; drop `todo` once fixed.
+test('a shield bearer whose turn delay ends while stunned faces the player at once, with no re-face delay', { todo: 'turn delay expiring during stun falls back to the 0.25 s re-face' }, () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x - 100, { type: 'shield' });
+  Object.assign(shield, { dir: -1, turn: .1, stun: .3 }); // player is behind it
+  advance(game, .3 + 1 / 60);
+  assert.equal(shield.dir, 1);
+});

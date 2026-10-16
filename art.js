@@ -451,6 +451,44 @@ function mage(c, e, time, white) {
   circle(c, white || '#bfa0df', 26, -68, 4); rect(c, '#f3dfff', 24, -70, 2, 2);
   if (e.tell > 0) { c.strokeStyle = '#bca0df99'; c.lineWidth = 1; c.beginPath(); c.arc(26, -68, 10 + Math.sin(time * 16) * 2, 0, 7); c.stroke(); }
 }
+function shieldBearer(c, e, time, white) {
+  const armor = white || '#5d6670', dark = white || '#2f3542', light = white || '#aeb2a6', bronze = white || '#9c7a4a', broken = (e.guardBreak || 0) > 0, stride = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 5) * 3 : 0;
+  // Hunched, wide body behind the shield; front is +x.
+  poly(c, '#111320', [[-17, -54], [-20, -6], [-6, -4], [8, -6], [10, -52]]);
+  poly(c, white || '#4a2a38', [[-15, -52], [-18, -9], [-6, -7], [6, -10], [7, -50]]);
+  boot(c, -9 + stride, 0, armor); boot(c, 3 - stride, 0, armor);
+  poly(c, '#101522', [[-16, -55], [9, -57], [13, -26], [-15, -24]]);
+  poly(c, armor, [[-14, -53], [7, -55], [10, -28], [-13, -26]]);
+  poly(c, dark, [[-3, -54], [7, -55], [10, -28], [-2, -27]]); line(c, light, -12, -51, -12, -30, 2); line(c, bronze, -13, -32, 9, -33, 3);
+  // Short mace held back.
+  line(c, dark, -12, -46, -21, -32, 6); line(c, '#6b5a44', -21, -30, -27, -46, 2); rect(c, white || '#7d8590', -30, -52, 7, 7); rect(c, light, -29, -51, 2, 2);
+  // Brimmed kettle helm: flat, wide top distinguishes it from the crested knight.
+  poly(c, '#101523', [[-12, -71], [-6, -76], [5, -76], [10, -70], [10, -58], [-11, -58]]);
+  poly(c, armor, [[-10, -70], [-5, -74], [4, -74], [8, -69], [8, -60], [-9, -60]]);
+  rect(c, '#111320', -18, -67, 32, 4); rect(c, bronze, -17, -66, 30, 2);
+  // Visor slit slides to the back while the bearer is about to turn round (e.reface).
+  const look = (e.reface || 0) > 0 ? -8 : 0;
+  rect(c, '#111320', -2 + look, -63, 10, 3); rect(c, white || '#e8776c', look, -62, 7, 1);
+  if (broken) {
+    // Guard broken: shield split, lowered, front exposed.
+    poly(c, '#101522', [[6, -38], [13, -44], [17, -36], [22, -41], [26, -30], [24, -4], [12, 0], [5, -6]]);
+    poly(c, white || '#3f4a58', [[8, -36], [13, -41], [17, -33], [22, -38], [24, -29], [22, -6], [12, -3], [7, -8]]);
+    line(c, '#e2d3a7', 15, -32, 12, -18, 1); line(c, '#e2d3a7', 12, -18, 17, -8, 1); line(c, bronze, 8, -8, 22, -6, 2);
+    rect(c, light, 19 + Math.round(Math.sin(time * 9) * 2), -52, 3, 3); rect(c, light, 26, -47 + Math.round(Math.cos(time * 9) * 2), 2, 2);
+    return;
+  }
+  // Tower shield on the facing side: tall slab, cold rim light on the front edge.
+  // Bash wind-up rears the shield back and tilts it within 0.15 s; the bash itself thrusts it forward.
+  const k = (e.tell || 0) > 0 ? Math.min(1, (.55 - e.tell) / .15) : 0, thrust = (e.turn || 0) > .45 ? 6 : 0;
+  const pull = Math.round(-12 * k + thrust - ((e.reface || 0) > 0 ? 3 : 0));
+  c.save(); c.translate(17 + pull, -2); c.rotate(-.32 * k); c.translate(-17, 2);
+  poly(c, '#0c101b', [[8, -74], [27, -71], [28, -6], [17, 1], [7, -5]]);
+  poly(c, bronze, [[10, -72], [26, -69], [26, -8], [17, -2], [9, -7]]);
+  poly(c, white || '#3f4a58', [[12, -69], [24, -67], [24, -10], [17, -5], [11, -9]]);
+  rect(c, white || '#d4dcea', 26, -68, 2, 58); line(c, white || '#7a3442', 18, -66, 18, -8, 3);
+  circle(c, bronze, 18, -38, 4); rect(c, white || '#e9d29a', 17, -40, 2, 2);
+  c.restore();
+}
 export function drawEnemy(ctx, e = {}, time = 0) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
@@ -459,6 +497,7 @@ export function drawEnemy(ctx, e = {}, time = 0) {
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
+  else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
