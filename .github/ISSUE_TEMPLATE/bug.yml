@@ -1,0 +1,22 @@
+name: Bug
+description: 遊戲行為和預期不符
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 嚴重度
+      options: ["P1 當機、卡關、資料遺失或核心玩不了", "P2 明顯錯誤但有辦法繞過", "P3 打磨類問題"]
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重現步驟
+      description: 裝置、瀏覽器、關卡、操作順序
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期與實際結果
+    validations: { required: true }

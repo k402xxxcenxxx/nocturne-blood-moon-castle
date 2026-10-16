@@ -80,4 +80,4 @@ npm test
 
 ## 接手開發
 
-開發規則、架構、擴充方式與玩法開發流程見 [`AGENTS.md`](AGENTS.md)。
+開發規則與架構見 [`AGENTS.md`](AGENTS.md)，開發流程與角色分工見 [`docs/process.md`](docs/process.md)，目前的規則與數值見 [`docs/game-design.md`](docs/game-design.md)。在 Claude Code 執行 `/produce` 即可接續開發。

@@ -47,19 +47,11 @@ input (game.js) → Game.update(dt, input) (core.js) → emit(event) → game.js
 - 網址加 `?test` 會暴露 `window.__nocturne`（`game`、`settings`、`startRun`、`clearInput`），可以在瀏覽器 console 直接改狀態試玩，例如 `__nocturne.game.loadStage(4)` 直接跳到頭目關。
 - 震動、音量和手感必須在真機上確認；自動測試只能驗證規則。
 
-## 玩法開發方式
+## 團隊與流程
 
-每次只做**一個**可以玩到的改動，依序：
+開發依 `docs/process.md` 進行：里程碑 M0 Prototype（目前）→ M1 Vertical Slice → M2 Alpha → M3 Beta → M4 Release；每個 GitHub Issue 走「提案 → 核准 → 實作 → 表現 → QA → 審查 → 合併」。
 
-1. 先寫清楚它讓玩家多了什麼選擇或決策（例如「衝刺穿過敵人會反擊」），不要只是加數值。
-2. 在 core 實作規則並 `emit` 事件，接著在 game.js 補回饋（音效、粒子、停頓、震動）。沒有回饋的機制玩家感覺不到。
-3. 加 core 測試，跑 `npm test`。
-4. 用 `?test` 在瀏覽器試玩，調整數值。
-5. 有影響玩家的改動就更新 `README.md` 的「遊戲內容」或操作表。
-
-方向（依投入成本排序，供參考，不是承諾）：
-
-- 有取捨的聖物：帶代價的強化（例如攻擊提升但受傷增加），或改變操作的聖物（例如衝刺留下傷害軌跡、月蝕改成投射物）。
-- 新敵人行為，迫使玩家用不同動作應對：盾兵要從背後打、會跳的敵人、會召喚的敵人。
-- 關卡內的變化：可破壞物、陷阱、精英怪、可選擇的岔路或寶箱。
-- 跨輪成長：用已經在計算但目前沒有用途的 `souls`。這會改動「死亡全部重置」的設計，動手前先跟使用者確認。
+- 主對話執行 `/produce` 擔任製作人，調度 `.claude/agents/` 的 7 個角色：`game-designer`、`gameplay-engineer`、`technical-artist`、`audio-designer`、`ux-designer`、`qa-playtester`、`code-reviewer`。
+- 玩法提案（`type:proposal`）與 `core-design` 工作必須等使用者在 Issue 標上 `status:approved` 才能開工。
+- 規則與數值的現況寫在 `docs/game-design.md`；改了規則或數值就要同步更新。
+- 不是 Claude Code 的 agent（例如 Codex）也照同一份流程：依角色檔案的職責分工，最後輸出同樣格式的 Handoff。
