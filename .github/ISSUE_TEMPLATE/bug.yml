@@ -20,3 +20,9 @@ body:
     attributes:
       label: Expected and actual result
     validations: { required: true }
+  - type: textarea
+    id: zh
+    attributes:
+      label: 中文版 (Traditional Chinese version)
+      description: The same content as above, fully translated into Traditional Chinese for review. English stays the source of truth.
+    validations: { required: true }

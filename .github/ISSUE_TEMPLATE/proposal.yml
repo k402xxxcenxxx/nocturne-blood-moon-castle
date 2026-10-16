@@ -44,3 +44,9 @@ body:
       label: Core design
       options:
         - label: Changes the core design (death reset, cross-run progression, stage count, controls, win/loss conditions, platforms, dependencies); add the core-design label
+  - type: textarea
+    id: zh
+    attributes:
+      label: 中文版 (Traditional Chinese version)
+      description: The same content as above, fully translated into Traditional Chinese for review. English stays the source of truth.
+    validations: { required: true }

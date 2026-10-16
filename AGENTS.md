@@ -13,7 +13,7 @@ For agents taking over development. Goal: **keep adding fun, good-feeling gamepl
   - `castle-rooftop-night.jpg`: castle roof, night rain, violet-blue sky and moon, cold rim light on stone plus warm torchlight.
   - `clock-tower-hud.jpg`: giant clock face and gargoyles, and the top-left HUD (portrait, HP and MP bars).
 - **All interface text goes through `i18n.js`.** Never hard-code player-visible strings in `game.js` or `index.html`; add a key to every language in `STRINGS` and use `t(key, vars)` in code or `data-i18n`, `data-i18n-html`, `data-i18n-aria`, `data-i18n-title` in markup. Supported languages: `en` and `zh-Hant`. Keys starting with `decor.` are decorative English captions shared by all languages and only need an `en` entry. Stage and relic text is keyed by stage index (`stage.<i>.name`) and relic id (`relic.<id>.name`).
-- Code, comments, docs, commits and PRs are written in English.
+- Code, comments, docs, commits, PRs and Issue comments are written in English. **Issue bodies are bilingual**: English first as the working language, then a Traditional Chinese version below it for the user to read and approve. See "Bilingual Issues" in `docs/process.md`.
 - `npm test` must pass for every change. A failing CI test blocks deployment.
 
 ## Architecture (one path)

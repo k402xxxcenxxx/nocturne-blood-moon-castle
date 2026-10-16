@@ -108,4 +108,25 @@ Created by `scripts/setup-github.sh`, which is safe to re-run.
 
 - Milestones: `M0 Prototype`, `M1 Vertical Slice`, `M2 Alpha`, `M3 Beta`, `M4 Release`.
 - Severity: P1 = crash, soft-lock, data loss or the core is unplayable; P2 = clearly wrong but has a workaround; P3 = polish.
-- Commits, PRs, Issues and comments are written in English. Commit and PR titles are imperative, e.g. `Add shield knight enemy`.
+- Commits, PRs, Issue titles and comments are written in English. Commit and PR titles are imperative, e.g. `Add shield knight enemy`. Issue bodies follow "Bilingual Issues" below.
+
+## Bilingual Issues
+
+English is the shared development language; the user reads and approves in Traditional Chinese. So every Issue body has both:
+
+```
+<English sections>
+
+---
+
+## 中文版
+
+<the same sections, in Traditional Chinese>
+```
+
+- Whoever creates or edits an Issue body (Game Designer, Producer, any role filing a bug) writes both versions in the same edit.
+- The Chinese version is a full translation with the same headings, numbers, identifiers and checkboxes, not a summary. Code identifiers, ids and file names stay as they are.
+- English is the source of truth. If the two disagree, fix the Chinese to match the English.
+- When the user comments in Chinese asking for changes, update the English first, then the Chinese.
+- Titles stay English only, so branch names and PR links stay consistent.
+- Issues opened from the templates get the Chinese version from the last form field, which renders as a `### 中文版 (Traditional Chinese version)` heading; that counts as the same format.

@@ -81,4 +81,5 @@ In three to five lines, in the user's language: which Issue was done, the PR lin
 ## Do not
 - Write game code yourself; implementation always goes to the matching role.
 - Approve proposals or `core-design` work on the user's behalf.
+- Create or edit an Issue body in English only: every body you or a subagent writes follows "Bilingual Issues" in `docs/process.md` (English, then `## 中文版`).
 - Force-push `main`, or skip CI or review.
