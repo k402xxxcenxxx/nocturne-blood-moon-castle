@@ -369,3 +369,13 @@ test('a player behind a shield bearer gets a 0.25 s re-face delay before it turn
   advance(game, .1);
   assert.equal(shield.dir, -1);
 });
+
+// Known gap (QA rework 2, P3): todo so it documents the rule without blocking CI; drop `todo` once fixed.
+test('a shield bearer whose turn delay ends while stunned faces the player at once, with no re-face delay', { todo: 'turn delay expiring during stun falls back to the 0.25 s re-face' }, () => {
+  const { game, player } = arena();
+  player.x = 500;
+  const shield = enemy(game, player.x - 100, { type: 'shield' });
+  Object.assign(shield, { dir: -1, turn: .1, stun: .3 }); // player is behind it
+  advance(game, .3 + 1 / 60);
+  assert.equal(shield.dir, 1);
+});
