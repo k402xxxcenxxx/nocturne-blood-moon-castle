@@ -43,6 +43,7 @@ Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×
 | Bat `bat` | 27 | 115 | Tracks the player in the air, then swoops | 0.3 s |
 | Armored knight `knight` | 65 | 57 | Melee; appears from stage 2 | 0.6 s |
 | Shield bearer `shield` | 55 | 50 | Faces the player; starts a shield bash within 70 that hits only its front (range 70); facing is locked during the warning; after the bash, a 0.6 s turn delay where it keeps its old facing and stands still; replaces some knights from stage 2 | 0.55 s |
+| Spearman `spear` | 53 | 77 | Keeps 80-145 from the hero (walks in beyond 145, backs off at ×0.8 speed inside 80). Thrusts when within 193 horizontally and 64 vertically: hit box from 10 to 194 in front, 54 tall up from the feet (`thrustBox`, set at warning start); facing locked during the warning; 0.72 s standing recovery after the thrust; normal flinch; the hit test uses the hero's full width, so the real safe distance is about 208 px centre-to-centre (same body check as other enemies); replaces ~28% of knights from stage 2 | 0.64 s |
 | Mage `mage` | 43 | 72 (×0.6 while moving) | Keeps its distance and fires projectiles; appears from stage 3 | 0.65 s |
 | The Fallen King `boss` | 640 | 75 | Heavy cleave (range 155), or a three-way barrage every 3rd action; 1.5× speed below half health | 0.72 s, 0.48 s below half health |
 

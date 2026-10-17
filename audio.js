@@ -144,6 +144,10 @@ export class AudioSystem {
         tone('noise', 3800, 0.12, 0.23, 700);
         tone('triangle', 260, 0.09, 0.09, 95);
         break;
+      case 'thrust': // enemy spear: short piercing hiss, narrower and higher than swing; no vibration
+        tone('noise', 5200, 0.09, 0.2, 1400);
+        tone('triangle', 1250, 0.08, 0.07, 520);
+        break;
       case 'hit':
       case 'crit': {
         const critical = name === 'crit';

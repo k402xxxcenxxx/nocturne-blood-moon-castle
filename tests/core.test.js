@@ -315,6 +315,16 @@ test('shield bearers appear from stage 2 and never in stage 1', () => {
   assert.ok(seen);
 });
 
+test('spearmen appear from stage 2 and never in stage 1', () => {
+  const types = (seed, stage) => { const g = new Game(() => {}, seed); g.loadStage(stage); return g.enemies.map(e => e.type); };
+  let seen = false;
+  for (let seed = 1; seed <= 20; seed++) {
+    assert.equal(types(seed, 0).includes('spear'), false);
+    for (let s = 1; s < 5; s++) seen = seen || types(seed, s).includes('spear');
+  }
+  assert.ok(seen);
+});
+
 test('a shield bearer cannot be beaten head-on by standing still and attacking (it gets to bash)', () => {
   // QA #2: in open floor, block pushback (40) plus reach (100) keeps the player outside bash range (70).
   const { game, player, events } = arena();
@@ -399,4 +409,37 @@ test('wind-ups are capped per stage and never start from far away', () => {
   player.x = 500;
   assert.equal(game.canWindUp(enemy(game, 500 + 570)), false);
   assert.equal(game.canWindUp(enemy(game, 500 + 600, { type: 'boss', hp: 500 })), true);
+});
+
+test('spearman thrusts a long box, locks facing, recovers, and keeps its spacing', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 500, { type: 'spear' });
+  Object.assign(player, { x: 320, y: FLOOR }); e.cd = 0; e.dir = -1;
+  game.update(1 / 120, {});
+  assert.ok(e.tell > 0 && e.thrustBox);
+  assert.deepEqual([e.thrustBox.x, e.thrustBox.w, e.thrustBox.h, e.thrustBox.y], [500 - 194, 184, 54, FLOOR - 54]);
+  player.x = 800; advance(game, .3); assert.equal(e.dir, -1); // facing locked while the hero passes behind
+  player.x = 340; const hp = player.hp; advance(game, .4);
+  assert.ok(player.hp < hp, 'hero inside the box is hit');
+  assert.ok(e.turn > 0 && e.tell <= 0);
+  e.cd = 0; const x = e.x; advance(game, .5);
+  assert.ok(e.tell <= 0); assert.equal(e.x, x); // recovery: no warning, no movement
+  advance(game, .3); assert.ok(e.tell > 0);
+});
+
+test('spearman thrust misses a hero above or behind the box', () => {
+  for (const [px, py] of [[330, FLOOR - 70], [700, FLOOR]]) {
+    const { game, player } = arena();
+    const e = enemy(game, 500, { type: 'spear' });
+    Object.assign(player, { x: px, y: py, grounded: false, vy: 0 }); e.cd = 0; e.dir = -1;
+    e.tell = .01; e.thrustBox = { x: 306, y: FLOOR - 54, w: 184, h: 54 };
+    const hp = player.hp; game.enemyAttack(e); assert.equal(player.hp, hp);
+  }
+});
+
+test('spearman retreats when the hero is closer than 80', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 500, { type: 'spear' });
+  Object.assign(player, { x: 440, y: FLOOR }); e.cd = 5;
+  advance(game, .3); assert.ok(e.x > 500);
 });
