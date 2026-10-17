@@ -591,6 +591,37 @@ export function drawPortal(ctx, x = 0, y = FLOOR, time = 0, open = false) {
   ledge(ctx, -44, -1, 88, p); ctx.restore();
 }
 
+// Placeholder hazard art (code-drawn; the artist replaces it). Geometry is exactly the core hit area: x centre, y base, w x h.
+export function drawTrap(ctx, tr, time = 0) {
+  const x = Math.round(tr.x - tr.w / 2), y = FLOOR, w = tr.w, h = tr.h, off = tr.state === 'off';
+  ctx.save();
+  ctx.fillStyle = off ? '#2a2a33' : '#3a3036'; ctx.fillRect(x, y - 4, w, 4); // base plate, always visible
+  if (tr.state === 'warn') { // red glow growing over the hit area
+    ctx.globalAlpha = .15 + .35 * tr.progress * (.7 + .3 * Math.sin(time * 30)); ctx.fillStyle = '#e0484e'; ctx.fillRect(x, y - h, w, h);
+    ctx.globalAlpha = 1; ctx.strokeStyle = '#ff8a7a'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y - h + .5, w - 1, h - 1);
+  } else if (tr.state === 'active') {
+    ctx.fillStyle = tr.kind === 'pillar' ? '#a8283e' : tr.kind === 'gears' ? '#8a8f99' : '#cfd6e6';
+    if (tr.kind === 'spikes') for (let sx = x; sx < x + w - 5; sx += 12) { ctx.beginPath(); ctx.moveTo(sx, y - 4); ctx.lineTo(sx + 6, y - h); ctx.lineTo(sx + 12, y - 4); ctx.fill(); }
+    else if (tr.kind === 'gears') { ctx.fillRect(x, y - h, w, h); ctx.fillStyle = '#4a4e58'; for (let gx = x; gx < x + w; gx += 8) ctx.fillRect(gx + (Math.floor(time * 12) % 2) * 4, y - h, 4, h); }
+    else { ctx.fillRect(x, y - h, w, h); ctx.fillStyle = '#ff6a7a'; ctx.fillRect(x + w / 2 - 3, y - h, 6, h); }
+  } else if (!off) { ctx.fillStyle = '#6a5560'; ctx.fillRect(x + 4, y - 8, w - 8, 4); }
+  ctx.restore();
+}
+export function drawObstacle(ctx, o, time = 0) {
+  const x = Math.round(o.x - o.w / 2), y = o.y, hit = o.flash > 0;
+  ctx.save();
+  if (o.kind === 'altar') {
+    ctx.fillStyle = hit ? '#e8dcc8' : '#5a4650'; ctx.fillRect(x, y - o.h, o.w, o.h); ctx.fillStyle = '#7a5a66'; ctx.fillRect(x - 4, y - o.h, o.w + 8, 8);
+    ctx.fillStyle = '#c9627f'; ctx.globalAlpha = .6 + .3 * Math.sin(time * 4); ctx.fillRect(x + o.w / 2 - 5, y - o.h + 18, 10, 14); // blood glow
+  } else {
+    ctx.fillStyle = hit ? '#f0dcb4' : '#7a5a38'; ctx.fillRect(x, y - o.h, o.w, o.h);
+    ctx.fillStyle = '#4d3820'; for (const by of [10, 31, 52]) ctx.fillRect(x, y - o.h + by, o.w, 4);
+    ctx.fillStyle = '#a8814f'; ctx.fillRect(x + 4, y - o.h, 4, o.h); ctx.fillRect(x + o.w - 8, y - o.h, 4, o.h);
+  }
+  if (o.hp < o.maxHp) { ctx.globalAlpha = 1; ctx.fillStyle = '#13111b'; ctx.fillRect(x, y - o.h - 8, o.w, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(x + 1, y - o.h - 7, (o.w - 2) * o.hp / o.maxHp, 2); }
+  ctx.restore();
+}
+
 // Elemental status overlays: plain fillRects only (no shadows/gradients/allocations) so crowds stay cheap. `calm` = steady instead of flickering.
 export function drawStatus(ctx, e, time = 0, calm = false) {
   const burn = e.burn > 0, chill = e.chill > 0 || e.frozen > 0, frozen = e.frozen > 0, shock = e.shock > 0, bleed = e.bleed > 0;

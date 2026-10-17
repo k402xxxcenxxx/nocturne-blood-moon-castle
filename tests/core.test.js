@@ -8,7 +8,7 @@ function arena(seed = 42) {
   game.start();
   game.state = 'playing'; // skip the opening pick
   game.enemies = [];
-  game.platforms = [];
+  game.platforms = []; game.traps = []; game.obstacles = [];
   game.player.invulnerable = 0;
   return { game, player: game.player, events };
 }
@@ -1616,4 +1616,200 @@ test('the magic event reports the pull radius', () => {
   game.relics.push('vortex');
   game.magic();
   assert.equal(events.find(e => e.type === 'magic').radius, 245);
+});
+
+// ---- Stage hazards (#21) ----
+function trapAt(game, x, { t = 0, kind = 'spikes', period = 4, active = 1.5, w = 70 } = {}) {
+  return game.spawnTrap(kind, x, w, period, active, t, game.stage);
+}
+
+test('a trap warns for 0.7 s, then hurts only while active', () => {
+  const { game, player, events } = arena();
+  player.x = 600;
+  const trap = trapAt(game, 600, { t: 4 - 0.7 - 0.05 }); // 0.05 s before the warning starts
+  assert.equal(trap.state, 'idle');
+  advance(game, 0.1);
+  assert.equal(trap.state, 'warn');
+  assert.ok(trap.warn && trap.progress > 0 && trap.progress < 1);
+  assert.ok(events.some(e => e.type === 'trapWarn' && e.id === trap.id && e.w === 70));
+  assert.equal(player.hp, 100);
+  advance(game, 0.7); // warning over, trap active
+  assert.equal(trap.state, 'active');
+  assert.ok(events.some(e => e.type === 'trapActive'));
+  assert.ok(player.hp < 100);
+  assert.equal(events.filter(e => e.type === 'hurt').length, 1); // hurt invulnerability still applies
+  player.hp = 100; player.invulnerable = 0;
+  advance(game, 1.9); // idle again
+  assert.equal(trap.state, 'idle');
+  const hp = player.hp;
+  player.invulnerable = 0; advance(game, 0.2);
+  assert.equal(player.hp, hp);
+});
+
+test('trap damage scales with the stage and a jump clears spikes', () => {
+  const { game, player } = arena();
+  game.stage = 2;
+  const trap = trapAt(game, 600, { t: 0.1 });
+  assert.ok(Math.abs(trap.damage - 10 * 1.13 ** 2) < 1e-9);
+  player.x = 600; player.y = FLOOR - 60; player.vy = 0; // above the 34 px spikes
+  game.update(1 / 120);
+  assert.equal(player.hp, 100);
+});
+
+test('a dash passes through an active trap without damage or a perfect dodge', () => {
+  const { game, player, events } = arena();
+  trapAt(game, 600, { t: 0.1 });
+  player.x = 560; player.dir = 1;
+  game.update(1 / 120, { dash: true });
+  advance(game, 0.15, {});
+  assert.ok(player.x > 560);
+  assert.equal(player.hp, 100);
+  assert.equal(events.some(e => e.type === 'perfectDash'), false);
+  assert.equal(player.perfectUsed, false);
+});
+
+test('traps never hurt enemies', () => {
+  const { game } = arena();
+  trapAt(game, 600, { t: 0.1 });
+  const e = enemy(game, 600, { hp: 50 });
+  game.player.x = 100;
+  advance(game, 0.5);
+  assert.equal(e.hp, 50);
+});
+
+test('a barricade blocks the hero, can be stood on and breaks to sword hits', () => {
+  const { game, player, events } = arena();
+  const b = game.spawnObstacle('barricade', 600, 0);
+  assert.equal(b.hp, 38); assert.equal(b.w, 40); assert.equal(b.h, 62);
+  player.x = 500;
+  advance(game, 1, { right: true });
+  assert.ok(player.x < 600 - 20 - 14 + 0.01, 'hero stopped at the barricade');
+  game.update(1 / 120, { jump: true });
+  advance(game, 0.8, { right: true });
+  assert.ok(player.x > 600 - 20, 'hero got over by jumping');
+  // stand on top
+  player.x = 600; player.y = FLOOR - 120; player.vy = 0;
+  advance(game, 0.5);
+  assert.equal(player.y, FLOOR - 62);
+  assert.ok(player.grounded);
+  // sword break: two combo hits at damage 24 break 38 hp
+  player.x = 540; player.y = FLOOR; player.dir = 1; player.vy = 0;
+  game.hitSet = new Set();
+  game.attack(); advance(game, 0.4);
+  game.attack(); advance(game, 0.4);
+  assert.equal(game.obstacles.length, 0);
+  const brk = events.find(e => e.type === 'break');
+  assert.ok(brk && brk.kind === 'barricade' && brk.x === 600 && typeof brk.y === 'number');
+  assert.ok(events.some(e => e.type === 'obstacleHit'));
+  assert.equal(game.kills, 0); assert.equal(game.pickups.length, 0); // no drops
+});
+
+test('barricade health scales by stage', () => {
+  const { game } = arena();
+  assert.equal(game.spawnObstacle('barricade', 700, 3).hp, 38 + 36);
+});
+
+test('shots and Eclipse damage barricades; they take no statuses', () => {
+  const { game, player, events } = arena();
+  game.relics.push('fire', 'wave');
+  const b = game.spawnObstacle('barricade', 700, 0);
+  player.x = 500; player.dir = 1;
+  game.launchShot('beam', 1, 780, 0.5, 10);
+  advance(game, 0.4);
+  assert.ok(b.hp < b.maxHp);
+  assert.equal(b.burn, undefined);
+  player.x = 650; player.mp = 100;
+  const before = b.hp;
+  game.magic();
+  assert.ok(b.hp < before || game.obstacles.length === 0);
+  assert.ok(events.some(e => e.type === 'obstacleHit'));
+});
+
+test('a ground enemy is blocked by a barricade and vaults over it', () => {
+  const { game, player } = arena();
+  const b = game.spawnObstacle('barricade', 600, 0);
+  const e = enemy(game, 520, { hp: 500 });
+  player.x = 900; player.invulnerable = 99;
+  advance(game, 0.4);
+  assert.ok(e.x <= 600 - 20 - 13.5 + 0.01, 'blocked on the near side');
+  advance(game, 4);
+  assert.ok(e.x > 600 + 20, 'vaulted to the far side');
+  assert.equal(e.y, FLOOR);
+  assert.ok(b.hp === b.maxHp);
+});
+
+test('a boss charge stops at a barricade', () => {
+  const { game, player } = arena();
+  game.spawnObstacle('barricade', 1100, 0);
+  const boss = enemy(game, 1000, { type: 'boss', hp: 900 });
+  player.x = 1500; player.invulnerable = 99;
+  boss.dir = 1; game.bossStart(boss, 'charge');
+  advance(game, 1.6);
+  assert.ok(boss.x < 1100 - 20, 'boss did not pass the barricade');
+  assert.equal(boss.travel, 0);
+});
+
+test('obstacles are not enemies: the Moon Gate rule and enemy logic ignore them', () => {
+  const { game, player } = arena();
+  game.spawnObstacle('barricade', 700, 0);
+  game.spawnObstacle('altar', 800, 3);
+  const e = enemy(game, 300, { hp: 1 });
+  game.update(1 / 120);
+  assert.equal(game.portalOpen, false);
+  e.hp = 0; game.update(1 / 120);
+  assert.equal(game.portalOpen, true); // barricades left standing do not hold the gate shut
+  assert.equal(game.enemies.length, 1);
+  // vortex and auto-face only look at enemies
+  game.relics.push('vortex'); player.mp = 100; game.magic();
+  assert.ok(game.obstacles.every(o => o.x === 700 || o.x === 800));
+});
+
+test('breaking an altar permanently disables its linked pillars', () => {
+  const { game, events } = arena();
+  game.stage = 3;
+  const a = game.spawnObstacle('altar', 800, 3), other = game.spawnObstacle('altar', 1200, 3);
+  const p0 = trapAt(game, 500, { kind: 'pillar', t: 0.1 }), p1 = trapAt(game, 650, { kind: 'pillar' }), p2 = trapAt(game, 1000, { kind: 'pillar' });
+  a.traps.push(p0.id, p1.id); p0.altar = p1.altar = a.id;
+  other.traps.push(p2.id); p2.altar = other.id;
+  assert.equal(a.w, 46); assert.equal(a.h, 74); assert.equal(a.hp, 64);
+  game.damageObstacle(a, 64);
+  const brk = events.find(e => e.type === 'break');
+  assert.equal(brk.kind, 'altar'); assert.deepEqual(brk.traps, [p0.id, p1.id]);
+  assert.ok(p0.disabled && p1.disabled && !p2.disabled);
+  assert.equal(p0.state, 'off');
+  game.player.x = 500; advance(game, 5);
+  assert.equal(game.player.hp, 100); // the disabled pillar never fires again
+  assert.equal(p0.state, 'off');
+});
+
+test('hazard placement obeys the spacing rules over many seeds and skips stages 1 and 4', () => {
+  for (let seed = 1; seed <= 150; seed++) {
+    const game = new Game(() => {}, seed);
+    for (let stage = 0; stage < 5; stage++) {
+      game.loadStage(stage);
+      const all = [...game.traps, ...game.obstacles];
+      if (stage === 4) { assert.equal(all.length, 0); continue; }
+      const expectTraps = { 0: 'spikes', 2: 'gears', 3: 'pillar' }[stage];
+      if (expectTraps) { assert.ok(game.traps.length >= 2 && game.traps.length <= 3, `traps seed ${seed} stage ${stage}`); assert.ok(game.traps.every(t => t.kind === expectTraps)); }
+      else assert.equal(game.traps.length, 0);
+      const barricades = game.obstacles.filter(o => o.kind === 'barricade').length;
+      assert.ok(barricades >= 1 && barricades <= 2);
+      const altars = game.obstacles.filter(o => o.kind === 'altar');
+      assert.equal(altars.length > 0, stage === 3);
+      for (const a of altars) assert.ok(a.traps.length >= 1 && a.traps.length <= 2);
+      for (const t of game.traps) { assert.ok(t.w >= 60 && t.w <= 90 && t.period >= 3.4 && t.period <= 4.5 && t.active >= 1.1 && t.active <= 2.15); assert.ok(t.period - t.active >= 0.7); }
+      for (const [i, a] of all.entries()) {
+        assert.ok(a.x - a.w / 2 >= 400 && a.x + a.w / 2 <= game.portalX - 250, 'clear of spawn and gate');
+        for (const b of all.slice(i + 1)) assert.ok(Math.abs(a.x - b.x) >= (a.w + b.w) / 2, 'no overlap');
+      }
+    }
+  }
+});
+
+test('rollChoices honours a pool and BUILD_POOL ids are real relics', () => {
+  const { game } = arena();
+  game.rollChoices('stage', ['wave', 'fire']);
+  assert.equal(game.choices.length, 2);
+  assert.notEqual(game.choices[0].id, game.choices[1].id);
+  assert.ok(BUILD_POOL.every(id => RELICS.some(r => r.id === id)));
 });

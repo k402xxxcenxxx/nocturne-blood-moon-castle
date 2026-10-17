@@ -65,6 +65,14 @@ Wind-up limit: an enemy may start a warning only if fewer than N other living en
 
 Kills have a 25% chance to drop a heal that restores 14 HP.
 
+## Stage hazards
+
+Hazards are placed after enemies on the floor of stages I to IV (never the boss stage), at least 250 from the hero spawn (x 150) and the Moon Gate, never overlapping (30 px minimum gap), preferably between enemy spawns. They are not enemies: the Moon Gate ignores them, and they are excluded from wind-up limiting, auto-face, Vortex and Chain Lightning. All reset on stage load. They drop no HP or MP.
+
+- **Traps** (`game.traps`): Forsaken Gate spikes (h 34), Timeless Belfry gears (h 44), Crimson Cathedral blood pillars (h 96); none on the Archive. 2 to 3 per themed stage, width 60 to 90, period 3.4 to 4.5 s, active 1.1 to 2.15 s, seeded random start phase. Cycle: active for the first `active` seconds, idle, then a 0.7 s warning (`warn`, `progress` 0 to 1) before activating again. Contact while active hurts for 10 × 1.13^stage (armor applies; normal 0.8 s hurt invulnerability). Dash invulnerability ignores it and it is never a perfect dodge. They hurt only the hero. Hit area is exactly `x ± w/2`, `y - h` to `y`.
+- **Barricades** (stages I to IV, 1 to 2 each): 40 × 62, health 38 + 12 × stage. Solid on the sides and stand-on-able; the single jump (apex ~107) clears them. Ground enemies that are blocked hop over (vault); bats ignore them; boss charges stop at them. Sword hits, player shots, plunge shockwaves and Eclipse damage them (no crits, statuses, poise, drops or MP gain).
+- **Altars** (Crimson Cathedral only, 1 to 2): 46 × 74, health 64, solid and breakable like barricades. Each blood pillar is linked to one altar (each altar has 1 to 2 pillars); breaking an altar permanently disables its pillars for that stage.
+
 ## Relics
 
 | id | Name | Effect |

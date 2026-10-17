@@ -2254,14 +2254,14 @@ b[data-i18n] {
   }
 }
 @media(max-height:480px) and (orientation:landscape) {
-  .modal-panel:has(.relic-choices) {
+  .modal-panel[data-kind="upgrade"] {
     max-width:740px;
   }
-  .modal-panel:has(.relic-choices) h2 {
+  .modal-panel[data-kind="upgrade"] h2 {
     margin:4px 0;
     font-size:22px;
   }
-  .modal-panel:has(.relic-choices)>p {
+  .modal-panel[data-kind="upgrade"]>p {
     margin:2px 0;
   }
   .relic-choices {

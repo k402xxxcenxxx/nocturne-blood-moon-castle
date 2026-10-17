@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawStatus, drawPortal } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawStatus, drawPortal, drawTrap, drawObstacle } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
@@ -175,6 +175,9 @@ function handleEvent(e) {
       else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
       break;
     }
+    case 'obstacleHit': audio.play('hit', .5); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
+    case 'break': audio.play('kill', .7); rumble(4, .14); burst(e.x, e.y, e.kind === 'altar' ? '#c9627f' : '#a8814f', 22, 200); burst(e.x, e.y, '#6b5236', 10, 140, 0, 3); break;
+    case 'trapActive': burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break; // placeholder: audio and art hook here
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
@@ -186,7 +189,7 @@ function handleEvent(e) {
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent); resetHud(); particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
@@ -195,7 +198,7 @@ function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen
 function openModal(html, kind, pause = true) {
   if ($('modal').hidden) previousFocus = document.activeElement;
   if (pause && game.state === 'playing') { returnState = 'playing'; game.state = 'paused'; audio.suspend(); }
-  clearInput(); modalKind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false; syncGear();
+  clearInput(); modalKind = kind; $('modal-panel').dataset.kind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false; syncGear();
   requestAnimationFrame(() => $('modal-panel').querySelector('button')?.focus({ preventScroll: true }));
 }
 function closeModal(resume = true) {
@@ -243,14 +246,18 @@ function duration(seconds) { return `${Math.floor(seconds / 60).toString().padSt
 function openResult(win) {
   openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${t(win ? 'result.winText' : 'result.loseText')}</p><div class="result-stats"><div><strong>${roman[game.stage]} / V</strong><span>${t('result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
-function showTitle() {
-  closeModal(false); game = new Game(handleEvent); camera = 0;
-  $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
-  $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
+// Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
+function resetHud() {
+  camera = 0; $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
   $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = 'I — V';
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
   [...$('journey-stages').children].forEach((e,i) => e.className = i === 0 ? 'active' : '');
-  particles = []; effects = []; trails = []; numbers = []; hitCount = 0; comboTime = 0;
+  hitCount = 0; comboTime = 0; updateHud();
+}
+function showTitle() {
+  closeModal(false); game = new Game(handleEvent); resetHud();
+  $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
+  particles = []; effects = []; trails = []; numbers = [];
   audio.suspend(); audio.setIntensity(1);
 }
 
@@ -294,6 +301,7 @@ document.querySelectorAll('[data-control]').forEach(button => {
 });
 window.addEventListener('keydown', e => {
   if (!$('modal').hidden) {
+    if (e.repeat && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); return; } // a held Enter must not activate the focused modal button
     if (e.code === 'Escape' && !['upgrade', 'dead', 'won'].includes(modalKind)) { e.preventDefault(); closeModal(); }
     if (e.code === 'Tab') {
       const buttons = [...$('modal-panel').querySelectorAll('button')];
@@ -469,6 +477,8 @@ function render(dt) {
     }
     for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
+    for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
+    for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
@@ -528,6 +538,6 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
-// Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
 syncGear();
+// Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
 if (new URLSearchParams(location.search).has('test')) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput };
