@@ -320,6 +320,7 @@ export function drawHero(ctx, p = {}, time = 0) {
   if (p.invulnerable > 0 && Math.floor(time * 18) % 3 === 0) ctx.globalAlpha = .64;
   const bob = moving && p.grounded !== false ? Math.round(Math.cos(phase * 2)) : 0;
   ctx.translate(0, bob);
+  if (p.move === 'thrust' && p.attack > 0) { ctx.translate(5, 0); ctx.transform(1, 0, -.16, 1, 0, 0); } // lunge lean: head leads, feet planted
   // Cape silhouette, burgundy lining, and its moving torn hem.
   const wind = p.dash > 0 ? 14 : moving ? 7 : 2, wave = Math.round(Math.sin(time * 5) * 2);
   poly(ctx, '#0c101c', [[-6, -49], [-16, -46], [-21 - wind, -18 + wave], [-27 - wind, -7], [-14, -11], [-10, -7], [-4, -17], [7, -47]]);
