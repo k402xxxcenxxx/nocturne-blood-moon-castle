@@ -95,7 +95,7 @@ export class Game {
     if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
     if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0 && !p.plunge) this.attack();
     if (input.attack) this.attack();
-    if (p.plunge === 1 && (p.plungeT -= dt) <= 0) { p.plunge = 2; p.plungeY = p.y; }
+    if (p.plunge === 1 && (p.plungeT -= dt) <= 0) p.plunge = 2;
     if (p.plunge === 1) p.vy = 0; // hang for the wind-up
     if (p.plunge === 2) p.vy = Math.max(p.vy, 800);
     if (p.plunge === 3 && (p.plungeT -= dt) <= 0) { p.plunge = 0; p.move = ''; }
@@ -154,7 +154,7 @@ export class Game {
     if (p.attackCd > 0 || p.dash > 0 || p.plunge) { p.buffer = .16; return; }
     p.buffer = 0;
     if (!p.grounded) { // air attack wins over a thrust; it neither advances nor resets the combo
-      Object.assign(p, { plunge: 1, plungeT: .07, move: 'plunge', attack: 0, thrustWindow: 0 });
+      Object.assign(p, { plunge: 1, plungeT: .07, plungeY: p.y, move: 'plunge', attack: 0, thrustWindow: 0 });
       this.hitSet = new Set();
       this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge' });
       return;

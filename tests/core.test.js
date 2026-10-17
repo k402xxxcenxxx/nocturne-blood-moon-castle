@@ -982,3 +982,14 @@ test('plunge: a drop under 40 px still hits on the way down but emits radius 0 a
   assert.equal(events.find(x => x.type === 'plunge').radius, 0);
   assert.equal(player.plunge, 0);
 });
+
+// QA (#10 rework): the short-drop cutoff is 40 px; a plunge from exactly 40 px must still shockwave.
+test('plunge QA: a plunge from 40 px up still makes a shockwave (the threshold is inclusive)', () => {
+  const { game, player, events } = arena();
+  const near = enemy(game, 430);
+  airborne(game, FLOOR - 40);
+  game.attack();
+  advance(game, 1);
+  assert.ok(events.find(e => e.type === 'plunge').radius > 0, 'radius is 90 at exactly 40 px');
+  assert.ok(near.hp < near.maxHp, 'enemy 30 px away takes the shockwave');
+});
