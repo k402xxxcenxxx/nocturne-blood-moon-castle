@@ -50,6 +50,8 @@ Shield bearer guard: sword hits from the side it faces deal ×0.15 damage (minim
 
 Shield bearer facing: it keeps its facing locked for the whole 0.55 s bash warning, and the bash only hits the side it faces, so dashing through during the wind-up makes it whiff and leaves its back open. Outside the warning and the 0.6 s post-bash turn delay, when the player crosses to its back it waits 0.25 s (re-face delay, standing still) before turning around; jumping over it therefore always buys a short opening. The re-face delay does not stack with or extend the post-bash turn delay; when that delay ends it faces the player immediately.
 
+Wind-up limit: an enemy may start a warning only if fewer than N other living enemies within 620 of the hero are already winding up, with N = 2 in stages 1 to 3 and N = 3 in stages 4 and 5 (the boss counts and obeys it). A refused enemy keeps moving and retries next frame without spending its cooldown. Enemies farther than 560 from the hero (boss: 620) never start a warning.
+
 Kills have a 25% chance to drop a heal that restores 14 HP.
 
 ## Relics
