@@ -66,7 +66,7 @@ function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   }
   if (particles.length > 300) particles.splice(0, particles.length - 300);
 }
-function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, color }); }
+function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, size: e.size, color }); }
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
 function recordResult(win) { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
@@ -105,7 +105,7 @@ function handleEvent(e) {
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
     case 'jump': audio.play('jump', e.double ? .65 : .45); burst(e.x, e.y - 4, e.double ? '#b8adcf' : '#9a8c77', e.double ? 15 : 7, 75); break;
-    case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, amount: t('float.perfect') }, '#e8ecf8'); break;
+    case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, y: e.y - 20, size: 23, amount: t('float.perfect') }, '#e8ecf8'); break;
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
@@ -320,7 +320,7 @@ function drawEffects(dt) {
   ctx.globalAlpha = 1; particles = particles.filter(p => p.life > 0);
   for (const number of numbers) {
     number.y -= dt * 37; number.life -= dt; ctx.globalAlpha = Math.min(1, number.life * 3);
-    ctx.font = `bold ${number.crit ? 23 : 16}px Georgia`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#13101b'; ctx.strokeText(number.text, number.x, number.y); ctx.fillStyle = number.color; ctx.fillText(number.text, number.x, number.y);
+    ctx.font = `bold ${number.size || (number.crit ? 23 : 16)}px Georgia`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#13101b'; ctx.strokeText(number.text, number.x, number.y); ctx.fillStyle = number.color; ctx.fillText(number.text, number.x, number.y);
     if (number.crit) { ctx.font = '7px sans-serif'; ctx.fillText('CRITICAL', number.x, number.y - 22); }
   }
   ctx.globalAlpha = 1; numbers = numbers.filter(n => n.life > 0);
