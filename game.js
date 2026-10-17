@@ -120,7 +120,11 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
-    case 'stagger': audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); break;
+    case 'stagger':
+      audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); rumble(e.boss ? 7 : 5, .18);
+      burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
+      effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
+      break;
     case 'enemySwing': if (e.kind === 'spear') audio.play('thrust'); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
@@ -339,7 +343,15 @@ function render(dt) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
       }
-      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15))); }
+      if (e.maxPoise && e.poise < e.maxPoise && (e.type === 'knight' || e.type === 'shield' || e.type === 'boss')) {
+        const bw = e.type === 'boss' ? 56 : 30, by = Math.round(e.y + 5);
+        ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - bw / 2), by, bw, 3); ctx.fillStyle = e.punishable ? '#ffd36e' : '#c9a85a'; ctx.fillRect(Math.round(e.x - bw / 2 + 1), by + 1, Math.max(0, Math.round((bw - 2) * e.poise / e.maxPoise)), 1);
+      }
+      if (e.stun > .45 && e.hp > 0) { // stagger stun (flinches are <= .42 s): ring of gold stars over the head
+        const ry = Math.round(e.y - e.h - 6), rw = e.type === 'boss' ? 26 : 16; ctx.fillStyle = '#ffd36e';
+        for (let i = 0; i < 4; i++) { const a = worldTime * 6 + i * Math.PI / 2; ctx.fillRect(Math.round(e.x + Math.cos(a) * rw) - 2, Math.round(ry + Math.sin(a) * 4) - 2, 4, 4); }
+      }
+      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15))); }
     }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
     if (p.attack > 0) drawSlash(p.x, p.y - 33, p.dir, 1 - p.attack / .24, p.combo === 3);
