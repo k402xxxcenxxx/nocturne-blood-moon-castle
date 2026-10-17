@@ -1,4 +1,5 @@
 export const FLOOR = 438;
+const VOLLEY_RANGE = 420; // drawn line length; the bolt tip (r 9) stops at its end
 // Display text for stages and relics lives in i18n.js, keyed by stage index and relic id.
 export const STAGES = [
   { count: 7, width: 2260 },
@@ -69,7 +70,7 @@ export class Game {
     if (index === 4) {
       this.spawnEnemy('boss', spec.width - 400, index);
       // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes (rand above is still drawn, keeping the seed stream).
-      this.platforms = [{ x: 60, y: FLOOR - 100, w: 190, h: 18 }, { x: spec.width - 250, y: FLOOR - 100, w: 190, h: 18 }];
+      this.platforms = [{ x: 60, y: FLOOR - 110, w: 190, h: 18 }, { x: spec.width - 250, y: FLOOR - 110, w: 190, h: 18 }];
     }
     this.totalEnemies = this.enemies.length;
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
@@ -77,7 +78,7 @@ export class Game {
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
-    const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
+    const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null });
   }
   update(dt, input = {}) {
@@ -374,10 +375,10 @@ export class Game {
       warn.box = { x: Math.min(e.x, e.chargeTo) - e.w / 2, y: e.y - e.h, w: Math.abs(e.chargeTo - e.x) + e.w, h: e.h };
     } else if (move === 'volley') {
       e.tell = .92; warn.base = Math.atan2(p.y - 30 - o.y, p.x - o.x);
-      warn.lines = [-.5, -.25, 0, .25, .5].map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(warn.base + a) * 420, y2: o.y + Math.sin(warn.base + a) * 420, angle: warn.base + a }));
+      warn.lines = [-.5, -.25, 0, .25, .5].map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(warn.base + a) * VOLLEY_RANGE, y2: o.y + Math.sin(warn.base + a) * VOLLEY_RANGE, angle: warn.base + a }));
     } else {
       e.tell = 1.28; e.punishable = true;
-      warn.circles = [-174, 0, 174].map(dx => ({ x: p.x + dx, y: e.y, r: 56 }));
+      warn.circles = [-200, 0, 200].map(dx => ({ x: p.x + dx, y: e.y, r: 56 }));
     }
     e.warn = warn;
   }
@@ -402,7 +403,7 @@ export class Game {
       if (w.wave) this.projectiles.push({ x: w.wave.x1, y: w.wave.y1, vx: e.dir * 240, vy: 0, r: 14, life: 3, damage: dmg * .7, ground: true });
       e.cd = e.recover = 1;
     } else if (move === 'volley') {
-      for (const l of w.lines) this.projectiles.push({ x: l.x1, y: l.y1, vx: Math.cos(l.angle) * 265, vy: Math.sin(l.angle) * 265, r: 9, life: 4, damage: dmg });
+      for (const l of w.lines) this.projectiles.push({ x: l.x1, y: l.y1, vx: Math.cos(l.angle) * 265, vy: Math.sin(l.angle) * 265, r: 9, life: (VOLLEY_RANGE - 9) / 265, damage: dmg });
       e.cd = 1.4;
     } else {
       // circles are ground-centred discs: a grounded hero inside one is hit, a gap or a high jump is safe

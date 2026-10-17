@@ -40,7 +40,7 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 ## Enemies
 
-Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×stage. The boss is fixed at 640 HP and 22 damage.
+Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×stage. The boss is fixed at 900 HP and 22 damage.
 
 | Type | Base health | Speed | Behavior | Warning time |
 | --- | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×
 | Spearman `spear` | 53 | 77 | Keeps 80-145 from the hero (walks in beyond 145, backs off at ×0.8 speed inside 80). Thrusts when within 193 horizontally and 64 vertically: hit box from 10 to 194 in front, 54 tall up from the feet (`thrustBox`, set at warning start); facing locked during the warning; 0.72 s standing recovery after the thrust; normal flinch; the hit test uses the hero's full width, so the real safe distance is about 208 px centre-to-centre (the other melee enemies use a centre-distance check and ignore the hero's width; only the spear thrust uses the hero's full width); replaces ~28% of knights from stage 2 | 0.64 s |
 | Blood priest `priest` | 54 | 67 | Keeps 185-335 from the hero (walks in beyond 335, backs off inside 185). If another living non-boss enemy is within 250 and its 7 s bless cooldown is ready: 0.9 s `bless` warning (`blessRadius` = 250 while up), then every living non-boss ally within 250 gets `blessed` = 5 s (damage ×1.25, speed ×1.15). Otherwise fires one mage-style bolt. Any hit on the priest cancels a bless in progress and sets its bless cooldown to 2.5 s; replaces ~30% of mage rolls from stage 3 | 0.9 s |
 | Mage `mage` | 43 | 72 (×0.6 while moving) | Keeps its distance and fires projectiles; appears from stage 3 | 0.65 s |
-| The Fallen King `boss` | 640 | 75 | Three phases, see "The Fallen King" below | see below |
+| The Fallen King `boss` | 900 | 75 | Three phases, see "The Fallen King" below | see below |
 
 Poise and stagger: every enemy has `poise` / `maxPoise` (skeleton 40, bat 22, mage 34, shield bearer 60, knight 110, spearman 48, priest 42, boss 120). Poise damage: combo hits 1-2 = 17, hit 3 = 62, dash thrust = 35, Eclipse = 55, plunge = 45. Poise never regenerates; at 0 the enemy staggers: stunned 1.0 s (boss 0.85 s), its warning and any attack in progress are cancelled (a cancelled bless sets the 2.5 s bless cooldown), poise refills to max, and `stagger` is emitted. A staggered shield bearer has its guard down for the stun. Hits never shorten an existing stun. For 1.2 s (boss 0.6 s) after a stagger stun ends (`armor` field, counts down from stun + 1.2 s; the boss gets 0.6 s instead) the enemy takes damage but no poise damage, and hits do not cancel its warning, stun it or knock it back. Knights and the boss are not interrupted by light hits during a warning unless the hit breaks poise (other enemies flinch as before; the boss still takes its 0.08 s hit stun); a knight that keeps its warning takes 40% of the normal knockback. Eclipse always cancels a non-boss warning with the usual flinch, overriding both the knight rule and post-stagger armor. During the boss slam and ritual warnings `punishable` is true and poise damage is ×2. Blocked shield bearer hits deal 25% poise damage (a frontal combo is about 24 of its 60, so a purely frontal approach needs roughly three combos; Eclipse or hits from behind break it much faster). The boss refills poise on every phase change.
 
@@ -86,7 +86,7 @@ After each proposal is playtested, add one line here: `#<issue> <name> — keep 
 
 ## The Fallen King (stage 5 boss)
 
-640 HP, 22 damage, poise 120, speed 75 (no speed-up in later phases). Phase by health: 1 above 67%, 2 at 67% or below, 3 at 34% or below. Entering a phase cancels the current move and warning, refills poise, starts a 1.1 s pause (`pause`: no attacks, still hittable) and emits `bossPhase` {phase, x, y}.
+900 HP, 22 damage, poise 120, speed 75 (no speed-up in later phases). Phase by health: 1 above 67%, 2 at 67% or below, 3 at 34% or below. Entering a phase cancels the current move and warning, refills poise, starts a 1.1 s pause (`pause`: no attacks, still hittable) and emits `bossPhase` {phase, x, y}.
 
 Every warning stores its exact hit area in `e.warn` (`kind` plus the fields below); the attack hits exactly that area. The boss faces a fixed direction from the warning start until the move ends. `e.move` is the active move. The same move is never chosen twice in a row, and every warning respects `canWindUp`.
 
@@ -95,7 +95,7 @@ Every warning stores its exact hit area in `e.warn` (`kind` plus the fields belo
 | `slash` | hero within 145 | 0.62 s (follow-up 0.46 s) | `box` 146 wide in front, boss height | ×1 |
 | `slam` | hero within 145 | 0.88 s, `punishable` (poise ×2), recovery 1.0 s standing still | `box` 112 × 123 in front; phase 2+ adds `wave` (floor line, 760 long) and spawns a ground projectile (`ground: true`, speed 240, jump it; dash passes it) at ×0.7 | ×1.3 |
 | `charge` | hero farther than 145 | 0.82 s, then travels 305 in 0.48 s | `line` to the end point and `box` (swept body); contact hurts once | ×1.1 |
-| `volley` | phase 2+, hero farther than 170 | 0.92 s | `lines` (five aim lines, `angle` each, spread -0.5..0.5 rad) then five bolts at speed 265 toward the hero position at warning start; Eclipse clears them | ×1 |
-| `ritual` | phase 3, every third action | 1.28 s, `punishable` (poise ×2) | `circles` three discs r 56 on the floor at hero x at warning start -174, 0, +174 (62-wide safe gaps); they do not follow the hero | ×1.35 |
+| `volley` | phase 2+, hero farther than 170 | 0.92 s | `lines` (five aim lines, `angle` each, spread -0.5..0.5 rad) then five bolts at speed 265 toward the hero position at warning start, each travelling only the drawn line length (420 px, shared constant `VOLLEY_RANGE`); Eclipse clears them | ×1 |
+| `ritual` | phase 3, every third action | 1.28 s, `punishable` (poise ×2) | `circles` three discs r 56 on the floor at hero x at warning start -200, 0, +200 (88-wide safe gaps); they do not follow the hero | ×1.35 |
 
-Phase 2+: every second `charge` is followed by a quick `slash` if the hero is within 190. Stage 5 has two raised ledges near the arena edges (x 60 and width-250, 190 wide) as escape routes; the centre is flat.
+Phase 2+: every second `charge` is followed by a quick `slash` if the hero is within 190. Stage 5 has two raised ledges near the arena edges (x 60 and width-250, 190 wide, 110 px above the floor) as escape routes; the centre is flat. A single jump rises about 107 px and cannot reach a ledge; a double jump can. Slam and charge on the floor are answered by a dash or a double jump. A hero on a ledge is outside slash (102 px tall), charge, ritual circles and the slam ground wave, but not the slam box (123 px tall).

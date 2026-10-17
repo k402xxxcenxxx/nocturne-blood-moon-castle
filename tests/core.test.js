@@ -990,7 +990,7 @@ test('plunge QA: a plunge from 40 px up still makes a shockwave (the threshold i
 // Fallen King (#18)
 function boss(x = 500, heroX = 700) {
   const t = arena();
-  const b = enemy(t.game, x, { type: 'boss', hp: 640 });
+  const b = enemy(t.game, x, { type: 'boss', hp: 900 });
   Object.assign(t.player, { x: heroX, hp: 1e4, maxHp: 1e4 });
   b.cd = 99; b.dir = Math.sign(heroX - x) || 1;
   return { ...t, b };
@@ -1008,7 +1008,7 @@ test('boss phases switch at 67% and 34% health with a 1.1 s pause and a poise re
   game.bossStart(b, 'slam'); b.poise = 10;
   game.damageEnemy(b, 100, 1, false, false, false, 0);
   assert.equal(b.bossPhase, 1);
-  game.damageEnemy(b, 112, 1, false, false, false, 0); // 428/640 = 66.9%
+  game.damageEnemy(b, 200, 1, false, false, false, 0); // 600/900 = 66.7%
   assert.equal(b.bossPhase, 2);
   assert.equal(events.filter(e => e.type === 'bossPhase').at(-1).phase, 2);
   assert.ok('x' in events.at(-1) || events.some(e => e.type === 'bossPhase' && 'y' in e));
@@ -1018,7 +1018,7 @@ test('boss phases switch at 67% and 34% health with a 1.1 s pause and a poise re
   assert.equal(game.player.hp, hp);
   advance(game, .3);
   assert.ok(b.tell > 0 || b.travel > 0 || game.player.hp < hp);
-  game.damageEnemy(b, 211, 1, false, false, false, 0);
+  game.damageEnemy(b, 300, 1, false, false, false, 0);
   assert.equal(b.bossPhase, 3);
   assert.ok(b.pause > 1);
 });
@@ -1108,14 +1108,28 @@ test('boss volley fires five aimed bolts, ritual circles leave safe gaps and do 
   const r = boss(500, 600);
   r.game.bossStart(r.b, 'ritual');
   const cs = r.b.warn.circles;
-  assert.deepEqual(cs.map(c => c.x), [426, 600, 774]);
+  assert.deepEqual(cs.map(c => c.x), [400, 600, 800]);
   assert.equal(r.b.punishable, true);
-  r.player.x = 687; // centre of the gap
+  r.player.x = 700; // centre of the gap
   advance(r.game, 1.5);
   assert.equal(r.player.hp, 1e4);
 
   const r2 = boss(500, 600);
   assert.equal(fires(r2.game, r2.player, r2.b, 'ritual'), Math.round(22 * 1.35));
+});
+
+// QA #18: the drawn volley lines end at 420 px, but the bolts live 4 s at speed 265, so a hero standing past 420 px is hit where nothing is drawn.
+test('boss volley bolts hit only inside their warned lines (420 px)', () => {
+  const near = boss(500, 800);
+  near.b.bossPhase = 2;
+  assert.ok(fires(near.game, near.player, near.b, 'volley', 3) > 0, 'a hero 300 px away is inside the lines');
+  const far = boss(500, 940); // 440 px from the boss origin, beyond the drawn 420 px lines
+  far.b.bossPhase = 2;
+  far.game.bossStart(far.b, 'volley');
+  while (far.b.tell > 0) far.game.update(1 / 120);
+  far.b.cd = 99;
+  advance(far.game, 3);
+  assert.equal(far.player.hp, 1e4);
 });
 
 test('boss armor lasts 0.6 s after a stagger stun while other enemies keep 1.2 s', () => {
@@ -1132,4 +1146,38 @@ test('the boss stage has two edge ledges and a flat centre', () => {
   assert.equal(game.platforms.length, 2);
   const [l, r] = game.platforms;
   assert.ok(l.x + l.w < 400 && r.x > game.worldWidth - 400 && l.y < FLOOR && r.y < FLOOR);
+});
+
+test('boss ledges need a double jump, and a hero on one is outside slash, charge, ritual and wave but not slam', () => {
+  const stage = new Game(() => {}, 7); stage.loadStage(4);
+  const ledge = stage.platforms[0];
+  assert.ok(ledge.y === FLOOR - 110);
+  const climb = n => {
+    const g = new Game(() => {}, 7); g.start(); g.loadStage(4);
+    Object.assign(g.player, { x: 150, y: FLOOR, vy: 0, grounded: true, jumps: 0 });
+    g.jump();
+    let top = FLOOR;
+    for (let i = 0; i < 360; i++) {
+      if (n === 2 && g.player.vy > 0 && g.player.jumps === 1) g.jump();
+      g.update(1 / 120); top = Math.min(top, g.player.y);
+    }
+    return g.player.y;
+  };
+  assert.equal(climb(1), FLOOR, 'one jump falls back to the floor');
+  assert.equal(climb(2), ledge.y, 'a double jump lands on the ledge');
+  const hit = (move, phase = 1, far = 0) => {
+    const t = boss(500, 150); t.game.platforms = [ledge];
+    Object.assign(t.player, { y: ledge.y, grounded: true }); t.b.bossPhase = phase; t.b.x = 150 + 100 + far; t.b.dir = -1;
+    t.game.bossStart(t.b, move);
+    for (let i = 0; i < 400; i++) { t.player.y = ledge.y; t.player.vy = 0; t.b.cd = 99; t.game.update(1 / 120); }
+    return t.player.hp < 1e4;
+  };
+  assert.equal(hit('slash'), false);
+  assert.equal(hit('ritual', 3), false);
+  assert.equal(hit('slam', 2, 450), false, 'the ground wave passes under a ledge');
+  assert.equal(hit('slam', 2), true, 'slam box (123 px) still reaches a ledge');
+  const c = boss(500, 150); c.game.platforms = [ledge]; c.b.x = 300; c.b.dir = -1; Object.assign(c.player, { y: ledge.y });
+  c.game.bossStart(c.b, 'charge');
+  for (let i = 0; i < 300; i++) { c.player.y = ledge.y; c.player.vy = 0; c.game.update(1 / 120); }
+  assert.equal(c.player.hp, 1e4);
 });

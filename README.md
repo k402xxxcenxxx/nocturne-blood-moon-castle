@@ -9,7 +9,7 @@ The interface is available in English and Traditional Chinese (繁體中文). Th
 - Five stages per run: The Forsaken Gate → The Forbidden Archive → The Timeless Belfry → The Crimson Cathedral → The Bloodmoon Throne.
 - Each run randomizes enemy placement, platforms and relic offers; 10 stackable relics, offered three at a time. Dying resets the run.
 - Three-hit combo, double jump, invulnerable dash and the Eclipse area spell; skeletons, bats, armored knights, shield bearers and spearmen (from stage two), mages, blood priests (who bless nearby enemies) and the Fallen King, a three-phase final boss with slashes, slams with ground waves, charges, bolt volleys and a blood-moon ritual. Heavy third combo hits and Eclipse wear down an enemy's poise; break it ("BREAK") to stun the enemy and cancel its attack.
-- Enemy stats and attack rate rise each stage; the last stage holds the Fallen King, with a half-health speed-up, a three-way barrage and a heavy cleave.
+- Enemy stats and attack rate rise each stage; the last stage holds the Fallen King, a three-phase fight with slashes, slams (ground waves from phase two), charges, five-bolt volleys and a blood-moon ritual; the raised ledges at the arena edges (double jump) escape most of it, but not the slam.
 - Hit-stop, hit flashes, knockback, sword trails, particles, critical numbers, screen shake, layered synthesized sound effects and an original dark score.
 - Original pixel art drawn in code. The style direction is in the original concept art in `docs/references/` (gothic castle, moonlit night, library, clock tower); the concept art is not deployed.
 - Multi-touch controls, adaptive widescreen view and fullscreen; keyboard controls; auto-pause when the window loses focus.
