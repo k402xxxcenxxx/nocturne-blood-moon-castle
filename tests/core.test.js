@@ -944,3 +944,41 @@ test('bat attack reaches 55 px', () => {
   game.updateEnemy(b, 1 / 120);
   assert.ok(player.hp < player.maxHp);
 });
+
+// QA (#10): input pressed during a long fall (about 300 px, reachable from a platform with a double jump) must not vanish.
+test('plunge QA: a dash tapped during a long fall (300 px) is buffered and fires on landing', () => {
+  const { game, player, events } = arena();
+  airborne(game, FLOOR - 300);
+  game.attack();
+  advance(game, .2, { dash: true }); // game.js holds an impulse tap for 200 ms
+  let guard = 0;
+  while (player.plunge && guard++ < 600) advance(game, 1 / 120);
+  advance(game, .2);
+  assert.equal(player.plunge, 0);
+  assert.equal(events.filter(e => e.type === 'dash').length, 1, 'dash pressed mid-fall fires after landing');
+});
+
+test('plunge QA: an attack tapped during a long fall (300 px) is buffered and fires on landing', () => {
+  const { game, events } = arena();
+  airborne(game, FLOOR - 300);
+  game.attack();
+  advance(game, .08, { attack: true }); // a short tap, still held in game.js for a few frames
+  let guard = 0;
+  while (game.player.plunge && guard++ < 600) advance(game, 1 / 120);
+  advance(game, .2);
+  assert.ok(events.some(e => e.type === 'swing' && e.move === 'combo'), 'attack pressed mid-fall swings after landing');
+});
+
+test('plunge: a drop under 40 px still hits on the way down but emits radius 0 and no shockwave', () => {
+  const { game, player, events } = arena();
+  player.crit = 0;
+  const under = enemy(game, 400);
+  const side = enemy(game, 400 + 80);
+  airborne(game, FLOOR - 20);
+  game.attack();
+  advance(game, 1);
+  assert.equal(under.maxHp - under.hp, Math.round(player.damage * 1.25), 'fall hit still lands');
+  assert.equal(side.hp, side.maxHp, 'no shockwave');
+  assert.equal(events.find(x => x.type === 'plunge').radius, 0);
+  assert.equal(player.plunge, 0);
+});

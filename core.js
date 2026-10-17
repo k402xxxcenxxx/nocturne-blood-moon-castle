@@ -83,7 +83,7 @@ export class Game {
     this.elapsed += dt;
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
-    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) p[key] = Math.max(0, p[key] - dt);
+    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction && p.dash <= 0) p.dir = direction;
@@ -95,7 +95,7 @@ export class Game {
     if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
     if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0 && !p.plunge) this.attack();
     if (input.attack) this.attack();
-    if (p.plunge === 1 && (p.plungeT -= dt) <= 0) p.plunge = 2;
+    if (p.plunge === 1 && (p.plungeT -= dt) <= 0) { p.plunge = 2; p.plungeY = p.y; }
     if (p.plunge === 1) p.vy = 0; // hang for the wind-up
     if (p.plunge === 2) p.vy = Math.max(p.vy, 800);
     if (p.plunge === 3 && (p.plungeT -= dt) <= 0) { p.plunge = 0; p.move = ''; }
@@ -203,9 +203,10 @@ export class Game {
       this.plungeStrike(e, 1.25, POISE_DAMAGE.plunge, 1);
     }
     if (!p.grounded) return;
-    const radius = p.plungeRadius;
+    const radius = p.y - p.plungeY >= 40 ? p.plungeRadius : 0; // short drops: fall hits only, radius 0 = no shockwave
     p.plunge = 3; p.plungeT = .09;
     this.emit('plunge', { x: p.x, y: p.y, radius });
+    if (!radius) return;
     for (const e of this.enemies) {
       if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
       this.plungeStrike(e, 1, POISE_DAMAGE.plunge, 1.4);
