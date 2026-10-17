@@ -178,6 +178,14 @@ export class AudioSystem {
         [2350, 1720, 3100, 1390].forEach((f, i) => tone('triangle', f, 0.18, 0.07, f * 0.92, 0.025 * (i + 1)));
         notes([147, 220], 0.08, 0.06);
         break;
+      case 'bless': // blood priest release: low minor choir swell, slow attack; no vibration
+        [110, 130.81, 164.81, 220].forEach((f, i) => {
+          const d = 1 + (i % 2 ? 0.004 : -0.004); // slight detune for a choral beat
+          tone('sawtooth', f * d, 0.8, 0.05, undefined, i * 0.03);
+          tone('sine', f * 2 * d, 0.7, 0.03, undefined, 0.1 + i * 0.03);
+        });
+        tone('noise', 900, 0.6, 0.05, 2200, 0.05);
+        break;
       case 'hurt':
         tone('sawtooth', 140, 0.25, 0.15, 48);
         tone('noise', 1800, 0.2, 0.3, 180);
