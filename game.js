@@ -110,7 +110,7 @@ function handleEvent(e) {
     case 'magic':
       if (game.stacks('vortex')) audio.play('vortex');
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
-      if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: Math.min(320, 210 + 35 * game.stacks('vortex')), life: .5, max: .5 }); // pull radius matches core.magic
+      if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: e.radius, life: .5, max: .5 });
       break;
     case 'block': { // metal sparks kicked off the shield face toward the attacker
       e = { ...e, x: e.x + e.dir * 13 }; // core sends the body edge; the drawn shield face sits 13 px further out
@@ -124,7 +124,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
-    case 'shot': audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: one event, one sound
+    case 'shot': if (e.kind !== 'ground' || e.dir > 0) audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: sound once, for the right-hand one
     case 'plunge':
       if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
       audio.play('plunge', 1.1); rumble(5, .14);
@@ -179,7 +179,7 @@ function handleEvent(e) {
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
-    case 'upgrade': clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
+    case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
@@ -230,7 +230,7 @@ function openHelp() {
   openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t('upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {

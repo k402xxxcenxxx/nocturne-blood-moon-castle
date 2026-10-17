@@ -63,6 +63,9 @@ try {
   await state(page, 'title');
   passed('title HUD sound and help buttons are clickable');
   await page.locator('#start-button').click();
+  await state(page, 'upgrade');
+  assert.equal(await page.locator('#modal-title').innerText(), 'Choose your path');
+  await page.locator('[data-relic]').first().click();
   await state(page, 'playing');
   await arena(page);
 
@@ -132,7 +135,7 @@ try {
       await page.locator('[data-relic]').nth(stage % 3).click();
       await state(page, 'playing');
       assert.equal(await page.evaluate(() => window.__nocturne.game.stage), stage + 1);
-      assert.equal(await page.evaluate(() => window.__nocturne.game.relics.length), stage + 1);
+      assert.equal(await page.evaluate(() => window.__nocturne.game.relics.length), stage + 2);
       assert.equal(await page.locator('#modal').isVisible(), false);
     }
   }
@@ -144,11 +147,13 @@ try {
   passed('five stages, four actual relic UI choices, final victory, and record saving');
 
   await page.locator('[data-command="restart"]').click();
+  await state(page, 'upgrade');
+  await page.locator('[data-relic]').first().click();
   await state(page, 'playing');
   assert.deepEqual(await page.evaluate(() => {
     const g = window.__nocturne.game;
     return { stage: g.stage, hp: g.player.hp, relics: g.relics.length };
-  }), { stage: 0, hp: 100, relics: 0 });
+  }), { stage: 0, hp: 100, relics: 1 });
   await page.evaluate(() => {
     const game = window.__nocturne.game;
     game.player.invulnerable = 0;
@@ -191,6 +196,8 @@ try {
   watch(phone);
   await phone.goto(`${baseUrl}/?test`);
   await phone.locator('#start-button').tap();
+  await state(phone, 'upgrade');
+  await phone.locator('[data-relic]').first().tap();
   await state(phone, 'playing');
   await arena(phone);
   await phone.evaluate(() => {

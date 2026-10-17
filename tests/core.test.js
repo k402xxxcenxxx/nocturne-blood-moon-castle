@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES } from '../core.js';
+import { Game, FLOOR, RELICS, STAGES, BUILD_POOL } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
   const game = new Game(event => events.push(event), seed);
   game.start();
+  game.state = 'playing'; // skip the opening pick
   game.enemies = [];
   game.platforms = [];
   game.player.invulnerable = 0;
@@ -29,6 +30,8 @@ test('a run requires all five cleared stages and one current relic choice betwee
   assert.equal(STAGES.length, 5);
   assert.equal(game.chooseRelic('edge'), false);
   game.start();
+  assert.equal(game.state, 'upgrade');
+  assert.equal(game.chooseRelic(game.choices[0].id), true);
 
   for (let stage = 0; stage < 5; stage++) {
     assert.equal(game.stage, stage);
@@ -64,7 +67,7 @@ test('a run requires all five cleared stages and one current relic choice betwee
     assert.equal(game.chooseRelic(selected), false, 'a double tap cannot skip another stage');
   }
 
-  assert.equal(game.relics.length, 4);
+  assert.equal(game.relics.length, 5, 'one opening pick plus four stage picks');
   assert.equal(events.filter(event => event.type === 'clear').length, 5);
   assert.equal(events.filter(event => event.type === 'win').length, 1);
 });
@@ -499,7 +502,7 @@ test('priest without allies fires a bolt', () => {
 
 test('priests never spawn on stages 0 and 1', () => {
   for (let seed = 1; seed <= 30; seed++) for (const stage of [0, 1]) {
-    const game = new Game(() => {}, seed); game.start(); game.loadStage(stage);
+    const game = new Game(() => {}, seed); game.start(); game.state = 'playing'; game.loadStage(stage);
     assert.ok(!game.enemies.some(e => e.type === 'priest'));
   }
 });
@@ -1154,7 +1157,7 @@ test('boss ledges need a double jump, and a hero on one is outside slash, charge
   const ledge = stage.platforms[0];
   assert.ok(ledge.y === FLOOR - 110);
   const climb = n => {
-    const g = new Game(() => {}, 7); g.start(); g.loadStage(4);
+    const g = new Game(() => {}, 7); g.start(); g.state = 'playing'; g.loadStage(4);
     Object.assign(g.player, { x: 150, y: FLOOR, vy: 0, grounded: true, jumps: 0 });
     g.jump();
     let top = FLOOR;
@@ -1550,4 +1553,67 @@ test('#14 wave + frost: only the outgoing pass adds frost meter', () => {
   advance(game, 2);
   assert.equal(a.frostMeter, 1, 'returning pass adds none');
   assert.ok(hp(a) > 0);
+});
+
+// ---- Opening pick and synergies (#15) ----
+test('the opening pick offers only build relics, restores nothing and then starts stage 1', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    const events = [];
+    const game = new Game(e => events.push(e), seed);
+    game.start();
+    assert.equal(game.state, 'upgrade');
+    assert.equal(events.find(e => e.type === 'upgrade').reason, 'start');
+    assert.equal(game.choices.length, 3);
+    assert.equal(new Set(game.choices.map(r => r.id)).size, 3);
+    assert.ok(game.choices.every(r => BUILD_POOL.includes(r.id)));
+    assert.equal(events.some(e => e.type === 'stage'), false, 'stage 1 has not started yet');
+    game.player.hp = 50; game.player.mp = 10;
+    assert.equal(game.chooseRelic(game.choices[0].id), true);
+    assert.equal(game.state, 'playing');
+    assert.equal(game.stage, 0);
+    assert.deepEqual([game.player.hp, game.player.mp], [50, 10]);
+    assert.equal(events.filter(e => e.type === 'stage').length, 1);
+  }
+});
+
+test('stage picks carry reason "stage" and still restore HP and MP', () => {
+  const { game, events } = arena();
+  game.pickReason = 'stage'; game.player.hp = 50; game.player.mp = 0;
+  game.finishStage();
+  assert.equal(events.at(-1).reason, 'stage');
+  game.chooseRelic(game.choices[0].id);
+  assert.ok(game.player.hp >= 70);
+  assert.equal(game.player.mp, game.player.maxMp);
+});
+
+test('synergy partners are favoured in offers, and offers stay distinct', () => {
+  const count = owned => {
+    const game = new Game(() => {}, 5), hits = {};
+    game.relics = owned;
+    for (let i = 0; i < 3000; i++) {
+      game.rollChoices('stage');
+      assert.equal(new Set(game.choices.map(r => r.id)).size, 3);
+      for (const r of game.choices) hits[r.id] = (hits[r.id] || 0) + 1;
+    }
+    return hits;
+  };
+  const base = count([]), withWave = count(['wave']);
+  for (const id of ['shock', 'vortex', 'bleed']) assert.ok(withWave[id] > base[id] * 1.15, `${id} is offered more often next to wave`);
+  assert.ok(withWave.crit < base.crit * 1.05, 'non-partners are not boosted');
+});
+
+test('synergy helpers list owned partners and active pairs', () => {
+  const { game } = arena();
+  game.relics = ['wave', 'vortex', 'edge'];
+  assert.deepEqual(game.synergyPartners('wave').map(s => s.with), ['vortex']);
+  assert.deepEqual(game.synergyPartners('edge'), []);
+  assert.deepEqual(game.activeSynergies(), [{ a: 'wave', b: 'vortex', key: 'synergy.wave-vortex' }]);
+  for (const r of RELICS) for (const s of r.synergies) assert.ok(RELICS.find(o => o.id === s.with).synergies.some(b => b.with === r.id && b.key === s.key), 'pairs are symmetric');
+});
+
+test('the magic event reports the pull radius', () => {
+  const { game, events } = arena();
+  game.relics.push('vortex');
+  game.magic();
+  assert.equal(events.find(e => e.type === 'magic').radius, 245);
 });

@@ -16,6 +16,8 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 - Five stages in order: The Forsaken Gate, The Forbidden Archive, The Timeless Belfry, The Crimson Cathedral, The Bloodmoon Throne.
 - The Moon Gate at the far right opens only after every enemy in the stage is defeated.
+- Before stage 1 the run opens with a build pick: 3 relics drawn only from the build pool (Returning Crescent, Starpierce Lance, Fallen Star Vow, Vortex Eclipse, Ember Edge, Moonfrost Sigil, Thunder Conduit, Blood Sigil). It restores no HP or MP. A run therefore has 5 picks.
+- Relics list synergy partners (Eclipse Codex+Vortex/Ember/Moonfrost, Raven Shadow+Lance, Crescent+Thunder/Vortex/Blood Sigil, Lance+Vortex, Fallen Star+Moonfrost/Ember, Ember+Blood Sigil). When offers are rolled a relic's weight is 1 + 0.8 per distinct owned partner; offers are 3 distinct relics (weighted, without replacement). Synergies are text and weighting only.
 - After each of the first four stages, 3 of the 18 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
 - Clearing stage five wins. Dying resets the run's relics and progress. Only records persist between runs: deepest stage reached, completed runs, runs started.
 - `souls` accumulate but currently have no use.
