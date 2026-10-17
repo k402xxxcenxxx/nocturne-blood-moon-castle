@@ -1,4 +1,5 @@
 export const FLOOR = 438;
+const BEAM_REACH = 560, GROUND_WAVE_REACH = 340; // px; kept inside the narrowest visible area
 const VOLLEY_RANGE = 420; // drawn line length; the bolt tip (r 9) stops at its end
 // Display text for stages and relics lives in i18n.js, keyed by stage index and relic id.
 export const STAGES = [
@@ -191,7 +192,7 @@ export class Game {
     this.hitSet = new Set(); this.flameUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
-    if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, 1.05, 10);
+    if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, BEAM_REACH / 780, 10);
     this.hitTargets();
   }
   // Player projectile (a wave's life is only a safety cap; it turns after 0.52 s and ends on reaching the hero): passes through enemies, one hit per enemy per pass, poise 8, never heavy and no Chain Lightning.
@@ -217,7 +218,7 @@ export class Game {
         const crit = this.rand() < p.crit;
         const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
         const blocked = e.type === 'shield' && e.guardBreak <= 0 && (s.x - e.x) * e.dir >= 0; // frontal only; a returning crescent can hit a back
-        this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, true);
+        this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, s.back ? 'back' : true);
       }
     }
     this.shots = this.shots.filter(s => s.life > 0 && s.x > 0 && s.x < this.worldWidth);
@@ -257,7 +258,7 @@ export class Game {
     this.emit('plunge', { x: p.x, y: p.y, radius });
     if (!radius) return;
     const vow = this.stacks('plunge');
-    if (vow) for (const dir of [-1, 1]) this.launchShot('ground', .45 * vow, 420, 1.2, 12, p.x, p.y - 12, dir);
+    if (vow) for (const dir of [-1, 1]) this.launchShot('ground', .45 * vow, 420, GROUND_WAVE_REACH / 420, 12, p.x, p.y - 12, dir);
     for (const e of this.enemies) {
       if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
       this.plungeStrike(e, 1 + .5 * vow, POISE_DAMAGE.plunge, 1.4);
@@ -368,7 +369,7 @@ export class Game {
     if (bleed) { e.bleed = 5; e.bleedStacks = Math.min(10 * bleed, e.bleedStacks + bleed); this.emit('status', { name: 'bleed', ...at, stacks: e.bleedStacks }); }
     if (frost) {
       e.chill = 2.5; e.frostT = 3;
-      if (e.frozen <= 0 && e.freezeImmune <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
+      if (e.frozen <= 0 && e.freezeImmune <= 0 && shot !== 'back') e.frostMeter += frost + (eclipse ? 1 : 0);
       if (e.frostMeter >= 3) {
         e.frostMeter = 0;
         if (e.freezeImmune <= 0 && e.frozen <= 0) { // the boss freezes briefly, then ignores freezing for a while

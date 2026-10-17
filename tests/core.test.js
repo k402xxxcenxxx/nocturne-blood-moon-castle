@@ -1416,7 +1416,7 @@ test('#14 wave: +0.45 x base per extra stack', () => {
 test('#14 pierce: beam pierces several enemies once each; a thrust fires it too; reach +20/stack capped at +60', () => {
   const { game, player, events } = elem('pierce');
   player.crit = 0;
-  const es = [430, 600, 800].map(x => enemy(game, x));
+  const es = [430, 600, 640].map(x => enemy(game, x));
   combo3(game);
   advance(game, 1.2);
   const beam = Math.round(player.damage * .55);
@@ -1515,4 +1515,39 @@ test('#13 review: a DoT kill counts once and opens the portal; DoT can change bo
   Object.assign(c.player, { x: 400, y: FLOOR - 120, grounded: false, vy: 0 });
   c.game.attack(); advance(c.game, .5);
   assert.equal(c.events.filter(x => x.type === 'reaction' && x.name === 'bloodFlame').length, 1);
+});
+
+// QA (#14): the camera keeps the hero at ~37% of the narrowest 960 px view, so only ~605 px ahead is seen; the 819 px beam must not one-shot an unseen mage.
+test('#14 QA: a four-stack beam does not kill a mage 620 px ahead, beyond the narrowest visible area', () => {
+  const { game, player } = elem('pierce', 'pierce', 'pierce', 'pierce');
+  player.crit = 0; player.x = 1000;
+  const mage = enemy(game, 1620, { type: 'mage', hp: 43 });
+  mage.speed = 0; mage.armor = 99;
+  player.combo = 2; player.comboWindow = .8; game.attack();
+  advance(game, 1.2);
+  assert.equal(mage.hp, 43, 'an unseen mage takes no beam damage');
+});
+
+test('#14 plunge vow: ground wave stops at its reach, not beyond', () => {
+  const c = elem('plunge'); c.player.crit = 0;
+  Object.assign(c.player, { x: 400, y: FLOOR - 120, grounded: false, vy: 0 });
+  const near = enemy(c.game, 400 + 300), far = enemy(c.game, 400 + 420);
+  near.armor = far.armor = 99; near.speed = far.speed = 0;
+  c.game.attack(); advance(c.game, 1.5);
+  assert.ok(near.hp < near.maxHp, 'inside reach');
+  assert.equal(far.hp, far.maxHp, 'outside the 340 px reach');
+});
+
+test('#14 wave + frost: only the outgoing pass adds frost meter', () => {
+  const { game, player } = elem('wave', 'frost');
+  player.crit = 0;
+  const a = enemy(game, 430); a.armor = 99; a.speed = 0;
+  combo3(game);
+  game.hitSet = new Set(); // the sword swing itself must not count
+  a.frostMeter = 0;
+  advance(game, .5);
+  assert.equal(a.frostMeter, 1, 'outgoing pass adds 1');
+  advance(game, 2);
+  assert.equal(a.frostMeter, 1, 'returning pass adds none');
+  assert.ok(hp(a) > 0);
 });
