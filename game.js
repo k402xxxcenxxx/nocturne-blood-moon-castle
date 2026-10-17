@@ -87,7 +87,7 @@ function handleEvent(e) {
       audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
-    case 'swing': if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
+    case 'swing': if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
       rumble(e.crit || e.heavy ? 6 : 3, e.heavy ? .16 : .1);
@@ -121,6 +121,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
+    case 'plunge': audio.play('plunge', 1.1); break;
     case 'stagger':
       audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); rumble(e.boss ? 7 : 5, .18);
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
