@@ -16,7 +16,7 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 - Five stages in order: The Forsaken Gate, The Forbidden Archive, The Timeless Belfry, The Crimson Cathedral, The Bloodmoon Throne.
 - The Moon Gate at the far right opens only after every enemy in the stage is defeated.
-- After each of the first four stages, 3 of the 14 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
+- After each of the first four stages, 3 of the 18 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
 - Clearing stage five wins. Dying resets the run's relics and progress. Only records persist between runs: deepest stage reached, completed runs, runs started.
 - `souls` accumulate but currently have no use.
 
@@ -80,7 +80,13 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 | fire | Ember Edge | Hits burn 4 s, 0.14 × base per tick per stack |
 | frost | Moonfrost Sigil | Hits chill and build frost meter (+1 per stack); at 3 the enemy freezes; bonus hit 0.08 × base per stack |
 | shock | Thunder Conduit | Hits shock 4 s; chain range +14 and +1 target per stack |
+| wave | Returning Crescent | Attack form. Combo hit 3 launches a crescent (speed 540, flies 0.52 s) that then returns to the hero (speed 620) and disappears on reaching them; each pass hits an enemy once, but only the outgoing pass adds frost meter (other statuses apply on both). Damage 0.85 × base, +0.45 × base per extra stack |
+| pierce | Starpierce Lance | Attack form. Combo hit 3 and the dash thrust fire a piercing beam (speed 780, reach capped at 560 px, life = reach / speed), 0.55 × base per stack; thrust reach +20 per stack (cap +60) |
+| plunge | Fallen Star Vow | Attack form. A plunge landing that makes a shockwave (fall ≥ 40 px) also sends two ground waves left and right (speed 420, reach capped at 340 px, 0.45 × base per stack); shockwave damage +50% per stack, radius +24 per stack (cap 190 for this relic; Phantom Glaive alone still caps at 150) |
+| vortex | Vortex Eclipse | Attack form. Eclipse first pulls enemies in its radius 78% of the way to the hero (boss 10%; x only, clamped to the stage, y unchanged), then hits. Eclipse radius +35 and damage +35% per stack (radius cap 320) |
 | bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 × Blood Sigils owned on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
+
+Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass through enemies, hit each enemy once per pass, are not cleared by Eclipse, deal 8 poise damage, are not heavy (no Shatter or Blood Flame) and never trigger Chain Lightning, but apply elemental statuses like a sword hit. A shield bearer blocks them (×0.15, no shove) when the projectile is on the side it faces; a returning crescent can hit its back. Cleared by loadStage. Events: `shot` {kind: 'wave' | 'beam' | 'ground', x, y, dir, speed, life}; hits use `hit`.
 
 ## Elemental statuses and reactions
 

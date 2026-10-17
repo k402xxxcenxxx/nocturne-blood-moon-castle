@@ -108,7 +108,10 @@ function handleEvent(e) {
     case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, y: e.y - 20, size: 23, amount: t('float.perfect') }, '#e8ecf8'); break;
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
-      audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
+      if (game.stacks('vortex')) audio.play('vortex');
+      audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
+      if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: Math.min(320, 210 + 35 * game.stacks('vortex')), life: .5, max: .5 }); // pull radius matches core.magic
+      break;
     case 'block': { // metal sparks kicked off the shield face toward the attacker
       e = { ...e, x: e.x + e.dir * 13 }; // core sends the body edge; the drawn shield face sits 13 px further out
       audio.play('block'); rumble(2, .07); flashNumber(e, '#9aa3b5');
@@ -121,6 +124,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
+    case 'shot': audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: one event, one sound
     case 'plunge':
       if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
       audio.play('plunge', 1.1); rumble(5, .14);
@@ -357,6 +361,29 @@ function drawGroundWave(b) { // low floor ripple: rising crest at the front, tra
   ctx.fillStyle = '#9a8c77'; for (let i = 0; i < 4; i++) ctx.fillRect(-12 - i * 11, r - 9 - ((i * 7 + Math.round(worldTime * 20)) % 6), 3, 3); // dust trail
   ctx.restore();
 }
+function drawShot(s) { // sized to the hit radius s.r
+  const x = Math.round(s.x), y = Math.round(s.y);
+  ctx.save(); ctx.translate(x, y);
+  if (s.kind === 'wave') { // pale crescent opening backward along the heading; cooler on the returning pass
+    ctx.rotate(Math.atan2(s.vy, s.vx)); ctx.shadowColor = s.back ? '#9fb8ff' : '#e8e2ff'; ctx.shadowBlur = 8;
+    ctx.fillStyle = s.back ? '#c4d2ff' : '#f2edff';
+    ctx.beginPath(); ctx.arc(0, 0, s.r, -1.9, 1.9); ctx.arc(-s.r * .55, 0, s.r * .8, 1.5, -1.5, true); ctx.closePath(); ctx.fill();
+  } else if (s.kind === 'beam') { // narrow star streak: faded tail behind a bright core 2r long
+    const d = Math.sign(s.vx) || 1;
+    ctx.shadowColor = '#fff3b0'; ctx.shadowBlur = 8; ctx.fillStyle = '#fff3b066'; ctx.fillRect(d > 0 ? -s.r - 30 : s.r, -1, 30, 2);
+    ctx.fillStyle = '#fffbe0'; ctx.fillRect(-s.r, -2, s.r * 2, 4);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-1, -s.r * .6, 2, s.r * 1.2); ctx.fillRect(-s.r * .6, -1, s.r * 1.2, 2);
+  } else { // ground: low ripple, two arcs, hit width 2r
+    ctx.globalAlpha = Math.min(1, s.life / s.maxLife * 3 + .3); ctx.lineWidth = 2;
+    // dome sits on the surface (s.y + s.r) and rises to the full hit height 2r, so it covers the hit circle
+    ctx.shadowColor = '#ffe9b0'; ctx.shadowBlur = 6;
+    ctx.fillStyle = '#ffe9b030'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r, s.r * 2, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fff1c4'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r, s.r * 2, 0, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = '#d9c9a0'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r * .55, s.r * 1.1, 0, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = '#fff1c4'; ctx.fillRect(-s.r, s.r - 1, s.r * 2, 2);
+  }
+  ctx.restore();
+}
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
@@ -366,6 +393,15 @@ function drawEffects(dt) {
       ctx.strokeStyle = '#ccb8fa'; ctx.lineWidth = 3 * (1 - progress) + 1; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = '#8e73be'; ctx.lineWidth = 10 * (1 - progress); ctx.beginPath(); ctx.arc(0, 0, radius - 8, 0, Math.PI * 2); ctx.stroke();
       for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + progress; ctx.fillStyle = '#f0e4ff'; ctx.fillRect(Math.cos(a) * radius - 2, Math.sin(a) * radius - 2, 4, 4); }
+      ctx.restore();
+    } else if (fx.type === 'vortex') { // three spiral arms drawn inward, plus a ring shrinking to the hero
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = Math.min(1, (1 - progress) * 1.6);
+      ctx.strokeStyle = '#8e73be'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, fx.radius * (1 - progress), 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#e4d8ff';
+      for (let arm = 0; arm < 3; arm++) for (let i = 0; i < 7; i++) {
+        const k = Math.max(0, (1 - progress) - i * .07), a = arm * 2.094 + progress * 7 + (1 - k) * 2.2, d = fx.radius * k;
+        ctx.fillRect(Math.round(Math.cos(a) * d) - 2, Math.round(Math.sin(a) * d * .8) - 2, 4 - (i > 3), 4 - (i > 3));
+      }
       ctx.restore();
     } else if (fx.type === 'dust') { // ring of dust expanding along the floor to the plunge radius
       const r = fx.radius * Math.sin(progress * Math.PI / 2);
@@ -450,6 +486,7 @@ function render(dt) {
     }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3); }
+    for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
       if (b.ground) { drawGroundWave(b); continue; }
       ctx.shadowColor = '#d46ea3'; ctx.shadowBlur = 14; ctx.fillStyle = '#ca6a9c'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();

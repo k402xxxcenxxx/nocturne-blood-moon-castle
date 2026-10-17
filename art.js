@@ -589,7 +589,9 @@ export function drawPortal(ctx, x = 0, y = FLOOR, time = 0, open = false) {
   }
   poly(ctx, '#c5ab7c', [[0, -126], [7, -116], [0, -109], [-7, -116]]); circle(ctx, open ? '#e6d1b0' : '#784a55', 0, -116, 3);
   ledge(ctx, -44, -1, 88, p); ctx.restore();
-}// Elemental status overlays: plain fillRects only (no shadows/gradients/allocations) so crowds stay cheap. `calm` = steady instead of flickering.
+}
+
+// Elemental status overlays: plain fillRects only (no shadows/gradients/allocations) so crowds stay cheap. `calm` = steady instead of flickering.
 export function drawStatus(ctx, e, time = 0, calm = false) {
   const burn = e.burn > 0, chill = e.chill > 0 || e.frozen > 0, frozen = e.frozen > 0, shock = e.shock > 0, bleed = e.bleed > 0;
   if (!(burn || chill || shock || bleed || e.frostMeter > 0)) return;
