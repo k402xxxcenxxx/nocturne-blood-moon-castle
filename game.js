@@ -204,9 +204,16 @@ function closeModal(resume = true) {
   if (resume && returnState === 'playing' && game.state === 'paused') { game.state = 'playing'; audio.resume(); }
   returnState = null; clearInput(); previousFocus?.focus?.({ preventScroll: true });
 }
+const ELEMENTS = ['fire', 'frost', 'shock', 'bleed'];
+function pauseRelics() {
+  const counts = {}; game.relics.forEach(id => counts[id] = (counts[id] || 0) + 1);
+  const ids = Object.keys(counts);
+  if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
+  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''} title="${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>`;
+}
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
-  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t('pause.info', { stage: roman[game.stage], name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
+  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t('pause.info', { stage: roman[game.stage], name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
 }
 function openSettings() {
   if (['upgrade', 'dead', 'won'].includes(modalKind)) modalReturn = modalKind;
@@ -219,7 +226,7 @@ function openHelp() {
   openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t('upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t('upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
