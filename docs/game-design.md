@@ -80,25 +80,25 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 | fire | Ember Edge | Hits burn 4 s, 0.14 × base per tick per stack |
 | frost | Moonfrost Sigil | Hits chill and build frost meter (+1 per stack); at 3 the enemy freezes; bonus hit 0.08 × base per stack |
 | shock | Thunder Conduit | Hits shock 4 s; chain range +14 and +1 target per stack |
-| bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
+| bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 × Blood Sigils owned on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
 
 ## Elemental statuses and reactions
 
-"Hits" are sword hits (combo, thrust, plunge fall and shockwave) and Eclipse. "Base" is the hero's `damage`. "Stacks" are copies of the relic owned; every per-stack value uses the stack count directly. Blocked shield-bearer hits apply nothing. Damage over time ticks every 0.5 s. Damage-over-time, bonus-hit and reaction damage cause no hit-stop, stun, flinch or poise damage, apply no statuses, emit `statusTick` {source, x, y, amount} and give kill credit (souls, `leech`, MP, drops) like any kill. Statuses live on the enemy (`burn`, `bleed`, `bleedStacks`, `chill`, `frozen`, `frostMeter`, `shock`) and reset on stage load. Reactions read the enemy's state before the hit, then the hit applies its own statuses. Heavy = combo hit 3, thrust, plunge, Eclipse.
+"Hits" are sword hits (combo, thrust, plunge fall and shockwave) and Eclipse. "Base" is the hero's `damage`. "Stacks" are copies of the relic owned; every per-stack value uses the stack count directly. Blocked shield-bearer hits apply nothing. Damage over time ticks every 0.5 s. Damage-over-time, bonus-hit and reaction damage cause no hit-stop, stun, flinch or poise damage, apply no statuses, emit `statusTick` {source, x, y, amount} and give kill credit (souls, `leech`, MP, drops) like any kill, but only while the run is `playing` (no kills, souls or leech after the hero dies; enemies still die). The damage-number overlay shows at most 12 `statusTick` numbers at once. Statuses live on the enemy (`burn`, `bleed`, `bleedStacks`, `chill`, `frozen`, `frostMeter`, `shock`) and reset on stage load. Reactions read the enemy's state before the hit, then the hit applies its own statuses. Heavy = combo hit 3, thrust, plunge, Eclipse.
 
 | Status | Effect |
 | --- | --- |
-| Burn (fire) | 4 s, refreshed by each hit; 0.14 × base × fire stacks per tick |
+| Burn (fire) | 4 s, refreshed (never stacked) by each hit; 0.14 × base × fire stacks per tick |
 | Chill (frost) | 2.5 s, enemy speed ×0.68 (boss ×0.85) |
-| Frozen (frost) | Frost meter +stacks per hit (+1 more from Eclipse); at 3 the meter resets and the enemy freezes for min(1.5, 0.75 + 0.12 × stacks) s. Frozen enemies cannot move or act and their warnings are cancelled (not paused). Boss: frozen 0.28 s, then immune to freezing until 1.8 s later; the meter still resets |
+| Frozen (frost) | Frost meter +stacks per hit (+1 more from Eclipse); at 3 the meter resets and the enemy freezes for min(1.5, 0.75 + 0.12 × stacks) s. Frozen enemies cannot move or act and their warnings are cancelled (not paused). Boss: frozen 0.28 s, then immune to freezing until 1.8 s later; the meter still resets. After any thaw (timeout or Shatter) a normal enemy is immune to freezing for 2 s and gains no frost meter meanwhile (the boss keeps its 1.8 s). The frost meter decays to 0 after 3 s without a frost hit |
 | Shock (shock) | 4 s, refreshed by each hit |
 | Bleed (bleed) | 5 s, refreshed; stacks reset when it expires |
 
 | Reaction | Condition | Effect | Event |
 | --- | --- | --- | --- |
 | Shatter | frost owned, heavy hit on a frozen enemy | Unfreezes; base × (1 + 0.65 × frost) to every enemy within 130 + 10 × frost, target included | `reaction` {name:'shatter', x, y, radius} |
-| Blood Flame | fire owned, heavy hit on a bleeding enemy | Consumes all its bleed stacks; (0.7 + 0.3 × stacks) × base × (1 + 0.3 × fire) to every enemy within 115, target included | `reaction` {name:'bloodFlame', x, y, radius} |
-| Chain Lightning | shock owned, any hit on an already shocked enemy | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining) | `reaction` {name:'chain', x, y, targets:[{x,y}]} |
+| Blood Flame | fire owned, heavy hit on a bleeding enemy; at most once per attack (a plunge's fall and shockwave count as one) or Eclipse cast, on the first bleeding enemy processed, other targets keep their bleed | Consumes all its bleed stacks; (0.7 + 0.3 × stacks) × base × (1 + 0.3 × fire) to every enemy within 115, target included | `reaction` {name:'bloodFlame', x, y, radius} |
+| Chain Lightning | shock owned, any sword hit (not Eclipse; Eclipse still applies shock) on an already shocked enemy | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining) | `reaction` {name:'chain', x, y, targets:[{x,y}]} |
 
 Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `elements()` hook they should call.
 

@@ -1323,3 +1323,67 @@ test('statuses are cleared by loadStage; leech heals on a burn kill', () => {
   advance(g2.game, .51);
   assert.equal(v.hp, 0); assert.equal(g2.player.hp, 55); assert.equal(g2.game.kills, 1);
 });
+
+// QA #13: under sustained sword pressure a frozen normal enemy must get a window to act. Currently it is re-frozen the moment it thaws (frost x3, a stationary hero spamming attacks), so it never warns or attacks.
+test('QA frost lock: under sustained attacks a frozen normal enemy gets a 0.5 s window to act before it refreezes', () => {
+  const { game, player } = elem('frost', 'frost', 'frost');
+  player.x = 100; player.dir = 1; player.maxHp = player.hp = 1e9; player.invulnerable = 1e9;
+  const e = enemy(game, 140, { hp: 1e6 });
+  let frozenBefore = false, open = 0, longestOpen = 0;
+  for (let t = 0; t < 10; t += 1 / 120) {
+    game.update(1 / 120, { attack: true });
+    if (e.frozen > 0) frozenBefore = true;
+    open = frozenBefore && e.frozen <= 0 ? open + 1 / 120 : 0;
+    longestOpen = Math.max(longestOpen, open);
+  }
+  assert.ok(longestOpen >= .5, `longest unfrozen window after the first freeze was ${longestOpen.toFixed(2)} s`);
+});
+
+// QA #13: leech is applied on a DoT kill that lands on the same frame the hero dies, which heals a dead hero (hp 5 on the death screen).
+test('QA leech: a DoT kill on the frame the hero dies does not heal the dead hero', () => {
+  const { game, player } = elem('fire');
+  player.hp = 1; player.leech = 5;
+  const attacker = enemy(game, player.x + 20);
+  attacker.tell = .001; attacker.cd = 0;
+  const dying = enemy(game, player.x + 200, { hp: 1 });
+  dying.burn = 4; dying.burnDmg = 50; dying.dotT = .4999;
+  game.update(1 / 120);
+  assert.equal(game.state, 'dead');
+  assert.equal(player.hp, 0);
+});
+
+test('#13 rework: thaw grants normal enemies 2 s freeze immunity; frost meter decays after 3 s', () => {
+  const { game } = elem('frost', 'frost', 'frost');
+  const e = enemy(game, 600);
+  sword(game, e);
+  assert.equal(e.frozen > 0, true);
+  sword(game, e); assert.equal(e.frostMeter, 0, 'no meter while frozen');
+  advance(game, 1.6);
+  assert.equal(e.frozen, 0); assert.ok(e.freezeImmune > 0);
+  sword(game, e); assert.equal(e.frostMeter, 0, 'no meter while immune');
+  const f = enemy(game, 800); f.frostMeter = 2; f.frostT = 3;
+  advance(game, 3.1);
+  assert.equal(f.frostMeter, 0);
+});
+
+test('#13 rework: Eclipse shocks but never chains; sword hits chain', () => {
+  const { game, events } = elem('shock');
+  const e = enemy(game, 600), n = enemy(game, 700);
+  e.shock = 4;
+  game.damageEnemy(e, 40, 1, false, true, false, 0, true);
+  assert.equal(events.some(ev => ev.type === 'reaction'), false); assert.equal(n.shock, 0);
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(events.filter(ev => ev.type === 'reaction')[0].name, 'chain');
+});
+
+test('#13 rework: one Blood Flame per Eclipse cast; bleed cap is 10 per Blood Sigil', () => {
+  const { game, player, events } = elem('fire', 'bleed');
+  player.mp = player.maxMp;
+  const es = Array.from({ length: 13 }, (_, i) => enemy(game, player.x + 10 + i * 8, { hp: 1e6 }));
+  for (const e of es) { e.bleed = 5; e.bleedStacks = 3; }
+  game.magic();
+  assert.equal(events.filter(ev => ev.type === 'reaction' && ev.name === 'bloodFlame').length, 1);
+  assert.ok(es.filter(e => e.bleedStacks >= 3).length >= 12, 'others keep their bleed');
+  const x = enemy(game, 900); for (let i = 0; i < 15; i++) sword(game, x);
+  assert.equal(x.bleedStacks, 10);
+});

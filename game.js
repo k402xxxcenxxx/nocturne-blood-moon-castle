@@ -168,7 +168,7 @@ function handleEvent(e) {
       const col = { burn: '#ff9a3a', bleed: '#d8445a', shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a', frost: '#9fd8ff', shock: '#ffe97a' }[e.source] || '#c9c2d8';
       const n = numbers.find(o => o.tick === e.source && o.life > .45 && Math.abs(o.x - e.x) < 26 && Math.abs(o.y - e.y) < 40);
       if (n) { n.sum += e.amount; n.text = String(n.sum); n.life = .7; }
-      else if (numbers.length < 40) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
+      else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
       break;
     }
     case 'enemyBuff': audio.play('bless', .8); break;

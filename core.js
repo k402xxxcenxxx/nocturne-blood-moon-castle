@@ -165,7 +165,7 @@ export class Game {
     p.buffer = 0;
     if (!p.grounded) { // air attack wins over a thrust; it neither advances nor resets the combo
       Object.assign(p, { plunge: 1, plungeT: .07, plungeY: p.y, move: 'plunge', attack: 0, thrustWindow: 0 });
-      this.hitSet = new Set();
+      this.hitSet = new Set(); this.flameUsed = false;
       this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge' });
       return;
     }
@@ -179,7 +179,7 @@ export class Game {
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
     p.attack = p.attackLen = .24; p.attackCd = (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed;
-    this.hitSet = new Set();
+    this.hitSet = new Set(); this.flameUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     this.hitTargets();
   }
@@ -227,6 +227,7 @@ export class Game {
     if (p.mp < p.magicCost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
     p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.emit('magic', { x: p.x, y: p.y - 32 });
+    this.flameUsed = false;
     for (const e of this.enemies) if (e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 210) {
       this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
@@ -269,9 +270,12 @@ export class Game {
       if (phase > e.bossPhase) this.enterPhase(e, phase);
     }
     if (e.hp <= 0) {
-      e.hp = 0; this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
+      e.hp = 0;
       const p = this.player;
-      p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
+      if (this.state === 'playing') { // no credit, leech or MP once the hero is dead or the run ended
+        this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
+        p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
+      }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
       if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
@@ -293,17 +297,18 @@ export class Game {
     const alive = () => this.enemies.filter(o => o.hp > 0);
     if (heavy && frost && e.frozen > 0) { // Shatter
       const radius = 130 + 10 * frost;
-      e.frozen = 0;
+      e.frozen = 0; if (e.type !== 'boss') e.freezeImmune = 2;
       this.emit('reaction', { name: 'shatter', ...mid(e), radius });
       for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, base * (1 + .65 * frost), 'shatter');
     }
-    if (heavy && fire && e.bleedStacks > 0) { // Blood Flame
+    if (heavy && fire && e.bleedStacks > 0 && !this.flameUsed) { // Blood Flame, once per attack or Eclipse cast
+      this.flameUsed = true;
       const n = e.bleedStacks, radius = 115;
       e.bleed = 0; e.bleedStacks = 0;
       this.emit('reaction', { name: 'bloodFlame', ...mid(e), radius });
       for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, (.7 + .3 * n) * base * (1 + .3 * fire), 'bloodFlame');
     }
-    if (shock && e.shock > 0) { // Chain Lightning
+    if (shock && !eclipse && e.shock > 0) { // Chain (sword hits only) Lightning
       const targets = alive().filter(o => o !== e && dist(o) <= 180 + 14 * shock).sort((a, b) => dist(a) - dist(b)).slice(0, 2 + shock);
       if (targets.length) {
         this.emit('reaction', { name: 'chain', ...mid(e), targets: targets.map(mid) });
@@ -314,10 +319,10 @@ export class Game {
     const at = mid(e), boss = e.type === 'boss';
     if (fire) { e.burn = 4; e.burnDmg = .14 * base * fire; this.emit('status', { name: 'burn', ...at }); }
     if (shock) { e.shock = 4; this.emit('status', { name: 'shock', ...at }); }
-    if (bleed) { e.bleed = 5; e.bleedStacks = Math.min(10, e.bleedStacks + bleed); this.emit('status', { name: 'bleed', ...at, stacks: e.bleedStacks }); }
+    if (bleed) { e.bleed = 5; e.bleedStacks = Math.min(10 * bleed, e.bleedStacks + bleed); this.emit('status', { name: 'bleed', ...at, stacks: e.bleedStacks }); }
     if (frost) {
-      e.chill = 2.5;
-      if (e.frozen <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
+      e.chill = 2.5; e.frostT = 3;
+      if (e.frozen <= 0 && e.freezeImmune <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
       if (e.frostMeter >= 3) {
         e.frostMeter = 0;
         if (e.freezeImmune <= 0 && e.frozen <= 0) { // the boss freezes briefly, then ignores freezing for a while
@@ -332,7 +337,10 @@ export class Game {
   }
   // Status timers and damage-over-time (every 0.5 s), run each frame for a living enemy.
   tickStatus(e, dt) {
+    const wasFrozen = e.frozen > 0;
     for (const k of ['chill', 'frozen', 'freezeImmune', 'shock']) e[k] = Math.max(0, e[k] - dt);
+    if (wasFrozen && e.frozen <= 0 && e.type !== 'boss') e.freezeImmune = 2; // thawed: normal enemies get a window to act
+    if (e.frostMeter > 0 && (e.frostT = (e.frostT || 0) - dt) <= 0) e.frostMeter = 0; // meter decays 3 s after the last frost hit
     if (e.burn <= 0 && e.bleed <= 0) { e.dotT = 0; return; }
     const burning = e.burn > 0, stacks = e.bleed > 0 ? e.bleedStacks : 0; // a tick landing on the frame a timer expires still counts
     e.burn = Math.max(0, e.burn - dt); e.bleed = Math.max(0, e.bleed - dt);
