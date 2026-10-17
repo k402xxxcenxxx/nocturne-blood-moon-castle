@@ -489,15 +489,25 @@ function shieldBearer(c, e, time, white) {
   circle(c, bronze, 18, -38, 4); rect(c, white || '#e9d29a', 17, -40, 2, 2);
   c.restore();
 }
+function spearman(c, e, time, white) {
+  const bone = white || '#d9d2bd', dark = white || '#5a5448', k = (e.tell || 0) > 0 ? Math.min(1, (.64 - e.tell) / .2) : 0, stride = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 6) * 3 : 0;
+  line(c, dark, -4, -28, -4 + stride, -2, 3); line(c, dark, 3, -28, 3 - stride, -2, 3);
+  rect(c, bone, -6, -54, 12, 26); circle(c, bone, 0, -62, 7); rect(c, '#111320', 1, -64, 5, 3);
+  // Placeholder: spear reaches back during the warning, then out to the thrust length.
+  const sx = e.turn > .4 ? 190 : 150 - 40 * k;
+  line(c, '#8a6a44', 8 - 20 * k, -36, sx, -30, 2); poly(c, white || '#cfd6df', [[sx, -34], [sx + 14, -30], [sx, -26]]);
+}
 export function drawEnemy(ctx, e = {}, time = 0) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? 70 : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
+  if (e.tell > 0 && e.thrustBox) { const b = e.thrustBox; ctx.save(); ctx.fillStyle = '#e7746640'; ctx.strokeStyle = '#e7746699'; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h); ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
   else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
+  else if (e.type === 'spear') spearman(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
