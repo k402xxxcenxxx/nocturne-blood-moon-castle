@@ -21,7 +21,7 @@ export const RELICS = [
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
-// Poise damage per source. Add plunge entries here when that move exists.
+// Poise damage per source.
 const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35, plunge: 45 };
 
 export class Game {
@@ -43,7 +43,7 @@ export class Game {
       speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
-      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeRadius: 90,
+      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90,
     };
     this.loadStage(0);
   }
@@ -66,7 +66,11 @@ export class Game {
       const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? (this.rand() < .3 ? 'priest' : 'mage') : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
       this.spawnEnemy(type === 'knight' && this.rand() < .28 ? 'spear' : type, 540 + i * (spec.width - 900) / spec.count + this.rand() * 65, index);
     }
-    if (index === 4) this.spawnEnemy('boss', spec.width - 400, index);
+    if (index === 4) {
+      this.spawnEnemy('boss', spec.width - 400, index);
+      // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes (rand above is still drawn, keeping the seed stream).
+      this.platforms = [{ x: 60, y: FLOOR - 100, w: 190, h: 18 }, { x: spec.width - 250, y: FLOOR - 100, w: 190, h: 18 }];
+    }
     this.totalEnemies = this.enemies.length;
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
@@ -74,7 +78,7 @@ export class Game {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -225,7 +229,6 @@ export class Game {
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1) {
     e.hp -= amount; e.flash = .14;
-    const wasHalf = e.hp + amount < e.maxHp / 2;
     const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
     if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
     const broken = e.hp > 0 && e.poise <= 0;
@@ -249,8 +252,11 @@ export class Game {
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
-    if (e.hp > 0 && e.type === 'boss' && e.hp < e.maxHp / 2 && !wasHalf) e.poise = e.maxPoise; // phase change resets poise
     if (broken) this.stagger(e);
+    if (e.hp > 0 && e.type === 'boss') {
+      const phase = e.hp <= e.maxHp * .34 ? 3 : e.hp <= e.maxHp * .67 ? 2 : 1;
+      if (phase > e.bossPhase) this.enterPhase(e, phase);
+    }
     if (e.hp <= 0) {
       e.hp = 0; this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
       const p = this.player;
@@ -259,11 +265,16 @@ export class Game {
       if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
   }
+  enterPhase(e, phase) {
+    Object.assign(e, { bossPhase: phase, tell: 0, warn: null, move: '', travel: 0, recover: 0, punishable: false, poise: e.maxPoise, pause: 1.1 });
+    this.emit('bossPhase', { phase, x: e.x, y: e.y - e.h * .5 });
+  }
   stagger(e) {
     if (e.blessRadius) e.blessCd = 2.5;
+    e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false; e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : 1;
-    e.armor = e.stun + 1.2; // counts down with the stun, so 1.2 s of armor remain once it ends
+    e.armor = e.stun + (e.type === 'boss' ? .6 : 1.2); // counts down with the stun, so 1.2 s (boss 0.6 s) of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
     this.freeze = Math.max(this.freeze, .055);
     this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss' });
@@ -293,17 +304,19 @@ export class Game {
     if (e.stun > 0) { e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     const dx = p.x - e.x, distance = Math.abs(dx);
     const face = dx >= 0 ? 1 : -1;
-    if (e.type !== 'shield' && !(e.type === 'spear' && e.tell > 0)) e.dir = face; // spear facing is locked during the warning
+    if (e.type === 'boss') { if (!(e.tell > 0 || e.travel > 0)) e.dir = face; } // boss facing is locked while warning and charging
+    else if (e.type !== 'shield' && !(e.type === 'spear' && e.tell > 0)) e.dir = face; // spear facing is locked during the warning
     else if (e.tell > 0 || e.turn > 0) e.reface = 0; // facing locked during the bash warning and the post-bash turn delay
     else if (wasTurning) e.dir = face; // the turn delay just ended: face at once, no re-face delay on top
     else if (dx * e.dir >= 0) e.reface = 0;
     else if ((e.reface += dt) >= .25) { e.dir = face; e.reface = 0; } // player behind: re-face delay
-    if (!(e.tell > 0) && distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; } // a started warning always counts down
+    if (!(e.tell > 0) && !(e.travel > 0) && distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; } // a started warning always counts down
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
       if (e.tell <= 0) this.enemyAttack(e);
       return;
     }
+    if (e.travel > 0) { this.bossCharge(e, dt, face, distance); return; }
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
@@ -318,8 +331,10 @@ export class Game {
       else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.stage * .13; }
       else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'boss') {
-      if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2) && this.canWindUp(e)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.punishable = e.action % 3 !== 2; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
-      else { e.vx = distance > 95 ? e.dir * e.speed * (e.hp < e.maxHp / 2 ? 1.5 : 1) : 0; e.x += e.vx * dt; }
+      e.pause = Math.max(0, e.pause - dt); e.recover = Math.max(0, e.recover - dt);
+      const move = e.pause <= 0 && e.recover <= 0 && e.cd <= 0 && this.canWindUp(e) ? this.bossPick(e, distance) : '';
+      if (move) this.bossStart(e, move);
+      else { e.vx = e.pause <= 0 && e.recover <= 0 && distance > 95 ? e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'spear') {
       if (e.turn > 0) e.vx = 0; // recovery after the thrust
       else if (distance <= 193 && Math.abs(p.y - e.y) < 64 && e.cd <= 0 && this.canWindUp(e)) {
@@ -334,6 +349,68 @@ export class Game {
       else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
     }
   }
+  // Boss move choice: never the same move twice in a row; null-like '' means walk closer.
+  bossPick(e, distance) {
+    const ph = e.bossPhase;
+    let list = (ph === 3 && e.action % 3 === 2 ? ['ritual'] : []).filter(m => m !== e.lastMove);
+    if (!list.length) {
+      list = (distance < 145 ? ['slash', 'slam'] : ph >= 2 && distance > 170 ? ['charge', 'volley'] : ['charge']).filter(m => m !== e.lastMove);
+    }
+    return list.length ? list[Math.floor(this.rand() * list.length)] : '';
+  }
+  // Starts a boss warning and exposes its exact hit area in e.warn (box / line / lines / circles / wave), which bossAttack reads back.
+  bossStart(e, move, tell) {
+    const p = this.player, d = e.dir, o = { x: e.x, y: e.y - e.h * .6 };
+    const front = (len, h) => ({ x: Math.min(e.x, e.x + d * len), y: e.y - h, w: len, h });
+    const warn = { kind: move };
+    e.move = move; e.lastMove = move; e.vx = 0; e.punishable = false;
+    if (move === 'slash') { e.tell = tell || .62; warn.box = front(146, e.h); }
+    else if (move === 'slam') {
+      e.tell = .88; e.punishable = true; warn.box = front(112, 123);
+      if (e.bossPhase >= 2) warn.wave = { x1: e.x + d * 40, y1: FLOOR - 6, x2: e.x + d * 760, y2: FLOOR - 6 };
+    } else if (move === 'charge') {
+      e.tell = .82; e.chargeTo = clamp(e.x + d * 305, 30, this.worldWidth - 40);
+      warn.line = { x1: e.x, y1: e.y - e.h * .5, x2: e.chargeTo, y2: e.y - e.h * .5 };
+      warn.box = { x: Math.min(e.x, e.chargeTo) - e.w / 2, y: e.y - e.h, w: Math.abs(e.chargeTo - e.x) + e.w, h: e.h };
+    } else if (move === 'volley') {
+      e.tell = .92; warn.base = Math.atan2(p.y - 30 - o.y, p.x - o.x);
+      warn.lines = [-.5, -.25, 0, .25, .5].map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(warn.base + a) * 420, y2: o.y + Math.sin(warn.base + a) * 420, angle: warn.base + a }));
+    } else {
+      e.tell = 1.28; e.punishable = true;
+      warn.circles = [-174, 0, 174].map(dx => ({ x: p.x + dx, y: e.y, r: 56 }));
+    }
+    e.warn = warn;
+  }
+  bossCharge(e, dt, face, distance) {
+    const p = this.player, step = (e.chargeTo - e.x) * Math.min(1, dt / e.travel);
+    e.travel -= dt; e.x += step; e.vx = step / dt;
+    if (Math.abs(p.x - e.x) < (p.w + e.w) / 2 && p.y > e.y - e.h && p.y - p.h < e.y) this.hurt(e.damage * 1.1, e.dir); // i-frames after a hit (0.8 s) outlast the 0.48 s charge: once per charge
+    if (e.travel > 0) return;
+    e.x = e.chargeTo; e.vx = 0; e.move = ''; e.cd = 1; e.chargeN++;
+    e.dir = face;
+    if (e.bossPhase >= 2 && e.chargeN % 2 === 0 && distance <= 190 && this.canWindUp(e)) this.bossStart(e, 'slash', .46);
+  }
+  bossAttack(e, dmg) {
+    const p = this.player, w = e.warn, move = e.move;
+    const overlaps = b => p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h;
+    e.warn = null; e.move = move === 'charge' ? move : '';
+    if (move === 'charge') { e.travel = .48; this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: true, kind: 'charge', area: w }); return; }
+    this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: true, kind: move, area: w });
+    if (move === 'slash') { if (overlaps(w.box)) this.hurt(dmg, e.dir); e.cd = 1.2; }
+    else if (move === 'slam') {
+      if (overlaps(w.box)) this.hurt(dmg * 1.3, e.dir);
+      if (w.wave) this.projectiles.push({ x: w.wave.x1, y: w.wave.y1, vx: e.dir * 240, vy: 0, r: 14, life: 3, damage: dmg * .7, ground: true });
+      e.cd = e.recover = 1;
+    } else if (move === 'volley') {
+      for (const l of w.lines) this.projectiles.push({ x: l.x1, y: l.y1, vx: Math.cos(l.angle) * 265, vy: Math.sin(l.angle) * 265, r: 9, life: 4, damage: dmg });
+      e.cd = 1.4;
+    } else {
+      // circles are ground-centred discs: a grounded hero inside one is hit, a gap or a high jump is safe
+      const hit = w.circles.some(c => Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r);
+      if (hit) this.hurt(dmg * 1.35, Math.sign(p.x - e.x) || 1);
+      e.cd = 1.5;
+    }
+  }
   enemyAttack(e) {
     const p = this.player;
     e.punishable = false;
@@ -343,19 +420,20 @@ export class Game {
       for (const o of targets) o.blessed = 5;
       e.blessRadius = 0; e.blessCd = 7; e.cd = Math.max(e.cd, 1);
       this.emit('enemyBuff', { x: e.x, y: e.y - e.h * .5, targets: targets.map(o => ({ x: o.x, y: o.y - o.h * .5 })) });
-    } else if (e.type === 'mage' || e.type === 'priest' || (e.type === 'boss' && e.action % 3 === 2)) {
+    } else if (e.type === 'boss') {
+      this.bossAttack(e, dmg);
+    } else if (e.type === 'mage' || e.type === 'priest') {
       const base = Math.atan2(p.y - 30 - (e.y - e.h * .6), p.x - e.x);
-      const spread = e.type === 'boss' ? [-.25, 0, .25] : [0];
-      for (const offset of spread) this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base + offset) * 250, vy: Math.sin(base + offset) * 250, r: e.type === 'boss' ? 9 : 7, life: 4, damage: dmg });
+      this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base) * 250, vy: Math.sin(base) * 250, r: 7, life: 4, damage: dmg });
     } else if (e.type === 'spear') {
       const b = e.thrustBox; e.turn = .72; e.thrustBox = null;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'spear' });
       if (b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir);
     } else {
-      const range = e.type === 'boss' ? 155 : e.type === 'bat' ? 55 : e.type === 'shield' ? 70 : 82;
+      const range = e.type === 'bat' ? 55 : e.type === 'shield' ? 70 : 82;
       if (e.type === 'shield') e.turn = .6;
-      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: e.type === 'boss' });
-      if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(dmg, e.dir);
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false });
+      if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : 77)) this.hurt(dmg, e.dir);
     }
     e.action++;
   }
@@ -379,6 +457,7 @@ export class Game {
     if (p.hp === 0) { this.state = 'dead'; p.plunge = 0; p.move = ''; this.emit('death'); }
   }
   finishStage() {
+    this.player.plunge = 0; this.player.move = '';
     if (this.stage === 4) { this.state = 'won'; this.emit('win'); return; }
     this.state = 'upgrade';
     this.choices = [...RELICS];

@@ -575,7 +575,7 @@ test('poise: a staggered shield bearer drops its guard', () => {
   assert.equal(e.poise, e.maxPoise);
 });
 
-test('poise: damage doubles during the boss cleave wind-up', () => {
+test('poise: damage doubles during the boss slam wind-up', () => {
   const { game, player } = arena();
   const b = enemy(game, 140, { type: 'boss' });
   player.x = 100;
@@ -757,13 +757,6 @@ test('poise: blocked hits deal 25% poise damage', () => {
   assert.equal(s.poise, s.maxPoise - 17 * .25);
 });
 
-test('poise: the boss refills poise when it drops below half health', () => {
-  const { game } = arena();
-  const b = enemy(game, 500, { type: 'boss', hp: 640 });
-  b.poise = 10;
-  game.damageEnemy(b, 330, 1, false, false, false, 5);
-  assert.equal(b.poise, b.maxPoise);
-});
 
 test('poise: Eclipse still cancels a non-boss warning on an armored enemy', () => {
   const { game, player } = arena();
@@ -992,4 +985,151 @@ test('plunge QA: a plunge from 40 px up still makes a shockwave (the threshold i
   advance(game, 1);
   assert.ok(events.find(e => e.type === 'plunge').radius > 0, 'radius is 90 at exactly 40 px');
   assert.ok(near.hp < near.maxHp, 'enemy 30 px away takes the shockwave');
+});
+
+// Fallen King (#18)
+function boss(x = 500, heroX = 700) {
+  const t = arena();
+  const b = enemy(t.game, x, { type: 'boss', hp: 640 });
+  Object.assign(t.player, { x: heroX, hp: 1e4, maxHp: 1e4 });
+  b.cd = 99; b.dir = Math.sign(heroX - x) || 1;
+  return { ...t, b };
+}
+// Starts a move, lets it fire, and reports whether the hero lost health.
+function fires(game, player, b, move, tell = 1.4) {
+  const hp = player.hp;
+  game.bossStart(b, move);
+  advance(game, tell);
+  return hp - player.hp;
+}
+
+test('boss phases switch at 67% and 34% health with a 1.1 s pause and a poise refill', () => {
+  const { game, events, b } = boss(500, 560);
+  game.bossStart(b, 'slam'); b.poise = 10;
+  game.damageEnemy(b, 100, 1, false, false, false, 0);
+  assert.equal(b.bossPhase, 1);
+  game.damageEnemy(b, 112, 1, false, false, false, 0); // 428/640 = 66.9%
+  assert.equal(b.bossPhase, 2);
+  assert.equal(events.filter(e => e.type === 'bossPhase').at(-1).phase, 2);
+  assert.ok('x' in events.at(-1) || events.some(e => e.type === 'bossPhase' && 'y' in e));
+  assert.equal(b.tell, 0); assert.equal(b.warn, null); assert.equal(b.poise, b.maxPoise);
+  b.cd = 0; const hp = game.player.hp;
+  for (let t = 0; t < 1.05; t += 1 / 120) { game.update(1 / 120); assert.equal(b.tell, 0); }
+  assert.equal(game.player.hp, hp);
+  advance(game, .3);
+  assert.ok(b.tell > 0 || b.travel > 0 || game.player.hp < hp);
+  game.damageEnemy(b, 211, 1, false, false, false, 0);
+  assert.equal(b.bossPhase, 3);
+  assert.ok(b.pause > 1);
+});
+
+test('boss never repeats a move twice in a row, and volley / ritual are phase gated', () => {
+  const { game, b } = boss();
+  for (const phase of [1, 2, 3]) for (const distance of [100, 160, 300]) {
+    b.bossPhase = phase; b.lastMove = ''; b.action = 0;
+    const seen = new Set();
+    for (let i = 0; i < 300; i++) {
+      b.action = i % 3;
+      const m = game.bossPick(b, distance);
+      assert.notEqual(m, b.lastMove || null);
+      seen.add(m); b.lastMove = m;
+    }
+    assert.equal(seen.has('volley'), phase >= 2 && distance > 170);
+    assert.equal(seen.has('ritual'), phase === 3);
+    assert.equal(seen.has('charge'), distance >= 145);
+  }
+});
+
+test('boss slash and slam hit exactly their exposed boxes', () => {
+  for (const move of ['slash', 'slam']) {
+    const { game, player, b } = boss(500, 700);
+    game.bossStart(b, move);
+    const box = b.warn.box, edge = box.x + box.w;
+    assert.equal(box.w, move === 'slash' ? 146 : 112); assert.equal(box.h, move === 'slash' ? b.h : 123);
+    player.x = edge + player.w / 2 + 2; // just outside
+    advance(game, 1);
+    assert.equal(player.hp, 1e4);
+    b.recover = 0; player.invulnerable = 0;
+    player.x = edge + player.w / 2 - 2; // just inside
+    const dealt = fires(game, player, b, move);
+    assert.equal(dealt, Math.round(22 * (move === 'slam' ? 1.3 : 1)));
+  }
+});
+
+test('boss slam warning is punishable and phase 2 adds a ground wave that must be jumped', () => {
+  const { game, player, b } = boss(500, 900);
+  game.bossStart(b, 'slam');
+  assert.equal(b.punishable, true); assert.equal(b.warn.wave, undefined);
+  b.bossPhase = 2; b.warn = null; b.tell = 0; b.punishable = false;
+  game.bossStart(b, 'slam');
+  assert.ok(b.warn.wave); assert.equal(b.warn.wave.y1, FLOOR - 6);
+  advance(game, 1.2); // wave spawned at the fire, hero 360 away
+  assert.equal(game.projectiles.filter(q => q.ground).length, 1);
+  assert.equal(player.hp, 1e4);
+  advance(game, 1.2);
+  assert.equal(player.hp, 1e4 - Math.round(22 * .7));
+  // a jumping hero is passed over
+  const t2 = boss(500, 900);
+  t2.b.bossPhase = 2; t2.game.bossStart(t2.b, 'slam');
+  for (let t = 0; t < 3; t += 1 / 120) { t2.player.y = FLOOR - 90; t2.player.vy = 0; t2.game.update(1 / 120); }
+  assert.equal(t2.player.hp, 1e4);
+});
+
+test('boss charge follows its exposed line, hits once, and phase 2 adds a slash every other charge', () => {
+  const { game, player, b } = boss(500, 700);
+  game.bossStart(b, 'charge');
+  assert.equal(b.warn.line.x2, 805); assert.equal(b.warn.box.w, 305 + b.w);
+  while (b.tell > 0 || b.travel > 0 || b.move) game.update(1 / 120);
+  assert.equal(b.x, 805);
+  assert.equal(player.hp, 1e4 - Math.round(22 * 1.1));
+  // beyond the line end the hero is safe
+  const t2 = boss(500, 871);
+  t2.game.bossStart(t2.b, 'charge'); advance(t2.game, 1.4);
+  assert.equal(t2.player.hp, 1e4);
+  // phase 2 follow-up on the second charge only
+  const t3 = boss(500, 830);
+  t3.b.bossPhase = 2;
+  t3.game.bossStart(t3.b, 'charge'); advance(t3.game, 1.4);
+  assert.notEqual(t3.b.move, 'slash');
+  t3.b.x = 500; t3.b.cd = 99; t3.player.x = 830;
+  t3.game.bossStart(t3.b, 'charge');
+  let slash = false;
+  for (let i = 0; i < 400 && !slash; i++) { t3.game.update(1 / 120); slash = t3.b.move === 'slash'; }
+  assert.ok(slash); assert.ok(t3.b.tell <= .46 && t3.b.tell > .4); assert.ok(t3.b.warn.box);
+});
+
+test('boss volley fires five aimed bolts, ritual circles leave safe gaps and do not follow the hero', () => {
+  const v = boss(500, 800);
+  v.game.bossStart(v.b, 'volley');
+  assert.equal(v.b.warn.lines.length, 5);
+  advance(v.game, 1);
+  assert.equal(v.game.projectiles.length, 5);
+
+  const r = boss(500, 600);
+  r.game.bossStart(r.b, 'ritual');
+  const cs = r.b.warn.circles;
+  assert.deepEqual(cs.map(c => c.x), [426, 600, 774]);
+  assert.equal(r.b.punishable, true);
+  r.player.x = 687; // centre of the gap
+  advance(r.game, 1.5);
+  assert.equal(r.player.hp, 1e4);
+
+  const r2 = boss(500, 600);
+  assert.equal(fires(r2.game, r2.player, r2.b, 'ritual'), Math.round(22 * 1.35));
+});
+
+test('boss armor lasts 0.6 s after a stagger stun while other enemies keep 1.2 s', () => {
+  const { game, player, b } = boss();
+  const s = enemy(game, 900);
+  for (const e of [b, s]) { e.poise = 1; game.damageEnemy(e, 1, 1, false, false, false, 17); }
+  assert.ok(Math.abs(b.armor - b.stun - .6) < 1e-9);
+  assert.ok(Math.abs(s.armor - s.stun - 1.2) < 1e-9);
+});
+
+test('the boss stage has two edge ledges and a flat centre', () => {
+  const game = new Game(() => {}, 7);
+  game.loadStage(4);
+  assert.equal(game.platforms.length, 2);
+  const [l, r] = game.platforms;
+  assert.ok(l.x + l.w < 400 && r.x > game.worldWidth - 400 && l.y < FLOOR && r.y < FLOOR);
 });

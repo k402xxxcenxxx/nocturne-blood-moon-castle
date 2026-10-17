@@ -132,6 +132,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
+    case 'bossPhase': toast(t('boss.phase' + e.phase)); break;
     case 'enemySwing': if (e.kind === 'spear') audio.play('thrust'); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
