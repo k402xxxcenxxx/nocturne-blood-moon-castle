@@ -589,4 +589,41 @@ export function drawPortal(ctx, x = 0, y = FLOOR, time = 0, open = false) {
   }
   poly(ctx, '#c5ab7c', [[0, -126], [7, -116], [0, -109], [-7, -116]]); circle(ctx, open ? '#e6d1b0' : '#784a55', 0, -116, 3);
   ledge(ctx, -44, -1, 88, p); ctx.restore();
+}// Elemental status overlays: plain fillRects only (no shadows/gradients/allocations) so crowds stay cheap. `calm` = steady instead of flickering.
+export function drawStatus(ctx, e, time = 0, calm = false) {
+  const burn = e.burn > 0, chill = e.chill > 0 || e.frozen > 0, frozen = e.frozen > 0, shock = e.shock > 0, bleed = e.bleed > 0;
+  if (!(burn || chill || shock || bleed || e.frostMeter > 0)) return;
+  const x = Math.round(e.x), y = Math.round(e.y), w = Math.round(e.w || 27), h = Math.round(e.h || 58), top = y - h, l = x - (w >> 1), t = calm ? 0 : time;
+  ctx.save();
+  if (chill) {
+    ctx.fillStyle = frozen ? '#cdeeff' : '#7fc4f0'; ctx.globalAlpha = frozen ? .5 : .24; ctx.fillRect(l - 2, top, w + 4, h);
+    if (frozen) { // ice crust: slab edges, jagged top spikes, glints
+      ctx.globalAlpha = .9; ctx.fillStyle = '#e9f8ff'; ctx.fillRect(l - 3, top, 3, h); ctx.fillRect(l + w, top, 3, h);
+      for (let i = 0; i < 4; i++) { const sx = l + 2 + i * Math.round(w / 4), sh = 7 + (i * 5 % 4) * 2; ctx.fillRect(sx, top - sh + 3, 3, sh); ctx.fillStyle = '#9fd8ff'; ctx.fillRect(sx + 1, top - sh + 5, 1, sh - 2); ctx.fillStyle = '#e9f8ff'; }
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(l + 3, top + 8, 2, 2); ctx.fillRect(l + w - 6, top + (h >> 1), 2, 2);
+    }
+  }
+  if (burn) {
+    ctx.globalAlpha = .16; ctx.fillStyle = '#ff7a2a'; ctx.fillRect(l, top + (h >> 2), w, h * .75);
+    for (let i = 0; i < 4; i++) {
+      const ph = (t * 2.2 + i * .27) % 1, fx = l + 3 + (i * 7919 % Math.max(1, w - 6)) + Math.round(Math.sin(t * 9 + i) * 2), fy = y - 6 - ph * (h * .8);
+      ctx.globalAlpha = 1 - ph; ctx.fillStyle = ph < .5 ? '#ff9a3a' : '#e0481f'; ctx.fillRect(fx, Math.round(fy), 3, 4);
+      if (ph < .4) { ctx.fillStyle = '#ffe08a'; ctx.fillRect(fx + 1, Math.round(fy) + 1, 1, 2); }
+    }
+  }
+  if (shock) {
+    const k = Math.floor(t * 14);
+    for (let i = 0; i < 3; i++) {
+      const hsh = Math.imul(k + i * 131, 2654435761) >>> 0, sx = l - 3 + hsh % (w + 6), sy = top + 4 + (hsh >> 8) % Math.max(1, h - 8), d = (hsh >> 4 & 1) ? 1 : -1;
+      ctx.globalAlpha = .95; ctx.fillStyle = '#ffe97a'; ctx.fillRect(sx, sy, 2, 2); ctx.fillRect(sx + d * 2, sy + 2, 2, 2); ctx.fillRect(sx, sy + 4, 2, 2);
+      ctx.fillStyle = '#fffbd0'; ctx.fillRect(sx, sy, 1, 1);
+    }
+  }
+  if (bleed) {
+    const n = 1 + Math.min(3, (e.bleedStacks || 1) / 3 | 0);
+    ctx.fillStyle = '#c4283a';
+    for (let i = 0; i < n; i++) { const ph = (t * 1.3 + i * .31) % 1; ctx.globalAlpha = 1 - ph * .6; ctx.fillRect(l + 3 + (i * 6143 % Math.max(1, w - 6)), Math.round(top + h * .3 + ph * h * .6), 2, 3 + (ph > .5 ? 1 : 0)); }
+  }
+  if (e.frostMeter > 0 && !frozen) { ctx.globalAlpha = .9; for (let i = 0; i < 3; i++) { ctx.fillStyle = i < e.frostMeter ? '#bfe8ff' : '#2b3a52'; ctx.fillRect(x - 8 + i * 6, y + 3, 4, 3); } }
+  ctx.restore();
 }

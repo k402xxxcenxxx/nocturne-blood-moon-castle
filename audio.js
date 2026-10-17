@@ -131,6 +131,7 @@ export class AudioSystem {
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
       roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
+      shatter: 14, bloodFlame: 14,
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
@@ -213,6 +214,42 @@ export class AudioSystem {
         tone('sine', 100, 0.28, 0.4, 38);
         [1560, 2340, 3480].forEach((f, i) => tone('square', f * d, 0.1 + i * 0.03, 0.04, f * 0.9 * d));
         tone('triangle', 2150 * d, 0.3, 0.08, 1900 * d, 0.03);
+        break;
+      }
+      case 'shatter': { // frozen enemy bursts: glassy crack, bright shard tinkles, small low thud
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 8000, 0.09, 0.26, 2500);
+        tone('sine', 110, 0.16, 0.3, 50);
+        [3136, 4186, 5588].forEach((f, i) => tone('triangle', f * d, 0.14 + i * 0.03, 0.07, f * 0.85 * d, 0.012 * i));
+        break;
+      }
+      case 'bloodFlame': { // burning blood ignites: rising dark whoosh, wet low thump, crackle
+        const d = 0.95 + Math.random() * 0.1;
+        tone('noise', 700, 0.3, 0.26, 3200);
+        tone('sawtooth', 90 * d, 0.28, 0.1, 160 * d);
+        tone('sine', 70, 0.22, 0.34, 38);
+        tone('noise', 4500, 0.05, 0.1, 1200, 0.1);
+        break;
+      }
+      case 'chain': { // lightning arc: fast zap with a falling buzz, then a spark
+        const d = 0.96 + Math.random() * 0.08;
+        tone('square', 1800 * d, 0.1, 0.06, 260 * d);
+        tone('noise', 7000, 0.12, 0.2, 1500);
+        tone('triangle', 2600 * d, 0.05, 0.07, 900, 0.07);
+        break;
+      }
+      case 'tick': { // DoT: very soft ember tick; global cap ~6/s so crowds do not buzz
+        if (ctx.currentTime - (this._lastTick ?? -1) < 0.16) return;
+        this._lastTick = ctx.currentTime;
+        const d = 0.9 + Math.random() * 0.2;
+        tone('noise', 2600 * d, 0.03, 0.05, 900);
+        tone('sine', 190 * d, 0.04, 0.03, 120);
+        break;
+      }
+      case 'freeze': { // frozen: icy crackle, a few tiny irregular ticks over a high shimmer
+        tone('sine', 3900, 0.2, 0.05, 3300);
+        [0, 0.035, 0.07, 0.12].forEach((dl, i) => tone('noise', 7500 - i * 700, 0.025, 0.12, 3000, dl + Math.random() * 0.015));
+        tone('triangle', 1400, 0.1, 0.05, 700);
         break;
       }
       case 'roar': { // boss phase change: detuned low growl with a falling sweep; intensity 1.3 for phase 3

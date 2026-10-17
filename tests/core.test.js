@@ -1031,7 +1031,8 @@ test('boss never repeats a move twice in a row, and volley / ritual are phase ga
     for (let i = 0; i < 300; i++) {
       b.action = i % 3;
       const m = game.bossPick(b, distance);
-      assert.notEqual(m, b.lastMove || null);
+      if (!(distance >= 145 && (phase === 1 || distance <= 170))) assert.notEqual(m, b.lastMove || null); // a lone legal move (charge) may repeat
+      assert.ok(m, 'always picks a move');
       seen.add(m); b.lastMove = m;
     }
     assert.equal(seen.has('volley'), phase >= 2 && distance > 170);
@@ -1180,4 +1181,209 @@ test('boss ledges need a double jump, and a hero on one is outside slash, charge
   c.game.bossStart(c.b, 'charge');
   for (let i = 0; i < 300; i++) { c.player.y = ledge.y; c.player.vy = 0; c.game.update(1 / 120); }
   assert.equal(c.player.hp, 1e4);
+});
+
+// ---- Elemental relics (#13) ----
+function elem(...relics) {
+  const ctx = arena();
+  ctx.game.relics.push(...relics);
+  return ctx;
+}
+const sword = (game, e, heavy = false) => game.damageEnemy(e, 24, 1, false, heavy, false, 0);
+
+test('relic list has four stackable elemental relics', () => {
+  for (const id of ['fire', 'frost', 'shock', 'bleed']) assert.ok(RELICS.some(r => r.id === id));
+});
+
+test('burn applies on hit and ticks every 0.5 s without hit-stop, stun or poise damage', () => {
+  const { game, player } = elem('fire');
+  const e = enemy(game, 600);
+  sword(game, e);
+  assert.equal(e.burn, 4);
+  game.freeze = 0; e.stun = 0; e.flash = 0;
+  const hp = e.hp, poise = e.poise;
+  advance(game, 1.01);
+  assert.equal(e.hp, hp - 2 * Math.round(.14 * player.damage));
+  assert.equal(game.freeze, 0); assert.equal(e.stun, 0); assert.equal(e.poise, poise);
+  advance(game, 4);
+  assert.equal(e.burn, 0);
+});
+
+test('bleed stacks per hit, refreshes, ticks per stack and expires', () => {
+  const { game, player } = elem('bleed');
+  const e = enemy(game, 600);
+  sword(game, e); sword(game, e);
+  assert.equal(e.bleedStacks, 2); assert.equal(e.bleed, 5);
+  game.freeze = 0;
+  const hp = e.hp;
+  advance(game, .51);
+  assert.equal(e.hp, hp - Math.round(.1 * player.damage * 2));
+  advance(game, 5);
+  assert.equal(e.bleedStacks, 0);
+});
+
+test('frost chills, freezes at 3 meter, freezing cancels warnings and blocks action', () => {
+  const { game, player } = elem('frost');
+  player.x = 100;
+  const e = enemy(game, 140);
+  e.tell = .5; e.cd = 0;
+  sword(game, e); sword(game, e);
+  assert.equal(e.frozen, 0); assert.equal(e.chill, 2.5);
+  sword(game, e);
+  assert.ok(e.frozen > .75 && e.frozen <= 1.5); assert.equal(e.tell, 0);
+  const x = e.x, hp = player.hp;
+  advance(game, .5);
+  assert.equal(e.x, x); assert.equal(player.hp, hp);
+});
+
+test('chilled enemies move slower; the boss resists chill and freeze', () => {
+  const { game, player } = elem('frost');
+  player.x = 100;
+  const a = enemy(game, 600), b = enemy(game, 800, { type: 'boss', hp: 9000 });
+  const ax = a.x, bx = b.x;
+  advance(game, .5); const free = ax - a.x, freeB = bx - b.x;
+  a.x = ax; b.x = bx;
+  sword(game, a); sword(game, b);
+  game.freeze = 0; for (const o of [a, b]) { o.stun = 0; o.vx = 0; }
+  advance(game, .5);
+  assert.ok(ax - a.x < free * .8);
+  assert.ok(bx - b.x > freeB * .8 && bx - b.x < freeB);
+  sword(game, b); sword(game, b);
+  assert.equal(b.frozen, .28); assert.ok(b.freezeImmune > 1.9);
+  b.frozen = 0;
+  for (let i = 0; i < 3; i++) sword(game, b);
+  assert.equal(b.frozen, 0, 'immune to a second freeze');
+});
+
+test('shatter needs a frozen target and a heavy hit, unfreezes and hits everything in radius', () => {
+  const { game, player } = elem('frost');
+  const e = enemy(game, 600), near = enemy(game, 700), far = enemy(game, 760);
+  e.frozen = 1;
+  sword(game, e, false);
+  assert.ok(e.frozen > 0, 'light hit does not shatter');
+  const events = []; game.onEvent = ev => events.push(ev);
+  const nh = near.hp, fh = far.hp, eh = e.hp;
+  sword(game, e, true);
+  const r = events.find(ev => ev.type === 'reaction');
+  assert.equal(r.name, 'shatter'); assert.equal(r.radius, 140);
+  assert.equal(e.frozen, 0);
+  const dmg = Math.round(player.damage * 1.65);
+  assert.equal(near.hp, nh - dmg); assert.equal(far.hp, fh);
+  assert.ok(e.hp <= eh - 24 - dmg);
+  const e2 = enemy(game, 900); sword(game, e2, true);
+  assert.equal(events.filter(ev => ev.type === 'reaction').length, 1, 'unfrozen heavy hit does not shatter');
+});
+
+test('blood flame needs fire plus bleeding, consumes stacks and scales with them', () => {
+  const noFire = elem('bleed');
+  const a = enemy(noFire.game, 600); sword(noFire.game, a); sword(noFire.game, a, true);
+  assert.equal(noFire.events.some(ev => ev.type === 'reaction'), false);
+  const { game, player, events } = elem('fire', 'bleed');
+  const e = enemy(game, 600), side = enemy(game, 690);
+  sword(game, e); sword(game, e);
+  const sh = side.hp; sword(game, e, true);
+  assert.equal(events.filter(ev => ev.type === 'reaction')[0].name, 'bloodFlame');
+  assert.equal(e.bleedStacks, 1, 'stacks consumed, then the hit adds one');
+  assert.equal(side.hp, sh - Math.round((.7 + .6) * player.damage * 1.3));
+});
+
+test('chain lightning arcs from a shocked enemy to the nearest others, shocking them', () => {
+  const { game, player, events } = elem('shock');
+  const e = enemy(game, 600), n1 = enemy(game, 700), n2 = enemy(game, 760), n3 = enemy(game, 780), far = enemy(game, 1000);
+  sword(game, e);
+  assert.equal(e.shock, 4); assert.equal(events.some(ev => ev.type === 'reaction'), false);
+  const hp = [n1, n2, n3, far].map(o => o.hp);
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  const r = events.find(ev => ev.type === 'reaction');
+  assert.equal(r.name, 'chain'); assert.equal(r.targets.length, 3);
+  const dmg = Math.round(.35 * player.damage + .12 * 40);
+  assert.deepEqual([n1, n2, n3].map(o => o.hp), [n1, n2, n3].map((o, i) => hp[i] - dmg));
+  assert.equal(far.hp, hp[3]); assert.equal(n1.shock, 4);
+  assert.equal(events.filter(ev => ev.type === 'reaction').length, 1, 'chained targets do not chain again');
+});
+
+test('shield bearer blocked frontal hits apply no status', () => {
+  const { game, player } = elem('fire', 'frost', 'shock', 'bleed');
+  player.x = 500; player.dir = 1;
+  const s = enemy(game, 540, { type: 'shield' }); s.dir = -1;
+  game.hitSet = new Set(); player.attack = .2; player.combo = 1;
+  game.hitTargets();
+  assert.equal(s.burn + s.chill + s.shock + s.bleed + s.frostMeter, 0);
+});
+
+test('statuses are cleared by loadStage; leech heals on a burn kill', () => {
+  const { game, player } = elem('fire');
+  const e = enemy(game, 600, { hp: 5 });
+  e.hp = 50; sword(game, e);
+  game.loadStage(1);
+  assert.ok(game.enemies.every(o => o.burn === 0 && o.frozen === 0 && o.bleedStacks === 0 && o.shock === 0 && o.chill === 0));
+  const g2 = elem('fire'); const v = enemy(g2.game, 600, { hp: 100 });
+  g2.player.leech = 5; g2.player.hp = 50;
+  v.hp = 60; v.burn = 4; v.burnDmg = 100;
+  advance(g2.game, .51);
+  assert.equal(v.hp, 0); assert.equal(g2.player.hp, 55); assert.equal(g2.game.kills, 1);
+});
+
+// QA #13: under sustained sword pressure a frozen normal enemy must get a window to act. Currently it is re-frozen the moment it thaws (frost x3, a stationary hero spamming attacks), so it never warns or attacks.
+test('QA frost lock: under sustained attacks a frozen normal enemy gets a 0.5 s window to act before it refreezes', () => {
+  const { game, player } = elem('frost', 'frost', 'frost');
+  player.x = 100; player.dir = 1; player.maxHp = player.hp = 1e9; player.invulnerable = 1e9;
+  const e = enemy(game, 140, { hp: 1e6 });
+  let frozenBefore = false, open = 0, longestOpen = 0;
+  for (let t = 0; t < 10; t += 1 / 120) {
+    game.update(1 / 120, { attack: true });
+    if (e.frozen > 0) frozenBefore = true;
+    open = frozenBefore && e.frozen <= 0 ? open + 1 / 120 : 0;
+    longestOpen = Math.max(longestOpen, open);
+  }
+  assert.ok(longestOpen >= .5, `longest unfrozen window after the first freeze was ${longestOpen.toFixed(2)} s`);
+});
+
+// QA #13: leech is applied on a DoT kill that lands on the same frame the hero dies, which heals a dead hero (hp 5 on the death screen).
+test('QA leech: a DoT kill on the frame the hero dies does not heal the dead hero', () => {
+  const { game, player } = elem('fire');
+  player.hp = 1; player.leech = 5;
+  const attacker = enemy(game, player.x + 20);
+  attacker.tell = .001; attacker.cd = 0;
+  const dying = enemy(game, player.x + 200, { hp: 1 });
+  dying.burn = 4; dying.burnDmg = 50; dying.dotT = .4999;
+  game.update(1 / 120);
+  assert.equal(game.state, 'dead');
+  assert.equal(player.hp, 0);
+});
+
+test('#13 rework: thaw grants normal enemies 2 s freeze immunity; frost meter decays after 3 s', () => {
+  const { game } = elem('frost', 'frost', 'frost');
+  const e = enemy(game, 600);
+  sword(game, e);
+  assert.equal(e.frozen > 0, true);
+  sword(game, e); assert.equal(e.frostMeter, 0, 'no meter while frozen');
+  advance(game, 1.6);
+  assert.equal(e.frozen, 0); assert.ok(e.freezeImmune > 0);
+  sword(game, e); assert.equal(e.frostMeter, 0, 'no meter while immune');
+  const f = enemy(game, 800); f.frostMeter = 2; f.frostT = 3;
+  advance(game, 3.1);
+  assert.equal(f.frostMeter, 0);
+});
+
+test('#13 rework: Eclipse shocks but never chains; sword hits chain', () => {
+  const { game, events } = elem('shock');
+  const e = enemy(game, 600), n = enemy(game, 700);
+  e.shock = 4;
+  game.damageEnemy(e, 40, 1, false, true, false, 0, true);
+  assert.equal(events.some(ev => ev.type === 'reaction'), false); assert.equal(n.shock, 0);
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(events.filter(ev => ev.type === 'reaction')[0].name, 'chain');
+});
+
+test('#13 rework: one Blood Flame per Eclipse cast; bleed cap is 10 per Blood Sigil', () => {
+  const { game, player, events } = elem('fire', 'bleed');
+  player.mp = player.maxMp;
+  const es = Array.from({ length: 13 }, (_, i) => enemy(game, player.x + 10 + i * 8, { hp: 1e6 }));
+  for (const e of es) { e.bleed = 5; e.bleedStacks = 3; }
+  game.magic();
+  assert.equal(events.filter(ev => ev.type === 'reaction' && ev.name === 'bloodFlame').length, 1);
+  assert.ok(es.filter(e => e.bleedStacks >= 3).length >= 12, 'others keep their bleed');
+  const x = enemy(game, 900); for (let i = 0; i < 15; i++) sword(game, x);
+  assert.equal(x.bleedStacks, 10);
 });
