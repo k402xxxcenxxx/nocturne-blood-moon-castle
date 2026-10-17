@@ -58,7 +58,7 @@ export class Game {
     this.enemies = [];
     for (let i = 0; i < spec.count; i++) {
       const roll = this.rand();
-      const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? 'mage' : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
+      const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? (this.rand() < .3 ? 'priest' : 'mage') : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
       this.spawnEnemy(type === 'knight' && this.rand() < .28 ? 'spear' : type, 540 + i * (spec.width - 900) / spec.count + this.rand() * 65, index);
     }
     if (index === 4) this.spawnEnemy('boss', spec.width - 400, index);
@@ -67,8 +67,8 @@ export class Game {
   }
   spawnEnemy(type, x, stage = 0) {
     const boss = type === 'boss';
-    const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0 });
+    const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0 });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -180,7 +180,7 @@ export class Game {
     } else {
       e.stun = e.type === 'boss' ? .08 : heavy ? .42 : .24;
       e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
-      if (e.type !== 'boss') { e.tell = 0; e.thrustBox = null; }
+      if (e.type !== 'boss') { e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
@@ -199,6 +199,13 @@ export class Game {
     return this.enemies.filter(o => o !== e && o.hp > 0 && o.tell > 0 && Math.abs(p.x - o.x) <= 620).length < (this.stage >= 3 ? 3 : 2);
   }
   updateEnemy(e, dt) {
+    e.blessed = Math.max(0, e.blessed - dt); e.blessCd = Math.max(0, e.blessCd - dt);
+    const speed = e.speed;
+    if (e.blessed > 0) e.speed *= 1.15;
+    this.moveEnemy(e, dt);
+    e.speed = speed;
+  }
+  moveEnemy(e, dt) {
     const p = this.player;
     e.flash = Math.max(0, e.flash - dt);
     e.cd = Math.max(0, e.cd - dt);
@@ -228,6 +235,11 @@ export class Game {
       if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
       else e.vx = 0;
+    } else if (e.type === 'priest') {
+      const near = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= 250);
+      if (near.length && e.blessCd <= 0 && this.canWindUp(e)) { e.tell = .9; e.blessRadius = 250; e.vx = 0; }
+      else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.stage * .13; }
+      else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'boss') {
       if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2) && this.canWindUp(e)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
       else { e.vx = distance > 95 ? e.dir * e.speed * (e.hp < e.maxHp / 2 ? 1.5 : 1) : 0; e.x += e.vx * dt; }
@@ -247,19 +259,25 @@ export class Game {
   }
   enemyAttack(e) {
     const p = this.player;
-    if (e.type === 'mage' || (e.type === 'boss' && e.action % 3 === 2)) {
+    const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1);
+    if (e.blessRadius) {
+      const targets = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= e.blessRadius);
+      for (const o of targets) o.blessed = 5;
+      e.blessRadius = 0; e.blessCd = 7; e.cd = Math.max(e.cd, 1);
+      this.emit('enemyBuff', { x: e.x, y: e.y - e.h * .5, targets: targets.map(o => ({ x: o.x, y: o.y - o.h * .5 })) });
+    } else if (e.type === 'mage' || e.type === 'priest' || (e.type === 'boss' && e.action % 3 === 2)) {
       const base = Math.atan2(p.y - 30 - (e.y - e.h * .6), p.x - e.x);
       const spread = e.type === 'boss' ? [-.25, 0, .25] : [0];
-      for (const offset of spread) this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base + offset) * 250, vy: Math.sin(base + offset) * 250, r: e.type === 'boss' ? 9 : 7, life: 4, damage: e.damage });
+      for (const offset of spread) this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base + offset) * 250, vy: Math.sin(base + offset) * 250, r: e.type === 'boss' ? 9 : 7, life: 4, damage: dmg });
     } else if (e.type === 'spear') {
       const b = e.thrustBox; e.turn = .72; e.thrustBox = null;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'spear' });
-      if (b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(e.damage, e.dir);
+      if (b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir);
     } else {
       const range = e.type === 'boss' ? 155 : e.type === 'bat' ? 43 : e.type === 'shield' ? 70 : 82;
       if (e.type === 'shield') e.turn = .6;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: e.type === 'boss' });
-      if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(e.damage, e.dir);
+      if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(dmg, e.dir);
     }
     e.action++;
   }

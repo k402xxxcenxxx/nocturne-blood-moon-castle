@@ -451,6 +451,15 @@ function mage(c, e, time, white) {
   circle(c, white || '#bfa0df', 26, -68, 4); rect(c, '#f3dfff', 24, -70, 2, 2);
   if (e.tell > 0) { c.strokeStyle = '#bca0df99'; c.lineWidth = 1; c.beginPath(); c.arc(26, -68, 10 + Math.sin(time * 16) * 2, 0, 7); c.stroke(); }
 }
+function priest(c, e, time, white) {
+  const robe = white || '#6b2a38', dark = white || '#2a1220', sway = Math.round(Math.sin(time * 2) * 1);
+  poly(c, '#101423', [[-11, -56], [9, -56], [15, -5], [-16, -5]]);
+  poly(c, robe, [[-9, -54], [7, -54], [12, -7], [-13, -7]]);
+  poly(c, dark, [[-3, -54], [3, -54], [3, -7], [-3, -7]]);
+  circle(c, white || '#d8c7b0', 0, -62, 6); poly(c, robe, [[-8, -60], [0, -72], [8, -60], [0, -56]]);
+  line(c, '#8b7a58', 8, -44, 20 + sway, -32, 2); line(c, '#8b7a58', 20 + sway, -32, 20 + sway, -24, 1);
+  circle(c, white || '#d4423a', 20 + sway, -22, 4);
+}
 function shieldBearer(c, e, time, white) {
   const armor = white || '#5d6670', dark = white || '#2f3542', light = white || '#aeb2a6', bronze = white || '#9c7a4a', broken = (e.guardBreak || 0) > 0, stride = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 5) * 3 : 0;
   // Hunched, wide body behind the shield; front is +x.
@@ -506,6 +515,8 @@ export function drawEnemy(ctx, e = {}, time = 0) {
   if (e.tell > 0 && e.thrustBox) { const b = e.thrustBox; ctx.save(); ctx.fillStyle = '#e7746640'; ctx.strokeStyle = '#e7746699'; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
     // dashed path along the box centre with a bright tip at the far end, so the whole reach reads as the weapon's path
     const fx = e.dir === -1 ? b.x : b.x + b.w, my = Math.round(b.y + b.h / 2); ctx.strokeStyle = '#ec8b7c'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(Math.round(e.x + (e.dir === -1 ? -10 : 10)), my); ctx.lineTo(Math.round(fx), my); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#e4cfbc'; ctx.fillRect(Math.round(fx) - (e.dir === -1 ? 0 : 6), my - 3, 6, 6); ctx.restore(); }
+  if (e.blessRadius > 0 && e.tell > 0) { ctx.save(); ctx.fillStyle = '#d4423a22'; ctx.strokeStyle = '#d4423a99'; ctx.beginPath(); ctx.arc(x, y - 29, e.blessRadius, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
+  if (e.blessed > 0) { ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.14 + Math.sin(time * 6) * .05})`; ctx.beginPath(); ctx.ellipse(x, y - 29, 26, 40, 0, 0, 7); ctx.fill(); ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
@@ -513,6 +524,7 @@ export function drawEnemy(ctx, e = {}, time = 0) {
   else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
   else if (e.type === 'spear') spearman(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
+  else if (e.type === 'priest') priest(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
   ctx.restore();

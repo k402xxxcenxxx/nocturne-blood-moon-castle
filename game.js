@@ -334,7 +334,7 @@ function render(dt) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime);
       if (e.type !== 'boss' && e.hp < e.maxHp) {
-        const barY = e.y - e.h - (e.type === 'knight' ? 29 : e.type === 'mage' ? 17 : e.type === 'shield' ? 21 : 9);
+        const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
       }
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15))); }
