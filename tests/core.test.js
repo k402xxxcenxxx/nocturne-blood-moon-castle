@@ -1387,3 +1387,132 @@ test('#13 rework: one Blood Flame per Eclipse cast; bleed cap is 10 per Blood Si
   const x = enemy(game, 900); for (let i = 0; i < 15; i++) sword(game, x);
   assert.equal(x.bleedStacks, 10);
 });
+
+// ---- Attack-form relics (#14) ----
+const combo3 = (game) => { game.player.combo = 2; game.player.comboWindow = .8; game.attack(); };
+const hp = e => e.maxHp - e.hp;
+
+test('#14 wave: crescent hits once on the way out and once on the way back, ignoring Eclipse', () => {
+  const { game, player, events } = elem('wave');
+  player.crit = 0; player.mp = player.maxMp;
+  const a = enemy(game, 430); a.armor = 99; // no knockback, so it stays in the path
+  const far = enemy(game, 1500);
+  combo3(game);
+  assert.equal(events.filter(e => e.type === 'shot' && e.kind === 'wave').length, 1);
+  advance(game, .1);
+  game.magic(); assert.equal(game.shots.length, 1, 'Eclipse does not clear player shots');
+  advance(game, 2);
+  assert.equal(game.shots.length, 0, 'disappears on reaching the hero');
+  assert.equal(far.hp, far.maxHp);
+  assert.equal(events.filter(e => e.type === 'hit' && e.amount === Math.round(player.damage * .85)).length, 2, 'once per pass');
+});
+
+test('#14 wave: +0.45 x base per extra stack', () => {
+  const { game } = elem('wave', 'wave', 'wave');
+  combo3(game);
+  assert.ok(Math.abs(game.shots[0].mul - 1.75) < 1e-9);
+});
+
+test('#14 pierce: beam pierces several enemies once each; a thrust fires it too; reach +20/stack capped at +60', () => {
+  const { game, player, events } = elem('pierce');
+  player.crit = 0;
+  const es = [430, 600, 800].map(x => enemy(game, x));
+  combo3(game);
+  advance(game, 1.2);
+  const beam = Math.round(player.damage * .55);
+  assert.equal(events.filter(e => e.type === 'hit' && e.amount === beam).length, 3);
+  const t = elem('pierce', 'pierce', 'pierce', 'pierce', 'pierce');
+  t.player.thrustWindow = 1; t.game.attack();
+  assert.equal(t.events.filter(e => e.type === 'shot' && e.kind === 'beam').length, 1);
+  assert.ok(Math.abs(t.game.shots[0].mul - 2.75) < 1e-9);
+  t.player.crit = 0;
+  const near = enemy(t.game, t.player.x + 155 + 60), out = enemy(t.game, t.player.x + 155 + 60 + 40);
+  t.game.hitSet = new Set(); t.game.hitTargets();
+  assert.ok(near.hp < near.maxHp && out.hp === out.maxHp);
+});
+
+test('#14 plunge vow: ground waves only on a >=40 px plunge; shockwave boosted; radius cap 190', () => {
+  const run = (fall) => {
+    const c = elem('plunge'); c.player.crit = 0;
+    Object.assign(c.player, { x: 400, y: FLOOR - fall, grounded: false, vy: 0 });
+    c.game.attack(); advance(c.game, .6); return c;
+  };
+  assert.equal(run(20).game.shots.length, 0);
+  const c = run(120);
+  assert.equal(c.events.filter(e => e.type === 'shot' && e.kind === 'ground').length, 2);
+  assert.deepEqual(c.game.shots.map(s => s.dir).sort(), [-1, 1]);
+  const stacked = new Game(() => {}, 1);
+  for (let i = 0; i < 8; i++) { stacked.relics.push('plunge'); RELICS.find(r => r.id === 'plunge').apply(stacked.player); }
+  assert.equal(stacked.player.plungeRadius, 190);
+  RELICS.find(r => r.id === 'reach').apply(stacked.player);
+  assert.equal(stacked.player.plungeRadius, 190, 'Phantom Glaive never lowers it');
+  const w = elem('plunge'); w.player.crit = 0;
+  const e = enemy(w.game, 400 + 80);
+  Object.assign(w.player, { x: 400, y: FLOOR - 120, grounded: false, vy: 0 });
+  w.game.attack(); advance(w.game, .5);
+  assert.ok(hp(e) >= Math.round(w.player.damage * 1.5));
+});
+
+test('#14 vortex: pulls 78% (boss 10%), keeps y, stays in bounds, raises radius and damage', () => {
+  const { game, player } = elem('vortex');
+  player.mp = player.maxMp; player.x = 1000;
+  const a = enemy(game, 1150), b = enemy(game, 850, { type: 'boss' }), plat = enemy(game, 1100, { y: FLOOR - 85 });
+  const far = enemy(game, 1000 + 240);
+  game.magic();
+  assert.ok(Math.abs(a.x - (1150 - 150 * .78)) < 1e-6);
+  assert.ok(Math.abs(b.x - (850 + 15)) < 1e-6);
+  assert.equal(plat.y, FLOOR - 85);
+  assert.ok(far.hp < far.maxHp, 'radius 245 reaches 240');
+  assert.equal(a.maxHp - a.hp, Math.round(player.magicDamage * 1.35));
+  const edge = elem('vortex'); edge.player.mp = 100; edge.player.x = 30;
+  const e = enemy(edge.game, 100); edge.game.magic();
+  assert.ok(e.x >= 30 && e.x <= edge.game.worldWidth - 40);
+  const many = elem(...Array(9).fill('vortex')); many.player.mp = 100;
+  const f = enemy(many.game, many.player.x + 319); many.game.magic();
+  assert.ok(f.hp < f.maxHp);
+  const g = enemy(many.game, many.player.x + 330); const before = g.hp; many.player.mp = 100; many.player.magicCd = 0; many.game.magic();
+  assert.equal(g.hp, before, 'cap 320');
+});
+
+test('#14 shots: shield blocks from the front only; poise 8; no chain, not heavy; statuses apply', () => {
+  const { game, player, events } = elem('shock', 'fire', 'bleed');
+  player.crit = 0;
+  const s = enemy(game, 600, { type: 'shield' }); s.dir = -1; s.guardBreak = 0; s.poise = 60;
+  const o = enemy(game, 650);
+  game.launchShot('beam', 1, 780, 1, 10, 500, FLOOR - 30, 1);
+  o.shock = 4;
+  advance(game, .3);
+  assert.equal(events.filter(e => e.type === 'block').length, 1, 'frontal');
+  assert.equal(s.poise, 60 - 8 * .25);
+  assert.equal(events.filter(e => e.type === 'reaction').length, 0, 'no chain');
+  assert.equal(events.filter(e => e.type === 'hit').every(e => !e.heavy), true);
+  assert.ok(o.burn > 0 && o.bleedStacks > 0 && o.poise === o.maxPoise - 8);
+  const back = elem(); const t = enemy(back.game, 600, { type: 'shield' }); t.dir = 1;
+  back.game.launchShot('beam', 1, 780, 1, 10, 500, FLOOR - 30, 1);
+  advance(back.game, .3);
+  assert.equal(back.events.filter(e => e.type === 'block').length, 0, 'from behind');
+  assert.ok(t.hp < t.maxHp - 5);
+});
+
+test('#14 relic list has four attack forms', () => {
+  for (const id of ['wave', 'pierce', 'plunge', 'vortex']) assert.ok(RELICS.some(r => r.id === id));
+  assert.equal(RELICS.length, 18);
+});
+
+test('#13 review: a DoT kill counts once and opens the portal; DoT can change boss phase; one Blood Flame per plunge', () => {
+  const a = elem('fire'); const e = enemy(a.game, 600, { hp: 3 });
+  e.burn = 4; e.burnDmg = 50;
+  advance(a.game, 1);
+  assert.equal(a.game.kills, 1); assert.equal(a.game.portalOpen, true);
+  assert.equal(a.events.filter(x => x.type === 'kill').length, 1);
+  const b = elem('fire'); const boss = enemy(b.game, 600, { type: 'boss', hp: 900 });
+  boss.hp = 900 * .67 + 1; boss.burn = 4; boss.burnDmg = 20;
+  advance(b.game, .6);
+  assert.equal(boss.bossPhase, 2);
+  const c = elem('fire', 'bleed'); c.player.crit = 0;
+  const f = [enemy(c.game, 400), enemy(c.game, 460), enemy(c.game, 480)];
+  for (const x of f) { x.bleed = 5; x.bleedStacks = 3; }
+  Object.assign(c.player, { x: 400, y: FLOOR - 120, grounded: false, vy: 0 });
+  c.game.attack(); advance(c.game, .5);
+  assert.equal(c.events.filter(x => x.type === 'reaction' && x.name === 'bloodFlame').length, 1);
+});

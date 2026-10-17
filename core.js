@@ -15,7 +15,7 @@ export const RELICS = [
   { id: 'vital', icon: 'heart', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
   { id: 'leech', icon: 'drop', apply: p => p.leech += 5 },
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
-  { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; p.plungeRadius = Math.min(150, p.plungeRadius + 12); } },
+  { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; p.plungeRadius = Math.max(p.plungeRadius, Math.min(150, p.plungeRadius + 12)); } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
   { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
   { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
@@ -24,7 +24,14 @@ export const RELICS = [
   { id: 'frost', icon: 'gem', apply: () => {} },
   { id: 'shock', icon: 'moon', apply: () => {} },
   { id: 'bleed', icon: 'drop', apply: () => {} },
+  // Attack-form relics: no stat change except plunge; core reads the stack count when the move fires.
+  { id: 'wave', icon: 'moon', apply: () => {} },
+  { id: 'pierce', icon: 'sword', apply: () => {} },
+  { id: 'plunge', icon: 'star', apply: p => p.plungeRadius = Math.min(190, p.plungeRadius + 24) },
+  { id: 'vortex', icon: 'moon', apply: () => {} },
 ];
+const STATUS_TIMERS = ['chill', 'frozen', 'freezeImmune', 'shock'];
+const SHOT_POISE = 8;
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source.
@@ -64,6 +71,7 @@ export class Game {
     this.portalOpen = false;
     this.freeze = 0;
     this.projectiles = [];
+    this.shots = []; // player-owned projectiles; never touched by enemy-projectile code or Eclipse clearing
     this.pickups = [];
     this.platforms = Array.from({ length: 5 }, (_, i) => ({ x: 360 + i * 360 + this.rand() * 65, y: FLOOR - 85 - (i % 2) * 54, w: 148 + this.rand() * 70, h: 18 }));
     this.enemies = [];
@@ -126,6 +134,7 @@ export class Game {
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
+    this.updateShots(dt);
     if (this.state !== 'playing') return;
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
@@ -181,12 +190,42 @@ export class Game {
     p.attack = p.attackLen = .24; p.attackCd = (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed;
     this.hitSet = new Set(); this.flameUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
+    if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
+    if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, 1.05, 10);
     this.hitTargets();
+  }
+  // Player projectile (a wave's life is only a safety cap; it turns after 0.52 s and ends on reaching the hero): passes through enemies, one hit per enemy per pass, poise 8, never heavy and no Chain Lightning.
+  launchShot(kind, mul, speed, life, r, x = this.player.x, y = this.player.y - 30, dir = this.player.dir) {
+    const shot = { kind, x, y, dir, vx: dir * speed, vy: 0, r, life, maxLife: life, mul, back: false, hit: new Set() };
+    this.shots.push(shot);
+    this.emit('shot', { kind, x, y, dir, speed, life });
+  }
+  updateShots(dt) {
+    const p = this.player;
+    for (const s of this.shots) {
+      if (s.kind === 'wave' && !s.back && s.maxLife - s.life >= .52) { s.back = true; s.hit = new Set(); } // turn around: the returning pass hits again
+      if (s.back) {
+        const dx = p.x - s.x, dy = p.y - 30 - s.y, d = Math.hypot(dx, dy), step = 620 * dt;
+        if (d <= step + 14) s.life = 0;
+        else { s.x += dx / d * step; s.y += dy / d * step; s.vx = dx / d * 620; s.vy = dy / d * 620; }
+      } else s.x += s.vx * dt;
+      s.life -= dt;
+      if (s.life <= 0) continue;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || s.hit.has(e) || Math.abs(e.x - s.x) > e.w / 2 + s.r || s.y + s.r < e.y - e.h || s.y - s.r > e.y) continue;
+        s.hit.add(e);
+        const crit = this.rand() < p.crit;
+        const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
+        const blocked = e.type === 'shield' && e.guardBreak <= 0 && (s.x - e.x) * e.dir >= 0; // frontal only; a returning crescent can hit a back
+        this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, true);
+      }
+    }
+    this.shots = this.shots.filter(s => s.life > 0 && s.x > 0 && s.x < this.worldWidth);
   }
   hitTargets() {
     const p = this.player;
     const thrust = p.move === 'thrust';
-    const reach = thrust ? 155 : p.reach + (p.combo === 3 ? 24 : 0);
+    const reach = thrust ? 155 + Math.min(60, 20 * this.stacks('pierce')) : p.reach + (p.combo === 3 ? 24 : 0);
     for (const e of this.enemies) {
       const dx = (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
@@ -217,9 +256,11 @@ export class Game {
     p.plunge = 3; p.plungeT = .09;
     this.emit('plunge', { x: p.x, y: p.y, radius });
     if (!radius) return;
+    const vow = this.stacks('plunge');
+    if (vow) for (const dir of [-1, 1]) this.launchShot('ground', .45 * vow, 420, 1.2, 12, p.x, p.y - 12, dir);
     for (const e of this.enemies) {
       if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
-      this.plungeStrike(e, 1, POISE_DAMAGE.plunge, 1.4);
+      this.plungeStrike(e, 1 + .5 * vow, POISE_DAMAGE.plunge, 1.4);
     }
   }
   magic() {
@@ -228,13 +269,16 @@ export class Game {
     p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.emit('magic', { x: p.x, y: p.y - 32 });
     this.flameUsed = false;
-    for (const e of this.enemies) if (e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 210) {
-      this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
+    const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
+    const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
+    if (vortex) for (const e of caught) e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
+    for (const e of caught) {
+      this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
-  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1) {
+  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
     e.hp -= amount; e.flash = .14;
     const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
     if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
@@ -244,10 +288,12 @@ export class Game {
     if (blocked) {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
-      p.x = clamp(p.x + e.dir * 40, 25, this.worldWidth - 30);
-      // Shield shove: the bearer follows the pushback so blocking never opens distance.
-      e.x = clamp(e.x + e.dir * Math.min(40, Math.max(0, Math.abs(p.x - e.x) - 30)), 30, this.worldWidth - 40);
-      this.freeze = Math.max(this.freeze, .035);
+      if (!shot) { // a projectile hitting the shield pushes nobody
+        p.x = clamp(p.x + e.dir * 40, 25, this.worldWidth - 30);
+        // Shield shove: the bearer follows the pushback so blocking never opens distance.
+        e.x = clamp(e.x + e.dir * Math.min(40, Math.max(0, Math.abs(p.x - e.x) - 30)), 30, this.worldWidth - 40);
+        this.freeze = Math.max(this.freeze, .035);
+      }
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
     } else {
       const quiet = armored && !(eclipse && e.type !== 'boss'); // Eclipse still interrupts armored non-bosses
@@ -261,7 +307,7 @@ export class Game {
     }
     if (broken) this.stagger(e);
     this.settle(e);
-    if (!blocked) this.elements(e, amount, heavy, eclipse); // hook: attack-form projectiles (none yet) should call this too
+    if (!blocked) this.elements(e, amount, heavy, eclipse, shot);
   }
   // Boss phase change and death handling, shared by sword hits and damage-over-time / reaction damage.
   settle(e) {
@@ -272,12 +318,12 @@ export class Game {
     if (e.hp <= 0) {
       e.hp = 0;
       const p = this.player;
-      if (this.state === 'playing') { // no credit, leech or MP once the hero is dead or the run ended
+      if (this.state === 'playing') { // no credit, leech, MP or drops once the hero is dead or the run ended
+        if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
         this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
         p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
       }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
-      if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
   }
   stacks(id) { return this.relics.filter(r => r === id).length; }
@@ -289,7 +335,7 @@ export class Game {
     this.settle(e);
   }
   // Statuses and reactions for one landed, unblocked sword/Eclipse hit. Reactions read the pre-hit state, then the hit applies its statuses.
-  elements(e, amount, heavy, eclipse) {
+  elements(e, amount, heavy, eclipse, shot = false) {
     const fire = this.stacks('fire'), frost = this.stacks('frost'), shock = this.stacks('shock'), bleed = this.stacks('bleed');
     if (!(fire || frost || shock || bleed)) return;
     const base = this.player.damage, mid = o => ({ x: o.x, y: o.y - o.h * .55 });
@@ -308,7 +354,7 @@ export class Game {
       this.emit('reaction', { name: 'bloodFlame', ...mid(e), radius });
       for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, (.7 + .3 * n) * base * (1 + .3 * fire), 'bloodFlame');
     }
-    if (shock && !eclipse && e.shock > 0) { // Chain (sword hits only) Lightning
+    if (shock && !eclipse && !shot && e.shock > 0) { // Chain (sword hits only) Lightning
       const targets = alive().filter(o => o !== e && dist(o) <= 180 + 14 * shock).sort((a, b) => dist(a) - dist(b)).slice(0, 2 + shock);
       if (targets.length) {
         this.emit('reaction', { name: 'chain', ...mid(e), targets: targets.map(mid) });
@@ -338,7 +384,7 @@ export class Game {
   // Status timers and damage-over-time (every 0.5 s), run each frame for a living enemy.
   tickStatus(e, dt) {
     const wasFrozen = e.frozen > 0;
-    for (const k of ['chill', 'frozen', 'freezeImmune', 'shock']) e[k] = Math.max(0, e[k] - dt);
+    for (const k of STATUS_TIMERS) e[k] = Math.max(0, e[k] - dt);
     if (wasFrozen && e.frozen <= 0 && e.type !== 'boss') e.freezeImmune = 2; // thawed: normal enemies get a window to act
     if (e.frostMeter > 0 && (e.frostT = (e.frostT || 0) - dt) <= 0) e.frostMeter = 0; // meter decays 3 s after the last frost hit
     if (e.burn <= 0 && e.bleed <= 0) { e.dotT = 0; return; }
