@@ -180,7 +180,7 @@ export class Game {
     } else {
       e.stun = e.type === 'boss' ? .08 : heavy ? .42 : .24;
       e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
-      if (e.type !== 'boss') { e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
+      if (e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
@@ -221,7 +221,7 @@ export class Game {
     else if (wasTurning) e.dir = face; // the turn delay just ended: face at once, no re-face delay on top
     else if (dx * e.dir >= 0) e.reface = 0;
     else if ((e.reface += dt) >= .25) { e.dir = face; e.reface = 0; } // player behind: re-face delay
-    if (distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; }
+    if (!(e.tell > 0) && distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; } // a started warning always counts down
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
       if (e.tell <= 0) this.enemyAttack(e);
