@@ -2249,7 +2249,7 @@ b[data-i18n] {
     width:44px;
     height:44px;
   }
-  body:not(:has(#title-screen:not([hidden]))):not(:has(.relic-choices)) .header-actions {
+  body:not(.gear-on) .header-actions {
     display:none;
   }
 }

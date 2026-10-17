@@ -179,7 +179,7 @@ function handleEvent(e) {
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
-    case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
+    case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
@@ -190,10 +190,12 @@ function startRun() {
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
+// Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
+function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && modalKind === 'upgrade')); }
 function openModal(html, kind, pause = true) {
   if ($('modal').hidden) previousFocus = document.activeElement;
   if (pause && game.state === 'playing') { returnState = 'playing'; game.state = 'paused'; audio.suspend(); }
-  clearInput(); modalKind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false;
+  clearInput(); modalKind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false; syncGear();
   requestAnimationFrame(() => $('modal-panel').querySelector('button')?.focus({ preventScroll: true }));
 }
 function closeModal(resume = true) {
@@ -204,7 +206,7 @@ function closeModal(resume = true) {
     return;
   }
   modalReturn = null;
-  $('modal').hidden = true; modalKind = '';
+  $('modal').hidden = true; modalKind = ''; syncGear();
   if (resume && returnState === 'playing' && game.state === 'paused') { game.state = 'playing'; audio.resume(); }
   returnState = null; clearInput(); previousFocus?.focus?.({ preventScroll: true });
 }
@@ -243,7 +245,7 @@ function openResult(win) {
 }
 function showTitle() {
   closeModal(false); game = new Game(handleEvent); camera = 0;
-  $('title-screen').hidden = false; $('touch-controls').hidden = true; $('objective').hidden = true;
+  $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
   $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
   $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = 'I — V';
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
@@ -527,4 +529,5 @@ function tick(now) {
 }
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
+syncGear();
 if (new URLSearchParams(location.search).has('test')) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput };
