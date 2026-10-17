@@ -387,7 +387,7 @@ function render(dt) {
         const bw = e.type === 'boss' ? 56 : 30, by = Math.round(e.y + 5);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - bw / 2), by, bw, 3); ctx.fillStyle = e.punishable ? '#ffd36e' : '#c9a85a'; ctx.fillRect(Math.round(e.x - bw / 2 + 1), by + 1, Math.max(0, Math.round((bw - 2) * e.poise / e.maxPoise)), 1);
       }
-      if (e.armor > 1.2 && e.hp > 0) { // armor > 1.2 only while a stagger stun runs: ring of gold stars over the head
+      if (e.stun > 0 && e.armor > 0 && e.hp > 0) { // stun with armor left = a stagger stun (flinch stuns need armor 0): ring of gold stars over the head
         const ry = Math.round(e.y - e.h - 6), rw = e.type === 'boss' ? 26 : 16; ctx.fillStyle = '#ffd36e';
         for (let i = 0; i < 4; i++) { const a = worldTime * 6 + i * Math.PI / 2; ctx.fillRect(Math.round(e.x + Math.cos(a) * rw) - 2, Math.round(ry + Math.sin(a) * 4) - 2, 4, 4); }
       }

@@ -518,9 +518,9 @@ function drawBossWarn(ctx, e, time) {
   if (!tellMax.has(w)) tellMax.set(w, e.tell);
   const p = Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))), rgb = e.punishable ? '255,211,110' : '231,92,80', edge = e.punishable ? '#ffd36e' : '#ff7a6a', d = e.dir === -1 ? -1 : 1;
   const fillBox = b => { // outline = full hit box, inner fill grows from the boss outward
-    const fw = Math.round(b.w * p); ctx.fillStyle = `rgba(${rgb},.14)`; ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = `rgba(${rgb},${.18 + .3 * p})`; ctx.fillRect(d === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h);
-    ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+    const fw = Math.round(b.w * p); const pu = e.punishable; ctx.fillStyle = `rgba(${rgb},${pu ? .3 : .14})`; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = `rgba(${rgb},${(pu ? .3 : .18) + .3 * p})`; ctx.fillRect(d === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h);
+    ctx.strokeStyle = edge; ctx.lineWidth = pu ? 3 : 2; ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
   };
   ctx.save();
   if (w.kind === 'slash' || w.kind === 'slam') fillBox(w.box);
