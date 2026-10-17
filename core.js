@@ -209,6 +209,7 @@ export class Game {
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false; e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : 1;
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
+    this.freeze = Math.max(this.freeze, .055);
     this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss' });
   }
   // Wind-up limiter: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once; far enemies never start.

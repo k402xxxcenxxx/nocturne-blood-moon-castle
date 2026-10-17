@@ -540,6 +540,7 @@ test('poise: three full combos break a skeleton, stagger stuns 1 s and refills p
   assert.equal(events.filter(ev => ev.type === 'stagger').length, 1);
   assert.equal(e.poise, e.maxPoise);
   assert.ok(e.stun >= .99 && e.stun <= 1);
+  assert.ok(game.freeze >= .055, 'stagger hit-stop');
 });
 
 test('poise: combo hit 3 uses a 1.8 damage multiplier', () => {
