@@ -84,7 +84,7 @@ function handleEvent(e) {
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
       $('relic-tray').innerHTML = relicTray();
       records.best = Math.max(records.best, e.stage + 1); save('nocturne-records', records); updateBest();
-      audio.play(e.stage ? 'portal' : 'ui');
+      audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
     case 'swing': if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
@@ -133,11 +133,15 @@ function handleEvent(e) {
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
     case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
+      audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase);
       toast(t('boss.phase' + e.phase)); phaseTime = 1.6; rumble(10, .5);
       burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3);
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
-    case 'enemySwing': if (e.kind === 'spear') audio.play('thrust'); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
+    case 'enemySwing':
+      if (e.kind === 'spear') audio.play('thrust');
+      else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
+ effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
