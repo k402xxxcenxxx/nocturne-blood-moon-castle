@@ -116,6 +116,26 @@ After each proposal is playtested, add one line here: `#<issue> <name> — keep 
 
 #2 Shield bearer — keep (automated playtest; pending the user's hands-on feel check): head-on costs 22–64 HP while all three answers work at 0 damage (jump behind 2.5–3.3 s, dash through the wind-up 0.7–1.5 s, Eclipse 0.4–0.7 s for 35 MP), so it forces the intended choice; open: P3 turn delay during stun, `!` contrast and turn-cue taste notes, real-device check, generated sprite.
 
+#19 Wind-up limit — keep (automated playtest; pending the user's hands-on feel check): at most 2 (stages 1–3) / 3 simultaneous warnings keeps crowds attack-dense (16 attacks per 6 s) but readable.
+
+#16 Spearman — keep (automated playtest; pending the user's hands-on feel check): jump, dash-through and bait-and-punish all take 0 damage, standing at mid-range gets hit, and the warning box matches the hit box.
+
+#17 Blood priest — keep (automated playtest; pending the user's hands-on feel check): interrupting the bless works (2.5 s cooldown on cancel) and blessed hits go 13→16; also found and fixed a shared bug where far warnings froze.
+
+#12 Poise and stagger — adjust (automated playtest; pending the user's hands-on feel check): post-stagger armor (1.2 s, boss 0.6 s) was needed to stop tap-rhythm stun-lock, and knights break on combo cycle 2; open: knight pressure on a stationary tapper.
+
+#11 Dash thrust and perfect dodge — keep (automated playtest; pending the user's hands-on feel check): ~150 ms perfect window on skeleton and knight with no MP loop (≤4 MP/s); open: bat perfects stay tight even after reach 55.
+
+#10 Air plunge — keep (automated playtest; pending the user's hands-on feel check): works as a crowd tool (each enemy hit once) with a committed fall and no i-frames; the shockwave needs a 40 px minimum fall.
+
+#18 Fallen King three phases — adjust (automated playtest; pending the user's hands-on feel check): HP 640→900 after a skilled bot killed it in ~20 s, and every move has an answer; open: phase 3 is still short (~4–7 s for a perfect bot) and dash i-frames answer most warnings.
+
+#13 Elemental relics — adjust (automated playtest; pending the user's hands-on feel check): fixed the freeze lock, Eclipse chain wipes and per-enemy Blood Flames; balance follow-up in #30.
+
+#14 Attack-form relics — keep (automated playtest; pending the user's hands-on feel check): each form changes how you play, and beam and ground-wave reach is capped to the visible screen; tuning in #30.
+
+#15 Opening pick and synergy offers — keep (automated playtest, still in review; pending the user's hands-on feel check): one owned partner raises its offer share from ~17% to ~27% without forcing any relic, and the opening pick appears exactly once per run.
+
 ## The Fallen King (stage 5 boss)
 
 900 HP, 22 damage, poise 120, speed 75 (no speed-up in later phases). Phase by health: 1 above 67%, 2 at 67% or below, 3 at 34% or below. Entering a phase cancels the current move and warning, refills poise, starts a 1.1 s pause (`pause`: no attacks, still hittable) and emits `bossPhase` {phase, x, y}.
