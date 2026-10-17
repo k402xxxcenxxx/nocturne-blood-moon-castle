@@ -175,12 +175,13 @@ function handleEvent(e) {
       else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
       break;
     }
-    case 'obstacleHit': audio.play('hit', .5); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
-    case 'break': audio.play('kill', .7); rumble(4, .14); burst(e.x, e.y, e.kind === 'altar' ? '#c9627f' : '#a8814f', 22, 200); burst(e.x, e.y, '#6b5236', 10, 140, 0, 3);
+    case 'obstacleHit': audio.play(e.kind === 'altar' ? 'stoneHit' : 'woodHit', .6 + Math.min(e.amount || 0, 40) / 100); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
+    case 'break': audio.play(e.kind === 'altar' ? 'altarShatter' : 'woodBreak'); rumble(4, .14); burst(e.x, e.y, e.kind === 'altar' ? '#c9627f' : '#a8814f', 22, 200); burst(e.x, e.y, '#6b5236', 10, 140, 0, 3);
       effects.push({ type: 'debris', x: e.x, y: FLOOR, altar: e.kind === 'altar', life: .9, max: .9, bits: Array.from({ length: 9 }, (_, i) => ({ a: -.4 - i * .3, d: 22 + (i * 37 % 30), s: 3 + i % 3 })) });
       if (e.traps) for (const id of e.traps) { const tr = game.traps[id]; if (tr) { effects.push({ type: 'snap', x: e.x, y: FLOOR - 2, x2: tr.x, life: .5, max: .5 }); burst(tr.x, FLOOR - 6, '#3a2a30', 8, 70, 0, 3); } } // linked glow lines snap and the traps die
       break;
-    case 'trapActive': burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break; // placeholder: audio and art hook here
+    case 'trapWarn': if (Math.abs(e.x - game.player.x) < 600) audio.play('trapWarn'); break;
+    case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
