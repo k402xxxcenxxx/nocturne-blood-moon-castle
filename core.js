@@ -192,6 +192,12 @@ export class Game {
       if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
   }
+  // Wind-up limiter: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once; far enemies never start.
+  canWindUp(e) {
+    const p = this.player;
+    if (Math.abs(p.x - e.x) > (e.type === 'boss' ? 620 : 560)) return false;
+    return this.enemies.filter(o => o !== e && o.hp > 0 && o.tell > 0 && Math.abs(p.x - o.x) <= 620).length < (this.stage >= 3 ? 3 : 2);
+  }
   updateEnemy(e, dt) {
     const p = this.player;
     e.flash = Math.max(0, e.flash - dt);
@@ -217,18 +223,18 @@ export class Game {
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
-      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0) { e.tell = .3; e.cd = 1.3; }
+      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .3; e.cd = 1.3; }
     } else if (e.type === 'mage') {
-      if (distance < 460 && e.cd <= 0) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
+      if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
       else e.vx = 0;
     } else if (e.type === 'boss') {
-      if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
+      if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2) && this.canWindUp(e)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
       else { e.vx = distance > 95 ? e.dir * e.speed * (e.hp < e.maxHp / 2 ? 1.5 : 1) : 0; e.x += e.vx * dt; }
     } else if (e.turn > 0 || e.reface > 0) {
       e.vx = 0; // shield bearer recovering from a bash or about to turn: holds its old facing, leaving its back open
     } else {
-      if (distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
+      if (distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0 && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
       else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
     }
   }

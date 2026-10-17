@@ -379,3 +379,24 @@ test('a shield bearer whose turn delay ends while stunned faces the player at on
   advance(game, .3 + 1 / 60);
   assert.equal(shield.dir, 1);
 });
+
+test('wind-ups are capped per stage and never start from far away', () => {
+  for (const [stage, cap] of [[0, 2], [3, 3]]) {
+    const { game, player } = arena();
+    game.stage = stage;
+    player.x = 500;
+    const list = Array.from({ length: 8 }, (_, i) => enemy(game, 520 + i * 6));
+    list.forEach(e => { e.cd = 0; });
+    let max = 0;
+    for (let t = 0; t < 120; t++) {
+      game.update(1 / 120);
+      max = Math.max(max, game.enemies.filter(e => e.tell > 0).length);
+      player.hp = player.maxHp;
+    }
+    assert.equal(max, cap);
+  }
+  const { game, player } = arena();
+  player.x = 500;
+  assert.equal(game.canWindUp(enemy(game, 500 + 570)), false);
+  assert.equal(game.canWindUp(enemy(game, 500 + 600, { type: 'boss', hp: 500 })), true);
+});
