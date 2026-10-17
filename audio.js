@@ -126,7 +126,7 @@ export class AudioSystem {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
-      block: 12, guardBreak: [25, 20, 55] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -178,6 +178,14 @@ export class AudioSystem {
         [2350, 1720, 3100, 1390].forEach((f, i) => tone('triangle', f, 0.18, 0.07, f * 0.92, 0.025 * (i + 1)));
         notes([147, 220], 0.08, 0.06);
         break;
+      case 'stagger': { // posture broken: sharp metallic crack over a low thud, then a ringing shard tail
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 7000, 0.07, 0.3, 1500);
+        tone('sine', 100, 0.28, 0.4, 38);
+        [1560, 2340, 3480].forEach((f, i) => tone('square', f * d, 0.1 + i * 0.03, 0.04, f * 0.9 * d));
+        tone('triangle', 2150 * d, 0.3, 0.08, 1900 * d, 0.03);
+        break;
+      }
       case 'bless': // blood priest release: low minor choir swell, slow attack; no vibration
         [110, 130.81, 164.81, 220].forEach((f, i) => {
           const d = 1 + (i % 2 ? 0.004 : -0.004); // slight detune for a choral beat
