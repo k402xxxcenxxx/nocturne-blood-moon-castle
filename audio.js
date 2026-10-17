@@ -150,6 +150,28 @@ export class AudioSystem {
         tone('noise', 3800, 0.12, 0.23, 700);
         tone('triangle', 260, 0.09, 0.09, 95);
         break;
+      case 'crescent': { // relic wave launch: airy hum with a soft breath; quiet since it fires every third hit
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 1800, 0.22, 0.07, 700);
+        tone('triangle', 330 * d, 0.24, 0.05, 400 * d);
+        tone('sine', 660 * d, 0.2, 0.022, 780 * d);
+        break;
+      }
+      case 'beam': { // relic beam launch: bright narrow zing, rising then gone
+        const d = 0.97 + Math.random() * 0.06;
+        tone('square', 1400 * d, 0.1, 0.03, 3200 * d);
+        tone('noise', 7000, 0.08, 0.09, 3000);
+        tone('sine', 2800 * d, 0.14, 0.04, 4200 * d);
+        break;
+      }
+      case 'groundWave': // relic ground wave launch: low rumble along the floor
+        tone('noise', 500, 0.3, 0.14, 120);
+        tone('sine', 75, 0.3, 0.2, 40);
+        break;
+      case 'vortex': // Eclipse pull: suction, filter closing inward while pitch climbs; plays under 'magic'
+        tone('noise', 5000, 0.32, 0.1, 400);
+        tone('sine', 90, 0.32, 0.12, 320);
+        break;
       case 'dive': // air plunge start: falling whoosh, filter and pitch sweep down; no vibration
         tone('noise', 4200, 0.28, 0.22, 380);
         tone('triangle', 520, 0.26, 0.09, 90);

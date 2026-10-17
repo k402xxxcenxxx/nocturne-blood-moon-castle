@@ -108,6 +108,7 @@ function handleEvent(e) {
     case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, y: e.y - 20, size: 23, amount: t('float.perfect') }, '#e8ecf8'); break;
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
+      if (game.stacks('vortex')) audio.play('vortex');
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
       if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: Math.min(320, 210 + 35 * game.stacks('vortex')), life: .5, max: .5 }); // pull radius matches core.magic
       break;
@@ -123,7 +124,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
-    case 'shot': audio.play('swing', e.kind === 'ground' ? .5 : .9); break;
+    case 'shot': audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: one event, one sound
     case 'plunge':
       if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
       audio.play('plunge', 1.1); rumble(5, .14);
