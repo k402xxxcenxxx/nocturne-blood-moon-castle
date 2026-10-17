@@ -258,7 +258,7 @@ test('a shield bearer takes full damage from behind and from Eclipse, which brea
   const { game: g2, player: p2, events: e2 } = arena();
   p2.x = 500; p2.dir = 1; p2.crit = 0;
   const guard = enemy(g2, p2.x + 55, { type: 'shield' });
-  guard.dir = -1;
+  guard.dir = -1; guard.poise = guard.maxPoise = 999; // keep poise out of this guard-timer test
   g2.magic();
   assert.equal(guard.maxHp - guard.hp, Math.round(p2.magicDamage));
   assert.equal(guard.guardBreak, 1.5);
@@ -529,4 +529,59 @@ test('a priest blocked by the wind-up limiter fires neither a bless nor a bolt',
   assert.equal(priest.tell, 0);
   assert.equal(priest.blessRadius, 0);
   assert.equal(game.projectiles.length, 0);
+});
+
+test('poise: three full combos break a skeleton, stagger stuns 1 s and refills poise', () => {
+  const { game, player, events } = arena();
+  const e = enemy(game, 100 + 40);
+  player.x = 100; player.dir = 1;
+  const swing = () => { player.attackCd = 0; game.attack(); };
+  swing(); swing(); swing();
+  assert.equal(events.filter(ev => ev.type === 'stagger').length, 1);
+  assert.equal(e.poise, e.maxPoise);
+  assert.ok(e.stun >= .99 && e.stun <= 1);
+});
+
+test('poise: combo hit 3 uses a 1.8 damage multiplier', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140);
+  player.x = 100; player.dir = 1; player.crit = 0;
+  player.attackCd = 0; game.attack(); player.attackCd = 0; game.attack(); player.attackCd = 0; game.attack();
+  assert.equal(e.hp, 500 - Math.round(player.damage) - Math.round(player.damage * 1.15) - Math.round(player.damage * 1.8));
+});
+
+test('poise: light hits keep a knight tell, a break cancels it', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140, { type: 'knight' });
+  player.x = 100; player.dir = 1; player.crit = 0;
+  e.tell = .5; e.cd = 5;
+  game.damageEnemy(e, 1, 1, false, false, false, 17);
+  assert.ok(e.tell > 0 && e.stun === 0);
+  game.damageEnemy(e, 1, 1, false, false, false, 62);
+  assert.equal(e.tell, 0);
+  assert.ok(e.stun > 0);
+});
+
+test('poise: a staggered shield bearer drops its guard', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140, { type: 'shield' });
+  player.x = 100; player.dir = 1; e.dir = -1;
+  game.damageEnemy(e, 1, 1, false, false, true, 17);
+  assert.equal(e.poise, e.maxPoise - 17 * .25);
+  e.poise = 1;
+  game.damageEnemy(e, 1, 1, false, false, true, 17);
+  assert.ok(e.guardBreak >= .99);
+  assert.equal(e.poise, e.maxPoise);
+});
+
+test('poise: damage doubles during the boss cleave wind-up', () => {
+  const { game, player } = arena();
+  const b = enemy(game, 140, { type: 'boss' });
+  player.x = 100;
+  game.damageEnemy(b, 1, 1, false, false, false, 17);
+  assert.equal(b.poise, b.maxPoise - 17);
+  b.poise = b.maxPoise; b.tell = .5; b.punishable = true;
+  game.damageEnemy(b, 1, 1, false, false, false, 17);
+  assert.equal(b.poise, b.maxPoise - 34);
+  assert.ok(b.tell > 0);
 });

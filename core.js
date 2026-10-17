@@ -21,6 +21,9 @@ export const RELICS = [
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
+// Poise damage per source. Add plunge / dash thrust entries here when those moves exist.
+const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55 };
+
 export class Game {
   constructor(onEvent = () => {}, seed = randomSeed()) {
     this.onEvent = onEvent;
@@ -66,9 +69,10 @@ export class Game {
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0 });
   }
   spawnEnemy(type, x, stage = 0) {
+    const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 74, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -149,10 +153,10 @@ export class Game {
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || e.y < p.y - 88 || e.y - e.h > p.y - 4) continue;
       this.hitSet?.add(e);
       const crit = this.rand() < p.crit;
-      const amount = Math.round(p.damage * [1, 1, 1.15, 1.6][p.combo] * (crit ? 2 : 1));
+      const amount = Math.round(p.damage * [1, 1, 1.15, 1.8][p.combo] * (crit ? 2 : 1));
       // Shield bearers block sword hits from the side they face unless Eclipse broke their guard.
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
-      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, p.combo === 3, blocked);
+      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, p.combo === 3, blocked, POISE_DAMAGE.combo[p.combo]);
       p.mp = Math.min(p.maxMp, p.mp + 2);
     }
   }
@@ -162,13 +166,17 @@ export class Game {
     p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.emit('magic', { x: p.x, y: p.y - 32 });
     for (const e of this.enemies) if (e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 210) {
-      this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true);
+      this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
-  damageEnemy(e, amount, dir, crit, heavy, blocked = false) {
+  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0) {
     e.hp -= amount; e.flash = .14;
+    const wasHalf = e.hp + amount < e.maxHp / 2;
+    if (e.hp > 0) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
+    const broken = e.hp > 0 && e.poise <= 0;
+    const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken; // light hits don't interrupt heavy enemies
     if (blocked) {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
@@ -178,12 +186,16 @@ export class Game {
       this.freeze = Math.max(this.freeze, .035);
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
     } else {
-      e.stun = e.type === 'boss' ? .08 : heavy ? .42 : .24;
-      e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
-      if (e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
+      if (!keepsTell || e.type === 'boss') {
+        e.stun = e.type === 'boss' ? .08 : heavy ? .42 : .24;
+        e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
+      }
+      if (!keepsTell && e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
+    if (e.hp > 0 && e.type === 'boss' && e.hp < e.maxHp / 2 && !wasHalf) e.poise = e.maxPoise; // phase change resets poise
+    if (broken) this.stagger(e);
     if (e.hp <= 0) {
       e.hp = 0; this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
       const p = this.player;
@@ -191,6 +203,13 @@ export class Game {
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
       if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
+  }
+  stagger(e) {
+    if (e.blessRadius) e.blessCd = 2.5;
+    e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false; e.poise = e.maxPoise;
+    e.stun = e.type === 'boss' ? .85 : 1;
+    if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
+    this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss' });
   }
   // Wind-up limiter: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once; far enemies never start.
   canWindUp(e) {
@@ -241,7 +260,7 @@ export class Game {
       else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.stage * .13; }
       else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'boss') {
-      if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2) && this.canWindUp(e)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
+      if (e.cd <= 0 && (distance < 145 || e.action % 3 === 2) && this.canWindUp(e)) { e.tell = e.hp < e.maxHp / 2 ? .48 : .72; e.punishable = e.action % 3 !== 2; e.cd = e.hp < e.maxHp / 2 ? 1.35 : 1.8; }
       else { e.vx = distance > 95 ? e.dir * e.speed * (e.hp < e.maxHp / 2 ? 1.5 : 1) : 0; e.x += e.vx * dt; }
     } else if (e.type === 'spear') {
       if (e.turn > 0) e.vx = 0; // recovery after the thrust
@@ -259,6 +278,7 @@ export class Game {
   }
   enemyAttack(e) {
     const p = this.player;
+    e.punishable = false;
     const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1);
     if (e.blessRadius) {
       const targets = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= e.blessRadius);
