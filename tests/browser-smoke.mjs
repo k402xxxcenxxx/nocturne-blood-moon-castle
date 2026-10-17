@@ -88,6 +88,7 @@ try {
   await page.waitForFunction(() => window.__nocturne.game.enemies[0].hp < 1000);
   await page.keyboard.up('j');
   await page.waitForFunction(() => window.__nocturne.game.freeze <= 0);
+  await page.waitForFunction(() => window.__nocturne.game.player.attack <= 0.0624); // dash is ignored until 74% of an attack has played
   await page.keyboard.press('k');
   await page.waitForFunction(() => window.__nocturne.game.player.dashCd > 0);
   await page.waitForFunction(() => window.__nocturne.game.freeze <= 0);
@@ -212,6 +213,8 @@ try {
   assert.equal(await phone.locator('[data-control].active').count(), 0);
   await phone.locator('[data-control="jump"]').tap();
   await phone.waitForFunction(() => window.__nocturne.game.player.jumps === 1);
+  // A buffered attack from the release above can still fire after its cooldown; wait for it to finish before the dash.
+  await phone.waitForFunction(() => window.__nocturne.game.player.attack <= 0 && window.__nocturne.game.player.attackCd <= 0 && window.__nocturne.game.player.buffer <= 0);
   await phone.locator('[data-control="dash"]').tap();
   await phone.waitForFunction(() => window.__nocturne.game.player.dashCd > 0);
   await phone.locator('[data-control="magic"]').tap();
