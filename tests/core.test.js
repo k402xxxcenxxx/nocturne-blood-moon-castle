@@ -792,6 +792,25 @@ test('perfect dodge pays only for a hit that the dash itself stopped', () => {
   game.hurt(10, 1); // would have been ignored anyway
   assert.equal(events.filter(e => e.type === 'perfectDash').length, 0);
   assert.equal(player.mp, 20);
+  // partial overlap: earlier immunity is shorter than the dash's 0.23 s but still running
+  const { game: g2, player: p2, events: e2 } = arena();
+  g2.hurt(10, 1);
+  advance(g2, .7); // leaves ~0.10 s of immunity
+  p2.mp = 20;
+  g2.dash();
+  g2.hurt(10, 1);
+  assert.equal(e2.filter(e => e.type === 'perfectDash').length, 0);
+  assert.equal(p2.mp, 20);
+});
+
+test('a buffered dash does not carry into the next stage', () => {
+  const { game, player } = arena();
+  player.dashCd = 1;
+  game.dash();
+  assert.ok(player.dashBuf > 0);
+  game.loadStage(1);
+  assert.equal(player.dashBuf, 0);
+  assert.equal(player.otherInv, 0);
 });
 
 test('a projectile that meets a dashing hero is consumed and cannot hit after the dash', () => {

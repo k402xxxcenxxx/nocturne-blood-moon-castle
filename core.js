@@ -30,6 +30,7 @@ export class Game {
     this.seed = seed;
     this.randomState = seed || 1;
     this.state = 'title';
+    this.heldDir = 0;
     this.stage = 0;
     this.time = 0;
     this.elapsed = 0;
@@ -67,7 +68,7 @@ export class Game {
     }
     if (index === 4) this.spawnEnemy('boss', spec.width - 400, index);
     this.totalEnemies = this.enemies.length;
-    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0 });
+    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false });
   }
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
@@ -137,8 +138,8 @@ export class Game {
   }
   dash(fromBuffer = false) {
     const p = this.player;
-    if (p.dashCd > 0 || (p.attack > p.attackLen * .26 && p.attack > 0)) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
-    p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
+    if (p.dashCd > 0 || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
+    p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
     p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
@@ -325,7 +326,7 @@ export class Game {
   // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.
   perfectDodge() {
     const p = this.player;
-    if (p.perfect <= 0 || p.perfectUsed || p.invulnerable <= p.otherInv) return; // only if the dash itself stopped the hit
+    if (p.perfect <= 0 || p.perfectUsed || p.otherInv > 0) return; // only if the dash itself stopped the hit
     p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); p.thrustWindow = Math.max(p.thrustWindow, .9);
     this.freeze = Math.max(this.freeze, .05);
     this.emit('perfectDash', { x: p.x, y: p.y - 30 });
