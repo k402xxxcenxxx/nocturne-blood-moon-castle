@@ -490,6 +490,7 @@ function shieldBearer(c, e, time, white) {
   c.restore();
 }
 function spearman(c, e, time, white) {
+  // .64 = spearman warning time (e.tell = .64 in core.js updateEnemy)
   const bone = white || '#d9d2bd', dark = white || '#5a5448', k = (e.tell || 0) > 0 ? Math.min(1, (.64 - e.tell) / .2) : 0, stride = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 6) * 3 : 0;
   line(c, dark, -4, -28, -4 + stride, -2, 3); line(c, dark, 3, -28, 3 - stride, -2, 3);
   rect(c, bone, -6, -54, 12, 26); circle(c, bone, 0, -62, 7); rect(c, '#111320', 1, -64, 5, 3);

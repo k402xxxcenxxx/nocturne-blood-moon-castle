@@ -65,7 +65,7 @@ export class Game {
     this.totalEnemies = this.enemies.length;
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0 });
   }
-  spawnEnemy(type, x, stage) {
+  spawnEnemy(type, x, stage = 0) {
     const boss = type === 'boss';
     const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'bat' ? 27 : 43) + stage * 12;
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0 });
@@ -234,7 +234,7 @@ export class Game {
     } else if (e.type === 'spear') {
       if (e.turn > 0) e.vx = 0; // recovery after the thrust
       else if (distance <= 193 && Math.abs(p.y - e.y) < 64 && e.cd <= 0 && this.canWindUp(e)) {
-        e.tell = .64; e.cd = Math.max(1.2, 2.2 - this.stage * .12); e.vx = 0; e.turn = 0;
+        e.tell = .64; e.cd = Math.max(1.2, 2.2 - this.stage * .12); e.vx = 0;
         const x0 = e.x + e.dir * 10, x1 = e.x + e.dir * 194;
         e.thrustBox = { x: Math.min(x0, x1), y: e.y - 54, w: 184, h: 54 };
       } else { e.vx = distance > 145 ? e.dir * e.speed : distance < 80 ? -e.dir * e.speed * .8 : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }

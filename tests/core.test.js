@@ -315,6 +315,16 @@ test('shield bearers appear from stage 2 and never in stage 1', () => {
   assert.ok(seen);
 });
 
+test('spearmen appear from stage 2 and never in stage 1', () => {
+  const types = (seed, stage) => { const g = new Game(() => {}, seed); g.loadStage(stage); return g.enemies.map(e => e.type); };
+  let seen = false;
+  for (let seed = 1; seed <= 20; seed++) {
+    assert.equal(types(seed, 0).includes('spear'), false);
+    for (let s = 1; s < 5; s++) seen = seen || types(seed, s).includes('spear');
+  }
+  assert.ok(seen);
+});
+
 test('a shield bearer cannot be beaten head-on by standing still and attacking (it gets to bash)', () => {
   // QA #2: in open floor, block pushback (40) plus reach (100) keeps the player outside bash range (70).
   const { game, player, events } = arena();
