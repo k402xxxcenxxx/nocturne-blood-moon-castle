@@ -16,7 +16,7 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 - Five stages in order: The Forsaken Gate, The Forbidden Archive, The Timeless Belfry, The Crimson Cathedral, The Bloodmoon Throne.
 - The Moon Gate at the far right opens only after every enemy in the stage is defeated.
-- After each of the first four stages, 3 of the 10 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
+- After each of the first four stages, 3 of the 14 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
 - Clearing stage five wins. Dying resets the run's relics and progress. Only records persist between runs: deepest stage reached, completed runs, runs started.
 - `souls` accumulate but currently have no use.
 
@@ -77,6 +77,30 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 | mana | Starnight Crystal | Max MP +30, MP regeneration ×1.5 |
 | dash | Raven Shadow | Dash cooldown ×0.7, dash invulnerability +0.1 s, thrust damage +35% (multiplier capped at ×2.4), +8 MP on a perfect dodge (capped at 30) |
 | armor | Darksilver Charm | Damage taken ×0.8 and restore 20 HP |
+| fire | Ember Edge | Hits burn 4 s, 0.14 × base per tick per stack |
+| frost | Moonfrost Sigil | Hits chill and build frost meter (+1 per stack); at 3 the enemy freezes; bonus hit 0.08 × base per stack |
+| shock | Thunder Conduit | Hits shock 4 s; chain range +14 and +1 target per stack |
+| bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
+
+## Elemental statuses and reactions
+
+"Hits" are sword hits (combo, thrust, plunge fall and shockwave) and Eclipse. "Base" is the hero's `damage`. "Stacks" are copies of the relic owned; every per-stack value uses the stack count directly. Blocked shield-bearer hits apply nothing. Damage over time ticks every 0.5 s. Damage-over-time, bonus-hit and reaction damage cause no hit-stop, stun, flinch or poise damage, apply no statuses, emit `statusTick` {source, x, y, amount} and give kill credit (souls, `leech`, MP, drops) like any kill. Statuses live on the enemy (`burn`, `bleed`, `bleedStacks`, `chill`, `frozen`, `frostMeter`, `shock`) and reset on stage load. Reactions read the enemy's state before the hit, then the hit applies its own statuses. Heavy = combo hit 3, thrust, plunge, Eclipse.
+
+| Status | Effect |
+| --- | --- |
+| Burn (fire) | 4 s, refreshed by each hit; 0.14 × base × fire stacks per tick |
+| Chill (frost) | 2.5 s, enemy speed ×0.68 (boss ×0.85) |
+| Frozen (frost) | Frost meter +stacks per hit (+1 more from Eclipse); at 3 the meter resets and the enemy freezes for min(1.5, 0.75 + 0.12 × stacks) s. Frozen enemies cannot move or act and their warnings are cancelled (not paused). Boss: frozen 0.28 s, then immune to freezing until 1.8 s later; the meter still resets |
+| Shock (shock) | 4 s, refreshed by each hit |
+| Bleed (bleed) | 5 s, refreshed; stacks reset when it expires |
+
+| Reaction | Condition | Effect | Event |
+| --- | --- | --- | --- |
+| Shatter | frost owned, heavy hit on a frozen enemy | Unfreezes; base × (1 + 0.65 × frost) to every enemy within 130 + 10 × frost, target included | `reaction` {name:'shatter', x, y, radius} |
+| Blood Flame | fire owned, heavy hit on a bleeding enemy | Consumes all its bleed stacks; (0.7 + 0.3 × stacks) × base × (1 + 0.3 × fire) to every enemy within 115, target included | `reaction` {name:'bloodFlame', x, y, radius} |
+| Chain Lightning | shock owned, any hit on an already shocked enemy | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining) | `reaction` {name:'chain', x, y, targets:[{x,y}]} |
+
+Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `elements()` hook they should call.
 
 ## Playtest verdicts
 
@@ -93,8 +117,8 @@ Every warning stores its exact hit area in `e.warn` (`kind` plus the fields belo
 | Move | Used | Warning | Hit area (`e.warn`) | Damage |
 | --- | --- | --- | --- | --- |
 | `slash` | hero within 145 | 0.62 s (follow-up 0.46 s) | `box` 146 wide in front, boss height | ×1 |
-| `slam` | hero within 145 | 0.88 s, `punishable` (poise ×2), recovery 1.0 s standing still | `box` 112 × 123 in front; phase 2+ adds `wave` (floor line, 760 long) and spawns a ground projectile (`ground: true`, speed 240, jump it; dash passes it) at ×0.7 | ×1.3 |
-| `charge` | hero farther than 145 | 0.82 s, then travels 305 in 0.48 s | `line` to the end point and `box` (swept body); contact hurts once | ×1.1 |
+| `slam` | hero within 145 | 0.88 s, `punishable` (poise ×2), recovery 1.0 s standing still | `box` 112 × 123 in front; phase 2+ adds `wave` (floor line, 760 long) and spawns a ground projectile (`ground: true`, speed 240, jump it; a dash does not pass through it: like any projectile it is consumed on contact with the dashing hero, who takes no damage) at ×0.7 | ×1.3 |
+| `charge` | hero farther than 145 (phase 1 beyond 145 has no other legal move, so it may repeat the charge) | 0.82 s, then travels 305 in 0.48 s | `line` to the end point and `box` (swept body); contact hurts once | ×1.1 |
 | `volley` | phase 2+, hero farther than 170 | 0.92 s | `lines` (five aim lines, `angle` each, spread -0.5..0.5 rad) then five bolts at speed 265 toward the hero position at warning start, each travelling only the drawn line length (420 px, shared constant `VOLLEY_RANGE`); Eclipse clears them | ×1 |
 | `ritual` | phase 3, every third action | 1.28 s, `punishable` (poise ×2) | `circles` three discs r 56 on the floor at hero x at warning start -200, 0, +200 (88-wide safe gaps); they do not follow the hero | ×1.35 |
 

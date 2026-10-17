@@ -141,20 +141,21 @@ function handleEvent(e) {
     case 'enemySwing':
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
- effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
+      effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
+    case 'reaction': flashNumber({ ...e, y: e.y - 30, size: 22, amount: t('reaction.' + e.name) }, { shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a' }[e.name]); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': clearInput(); audio.play('death'); recordResult(false); openResult(false); break;
-    case 'win': clearInput(); audio.play('win'); recordResult(true); openResult(true); break;
+    case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
   game = new Game(handleEvent); particles = []; effects = []; numbers = []; trails = [];
-  shakeTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
+  shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
 function openModal(html, kind, pause = true) {
@@ -204,7 +205,7 @@ function showTitle() {
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
   [...$('journey-stages').children].forEach((e,i) => e.className = i === 0 ? 'active' : '');
   particles = []; effects = []; trails = []; numbers = []; hitCount = 0; comboTime = 0;
-  audio.suspend();
+  audio.suspend(); audio.setIntensity(1);
 }
 
 $('start-button').addEventListener('click', startRun);

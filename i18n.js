@@ -122,6 +122,11 @@ export const STRINGS = {
     'relic.mana.name': 'Starnight Crystal', 'relic.mana.type': 'Mana', 'relic.mana.text': 'Max MP +30, mana regeneration +50%.',
     'relic.dash.name': 'Raven Shadow', 'relic.dash.type': 'Evasion', 'relic.dash.text': 'Dash cooldown -30%, longer invulnerability, dash thrust +35% damage, perfect dodge +8 MP.',
     'relic.armor.name': 'Darksilver Charm', 'relic.armor.type': 'Defense', 'relic.armor.text': 'Take 20% less damage and restore 20 HP.',
+    'relic.fire.name': 'Ember Edge', 'relic.fire.type': 'Element', 'relic.fire.text': 'Hits burn enemies for 4 s. With Blood Sigil, a heavy hit on a bleeding enemy triggers Blood Flame.',
+    'relic.frost.name': 'Moonfrost Sigil', 'relic.frost.type': 'Element', 'relic.frost.text': 'Hits chill enemies; three build-ups freeze them. A heavy hit on a frozen enemy shatters it.',
+    'relic.shock.name': 'Thunder Conduit', 'relic.shock.type': 'Element', 'relic.shock.text': 'Hits shock enemies for 4 s. Hitting a shocked enemy arcs Chain Lightning to nearby foes.',
+    'relic.bleed.name': 'Blood Sigil', 'relic.bleed.type': 'Element', 'relic.bleed.text': 'Hits add a bleed stack for 5 s. With Ember Edge, a heavy hit consumes the stacks in Blood Flame.',
+    'reaction.shatter': 'Shatter', 'reaction.bloodFlame': 'Blood Flame', 'reaction.chain': 'Chain Lightning',
     'decor.chapter': 'CHAPTER I',
     'decor.awaits': 'THE NIGHT AWAITS',
     'decor.chronicles': 'THE BLOODMOON CHRONICLES',
@@ -257,6 +262,11 @@ export const STRINGS = {
     'relic.mana.name': '星夜結晶', 'relic.mana.type': '魔力', 'relic.mana.text': '魔力上限增加 30，魔力恢復速度提升 50%。',
     'relic.dash.name': '渡鴉之影', 'relic.dash.type': '閃避', 'relic.dash.text': '衝刺冷卻縮短 30%，無敵時間延長，衝刺突刺傷害 +35%，完美閃避 +8 MP。',
     'relic.armor.name': '黯銀護符', 'relic.armor.type': '防禦', 'relic.armor.text': '受到的傷害降低 20%，並恢復 20 點生命。',
+    'relic.fire.name': '燼火附刃', 'relic.fire.type': '元素', 'relic.fire.text': '攻擊使敵人燃燒 4 秒。搭配鮮血刻印，重擊流血的敵人會引發血焰。',
+    'relic.frost.name': '霜月刻印', 'relic.frost.type': '元素', 'relic.frost.text': '攻擊使敵人冰冷，累積三次即冰凍。重擊冰凍的敵人會引發碎冰。',
+    'relic.shock.name': '雷鳴導體', 'relic.shock.type': '元素', 'relic.shock.text': '攻擊使敵人感電 4 秒。攻擊已感電的敵人會對附近敵人釋放連鎖雷擊。',
+    'relic.bleed.name': '鮮血刻印', 'relic.bleed.type': '元素', 'relic.bleed.text': '攻擊疊加 1 層流血，持續 5 秒。搭配燼火附刃，重擊會消耗層數引發血焰。',
+    'reaction.shatter': '碎冰', 'reaction.bloodFlame': '血焰', 'reaction.chain': '連鎖雷擊',
   },
 };
 

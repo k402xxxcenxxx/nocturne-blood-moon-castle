@@ -19,6 +19,11 @@ export const RELICS = [
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
   { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
   { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
+  // Elemental relics: no stat change; core reads the stack count (see Game.stacks) when a hit lands.
+  { id: 'fire', icon: 'star', apply: () => {} },
+  { id: 'frost', icon: 'gem', apply: () => {} },
+  { id: 'shock', icon: 'moon', apply: () => {} },
+  { id: 'bleed', icon: 'drop', apply: () => {} },
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
@@ -79,7 +84,7 @@ export class Game {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -254,6 +259,11 @@ export class Game {
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
     if (broken) this.stagger(e);
+    this.settle(e);
+    if (!blocked) this.elements(e, amount, heavy, eclipse); // hook: attack-form projectiles (none yet) should call this too
+  }
+  // Boss phase change and death handling, shared by sword hits and damage-over-time / reaction damage.
+  settle(e) {
     if (e.hp > 0 && e.type === 'boss') {
       const phase = e.hp <= e.maxHp * .34 ? 3 : e.hp <= e.maxHp * .67 ? 2 : 1;
       if (phase > e.bossPhase) this.enterPhase(e, phase);
@@ -266,14 +276,85 @@ export class Game {
       if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
     }
   }
+  stacks(id) { return this.relics.filter(r => r === id).length; }
+  // Elemental damage: no hit-stop, flinch, poise damage or new statuses. Art listens to 'statusTick'.
+  elemDamage(e, amount, source) {
+    amount = Math.max(1, Math.round(amount));
+    e.hp -= amount;
+    this.emit('statusTick', { source, x: e.x, y: e.y - e.h * .55, amount });
+    this.settle(e);
+  }
+  // Statuses and reactions for one landed, unblocked sword/Eclipse hit. Reactions read the pre-hit state, then the hit applies its statuses.
+  elements(e, amount, heavy, eclipse) {
+    const fire = this.stacks('fire'), frost = this.stacks('frost'), shock = this.stacks('shock'), bleed = this.stacks('bleed');
+    if (!(fire || frost || shock || bleed)) return;
+    const base = this.player.damage, mid = o => ({ x: o.x, y: o.y - o.h * .55 });
+    const dist = o => Math.hypot(o.x - e.x, (o.y - o.h * .55) - (e.y - e.h * .55));
+    const alive = () => this.enemies.filter(o => o.hp > 0);
+    if (heavy && frost && e.frozen > 0) { // Shatter
+      const radius = 130 + 10 * frost;
+      e.frozen = 0;
+      this.emit('reaction', { name: 'shatter', ...mid(e), radius });
+      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, base * (1 + .65 * frost), 'shatter');
+    }
+    if (heavy && fire && e.bleedStacks > 0) { // Blood Flame
+      const n = e.bleedStacks, radius = 115;
+      e.bleed = 0; e.bleedStacks = 0;
+      this.emit('reaction', { name: 'bloodFlame', ...mid(e), radius });
+      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, (.7 + .3 * n) * base * (1 + .3 * fire), 'bloodFlame');
+    }
+    if (shock && e.shock > 0) { // Chain Lightning
+      const targets = alive().filter(o => o !== e && dist(o) <= 180 + 14 * shock).sort((a, b) => dist(a) - dist(b)).slice(0, 2 + shock);
+      if (targets.length) {
+        this.emit('reaction', { name: 'chain', ...mid(e), targets: targets.map(mid) });
+        for (const o of targets) { this.elemDamage(o, (.35 * base + .12 * amount) * shock, 'chain'); if (o.hp > 0) o.shock = 4; }
+      }
+    }
+    if (e.hp <= 0) return;
+    const at = mid(e), boss = e.type === 'boss';
+    if (fire) { e.burn = 4; e.burnDmg = .14 * base * fire; this.emit('status', { name: 'burn', ...at }); }
+    if (shock) { e.shock = 4; this.emit('status', { name: 'shock', ...at }); }
+    if (bleed) { e.bleed = 5; e.bleedStacks = Math.min(10, e.bleedStacks + bleed); this.emit('status', { name: 'bleed', ...at, stacks: e.bleedStacks }); }
+    if (frost) {
+      e.chill = 2.5;
+      if (e.frozen <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
+      if (e.frostMeter >= 3) {
+        e.frostMeter = 0;
+        if (e.freezeImmune <= 0 && e.frozen <= 0) { // the boss freezes briefly, then ignores freezing for a while
+          e.frozen = boss ? .28 : Math.min(1.5, .75 + .12 * frost);
+          if (boss) e.freezeImmune = .28 + 1.8;
+          this.cancelAttack(e);
+          this.emit('status', { name: 'frozen', ...at, duration: e.frozen });
+        }
+      } else this.emit('status', { name: 'chill', ...at });
+      this.elemDamage(e, .08 * base * frost, 'frost');
+    }
+  }
+  // Status timers and damage-over-time (every 0.5 s), run each frame for a living enemy.
+  tickStatus(e, dt) {
+    for (const k of ['chill', 'frozen', 'freezeImmune', 'shock']) e[k] = Math.max(0, e[k] - dt);
+    if (e.burn <= 0 && e.bleed <= 0) { e.dotT = 0; return; }
+    const burning = e.burn > 0, stacks = e.bleed > 0 ? e.bleedStacks : 0; // a tick landing on the frame a timer expires still counts
+    e.burn = Math.max(0, e.burn - dt); e.bleed = Math.max(0, e.bleed - dt);
+    if (e.bleed <= 0) e.bleedStacks = 0;
+    e.dotT += dt;
+    while (e.dotT >= .5 && e.hp > 0) {
+      e.dotT -= .5;
+      if (burning) this.elemDamage(e, e.burnDmg, 'burn');
+      if (e.hp > 0 && stacks) this.elemDamage(e, .1 * this.player.damage * stacks, 'bleed');
+    }
+  }
   enterPhase(e, phase) {
     Object.assign(e, { bossPhase: phase, tell: 0, warn: null, move: '', travel: 0, recover: 0, punishable: false, poise: e.maxPoise, pause: 1.1 });
     this.emit('bossPhase', { phase, x: e.x, y: e.y - e.h * .5 });
   }
-  stagger(e) {
+  cancelAttack(e) {
     if (e.blessRadius) e.blessCd = 2.5;
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
-    e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false; e.poise = e.maxPoise;
+    e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false;
+  }
+  stagger(e) {
+    this.cancelAttack(e); e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : 1;
     e.armor = e.stun + (e.type === 'boss' ? .6 : 1.2); // counts down with the stun, so 1.2 s (boss 0.6 s) of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
@@ -288,8 +369,11 @@ export class Game {
   }
   updateEnemy(e, dt) {
     e.blessed = Math.max(0, e.blessed - dt); e.blessCd = Math.max(0, e.blessCd - dt);
+    this.tickStatus(e, dt);
+    if (e.hp <= 0) return;
     const speed = e.speed;
     if (e.blessed > 0) e.speed *= 1.15;
+    if (e.chill > 0) e.speed *= e.type === 'boss' ? .85 : .68;
     this.moveEnemy(e, dt);
     e.speed = speed;
   }
@@ -300,6 +384,7 @@ export class Game {
     e.stun = Math.max(0, e.stun - dt);
     e.armor = Math.max(0, e.armor - dt);
     e.guardBreak = Math.max(0, e.guardBreak - dt);
+    if (e.frozen > 0) { e.vx = 0; return; } // frozen: cannot move or attack (warnings were cancelled)
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt);
     if (e.stun > 0) { e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
@@ -317,7 +402,7 @@ export class Game {
       if (e.tell <= 0) this.enemyAttack(e);
       return;
     }
-    if (e.travel > 0) { this.bossCharge(e, dt, face, distance); return; }
+    if (e.travel > 0) { this.bossCharge(e, dt, face); return; }
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
@@ -355,9 +440,11 @@ export class Game {
     const ph = e.bossPhase;
     let list = (ph === 3 && e.action % 3 === 2 ? ['ritual'] : []).filter(m => m !== e.lastMove);
     if (!list.length) {
-      list = (distance < 145 ? ['slash', 'slam'] : ph >= 2 && distance > 170 ? ['charge', 'volley'] : ['charge']).filter(m => m !== e.lastMove);
+      const pool = distance < 145 ? ['slash', 'slam'] : ph >= 2 && distance > 170 ? ['charge', 'volley'] : ['charge'];
+      list = pool.filter(m => m !== e.lastMove);
+      if (!list.length) list = pool; // nothing else is legal at this range: repeat rather than only walk
     }
-    return list.length ? list[Math.floor(this.rand() * list.length)] : '';
+    return list[Math.floor(this.rand() * list.length)];
   }
   // Starts a boss warning and exposes its exact hit area in e.warn (box / line / lines / circles / wave), which bossAttack reads back.
   bossStart(e, move, tell) {
@@ -382,14 +469,14 @@ export class Game {
     }
     e.warn = warn;
   }
-  bossCharge(e, dt, face, distance) {
+  bossCharge(e, dt, face) {
     const p = this.player, step = (e.chargeTo - e.x) * Math.min(1, dt / e.travel);
     e.travel -= dt; e.x += step; e.vx = step / dt;
     if (Math.abs(p.x - e.x) < (p.w + e.w) / 2 && p.y > e.y - e.h && p.y - p.h < e.y) this.hurt(e.damage * 1.1, e.dir); // i-frames after a hit (0.8 s) outlast the 0.48 s charge: once per charge
     if (e.travel > 0) return;
     e.x = e.chargeTo; e.vx = 0; e.move = ''; e.cd = 1; e.chargeN++;
     e.dir = face;
-    if (e.bossPhase >= 2 && e.chargeN % 2 === 0 && distance <= 190 && this.canWindUp(e)) this.bossStart(e, 'slash', .46);
+    if (e.bossPhase >= 2 && e.chargeN % 2 === 0 && Math.abs(p.x - e.x) <= 190 && this.canWindUp(e)) this.bossStart(e, 'slash', .46);
   }
   bossAttack(e, dmg) {
     const p = this.player, w = e.warn, move = e.move;
