@@ -16,13 +16,13 @@ export const RELICS = [
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
   { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
-  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown *= .7; p.dashShield += .1; } },
+  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
   { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
-// Poise damage per source. Add plunge / dash thrust entries here when those moves exist.
-const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55 };
+// Poise damage per source. Add plunge entries here when that move exists.
+const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35 };
 
 export class Game {
   constructor(onEvent = () => {}, seed = randomSeed()) {
@@ -30,6 +30,7 @@ export class Game {
     this.seed = seed;
     this.randomState = seed || 1;
     this.state = 'title';
+    this.heldDir = 0;
     this.stage = 0;
     this.time = 0;
     this.elapsed = 0;
@@ -42,6 +43,7 @@ export class Game {
       speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
+      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10,
     };
     this.loadStage(0);
   }
@@ -66,7 +68,7 @@ export class Game {
     }
     if (index === 4) this.spawnEnemy('boss', spec.width - 400, index);
     this.totalEnemies = this.enemies.length;
-    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0 });
+    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false });
   }
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
@@ -81,15 +83,20 @@ export class Game {
     this.elapsed += dt;
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
-    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow']) p[key] = Math.max(0, p[key] - dt);
+    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) p[key] = Math.max(0, p[key] - dt);
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction && p.dash <= 0) p.dir = direction;
     if (input.jump) this.jump();
+    this.heldDir = direction;
     if (input.dash) this.dash();
+    else if (p.dashBuf > 0) this.dash(true);
     if (input.magic) this.magic();
+    if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
+    if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0) this.attack();
     if (input.attack) this.attack();
     if (p.dash > 0) p.vx = p.dir * 730;
+    else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
     else p.vx = direction * p.speed * (p.attack > 0 ? .65 : 1);
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
     const oldY = p.y;
@@ -106,8 +113,8 @@ export class Game {
     if (this.state !== 'playing') return;
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-      if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4 && p.dash <= 0) {
-        this.hurt(b.damage, Math.sign(b.vx)); b.life = 0;
+      if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
+        this.hurt(b.damage, Math.sign(b.vx)); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
@@ -129,34 +136,43 @@ export class Game {
     p.jumps++; p.grounded = false;
     this.emit('jump', { x: p.x, y: p.y, double: p.jumps === 2 });
   }
-  dash() {
+  dash(fromBuffer = false) {
     const p = this.player;
-    if (p.dashCd > 0) return;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = .23 + p.dashShield; p.vy = Math.min(p.vy, 0);
+    if (p.dashCd > 0 || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
+    p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
+    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {
     const p = this.player;
-    if (p.attackCd > 0 || p.dash > 0) return;
-    p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1;
-    p.comboWindow = .8;
-    p.attack = .24; p.attackCd = (p.combo === 3 ? .39 : .29) * p.attackSpeed;
+    if (p.attackCd > 0 || p.dash > 0) { p.buffer = .16; return; }
+    p.buffer = 0;
+    const thrust = p.thrustWindow > 0;
+    if (thrust && !this.heldDir) { // auto-face the nearest living enemy within 200 when no direction is held
+      const t = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= 200).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      if (t && t.x !== p.x) p.dir = Math.sign(t.x - p.x);
+    }
+    if (thrust) p.thrustWindow = 0; // a thrust neither advances nor resets the combo
+    else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
+    p.move = thrust ? 'thrust' : '';
+    p.attack = p.attackLen = .24; p.attackCd = (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed;
     this.hitSet = new Set();
-    this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo });
+    this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     this.hitTargets();
   }
   hitTargets() {
     const p = this.player;
-    const reach = p.reach + (p.combo === 3 ? 24 : 0);
+    const thrust = p.move === 'thrust';
+    const reach = thrust ? 155 : p.reach + (p.combo === 3 ? 24 : 0);
     for (const e of this.enemies) {
       const dx = (e.x - p.x) * p.dir;
-      if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || e.y < p.y - 88 || e.y - e.h > p.y - 4) continue;
+      if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
       this.hitSet?.add(e);
       const crit = this.rand() < p.crit;
-      const amount = Math.round(p.damage * [1, 1, 1.15, 1.8][p.combo] * (crit ? 2 : 1));
+      const amount = Math.round(p.damage * (thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo]) * (crit ? 2 : 1));
       // Shield bearers block sword hits from the side they face unless Eclipse broke their guard.
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
-      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, p.combo === 3, blocked, POISE_DAMAGE.combo[p.combo]);
+      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       p.mp = Math.min(p.maxMp, p.mp + 2);
     }
   }
@@ -177,6 +193,7 @@ export class Game {
     const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
     if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
     const broken = e.hp > 0 && e.poise <= 0;
+    // The boss deliberately keeps its warning but still takes a 0.08 s hit stun (see the stun line below).
     const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken && !(eclipse && e.type !== 'boss'); // light hits don't interrupt heavy enemies
     if (blocked) {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
@@ -254,7 +271,7 @@ export class Game {
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
-      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .3; e.cd = 1.3; }
+      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .36; e.cd = 1.3; }
     } else if (e.type === 'mage') {
       if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
@@ -306,9 +323,18 @@ export class Game {
     }
     e.action++;
   }
+  // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.
+  perfectDodge() {
+    const p = this.player;
+    if (p.perfect <= 0 || p.perfectUsed || p.otherInv > 0) return; // only if the dash itself stopped the hit
+    p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); p.thrustWindow = Math.max(p.thrustWindow, .9);
+    this.freeze = Math.max(this.freeze, .05);
+    this.emit('perfectDash', { x: p.x, y: p.y - 30 });
+  }
   hurt(amount, dir) {
     const p = this.player;
-    if (p.invulnerable > 0 || this.state !== 'playing') return;
+    if (this.state !== 'playing') return;
+    if (p.invulnerable > 0) { this.perfectDodge(); return; }
     const actual = Math.round(amount * p.armor);
     p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
