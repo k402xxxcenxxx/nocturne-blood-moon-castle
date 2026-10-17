@@ -110,7 +110,7 @@ function handleEvent(e) {
     case 'magic':
       if (game.stacks('vortex')) audio.play('vortex');
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
-      if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: Math.min(320, 210 + 35 * game.stacks('vortex')), life: .5, max: .5 }); // pull radius matches core.magic
+      if (game.stacks('vortex')) effects.push({ type: 'vortex', x: e.x, y: e.y, radius: e.radius, life: .5, max: .5 });
       break;
     case 'block': { // metal sparks kicked off the shield face toward the attacker
       e = { ...e, x: e.x + e.dir * 13 }; // core sends the body edge; the drawn shield face sits 13 px further out
@@ -124,7 +124,7 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
-    case 'shot': audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: one event, one sound
+    case 'shot': if (e.kind !== 'ground' || e.dir > 0) audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: sound once, for the right-hand one
     case 'plunge':
       if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
       audio.play('plunge', 1.1); rumble(5, .14);
@@ -179,7 +179,7 @@ function handleEvent(e) {
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
-    case 'upgrade': clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
+    case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
@@ -190,10 +190,12 @@ function startRun() {
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
+// Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
+function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && modalKind === 'upgrade')); }
 function openModal(html, kind, pause = true) {
   if ($('modal').hidden) previousFocus = document.activeElement;
   if (pause && game.state === 'playing') { returnState = 'playing'; game.state = 'paused'; audio.suspend(); }
-  clearInput(); modalKind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false;
+  clearInput(); modalKind = kind; $('modal-panel').innerHTML = html; $('modal').hidden = false; syncGear();
   requestAnimationFrame(() => $('modal-panel').querySelector('button')?.focus({ preventScroll: true }));
 }
 function closeModal(resume = true) {
@@ -204,7 +206,7 @@ function closeModal(resume = true) {
     return;
   }
   modalReturn = null;
-  $('modal').hidden = true; modalKind = '';
+  $('modal').hidden = true; modalKind = ''; syncGear();
   if (resume && returnState === 'playing' && game.state === 'paused') { game.state = 'playing'; audio.resume(); }
   returnState = null; clearInput(); previousFocus?.focus?.({ preventScroll: true });
 }
@@ -213,7 +215,8 @@ function pauseRelics() {
   const counts = {}; game.relics.forEach(id => counts[id] = (counts[id] || 0) + 1);
   const ids = Object.keys(counts);
   if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
-  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''} title="${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>`;
+  const syn = game.activeSynergies().map(s => `<li title="${t(s.key)}"><b>${t(`relic.${s.a}.name`)} + ${t(`relic.${s.b}.name`)}</b> ${t(s.key)}</li>`).join('');
+  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''} title="${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
@@ -229,8 +232,12 @@ function openHelp() {
   const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', 'magic'], ['gem', 'relics'] ];
   openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
+function synergyLine(id) {
+  const partners = game.synergyPartners(id);
+  return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
+}
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t('upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p></button>`).join('')}</div><p class="modal-footnote">${t('upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -238,7 +245,7 @@ function openResult(win) {
 }
 function showTitle() {
   closeModal(false); game = new Game(handleEvent); camera = 0;
-  $('title-screen').hidden = false; $('touch-controls').hidden = true; $('objective').hidden = true;
+  $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
   $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
   $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = 'I — V';
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
@@ -270,7 +277,7 @@ $('modal').addEventListener('click', e => {
     return;
   }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
-  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.play('upgrade'); game.chooseRelic(id); } return; }
+  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play('upgrade'); game.chooseRelic(id); } return; }
   switch (button.dataset.command) {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;
@@ -522,4 +529,5 @@ function tick(now) {
 }
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
+syncGear();
 if (new URLSearchParams(location.search).has('test')) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput };

@@ -16,6 +16,8 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 - Five stages in order: The Forsaken Gate, The Forbidden Archive, The Timeless Belfry, The Crimson Cathedral, The Bloodmoon Throne.
 - The Moon Gate at the far right opens only after every enemy in the stage is defeated.
+- Before stage 1 the run opens with a build pick: 3 relics drawn only from the build pool (Returning Crescent, Starpierce Lance, Fallen Star Vow, Vortex Eclipse, Ember Edge, Moonfrost Sigil, Thunder Conduit, Blood Sigil). It restores no HP or MP. A run therefore has 5 picks.
+- Relics list synergy partners (Eclipse Codex+Vortex/Ember/Moonfrost, Raven Shadow+Lance, Crescent+Thunder/Vortex/Blood Sigil, Lance+Vortex, Fallen Star+Moonfrost/Ember, Ember+Blood Sigil). When offers are rolled a relic's weight is 1 + 0.8 per distinct owned partner; offers are 3 distinct relics (weighted, without replacement). Synergies are text and weighting only.
 - After each of the first four stages, 3 of the 18 relics are offered and the player picks 1; relics can be offered again and stack. Picking restores 20 HP and fills MP.
 - Clearing stage five wins. Dying resets the run's relics and progress. Only records persist between runs: deepest stage reached, completed runs, runs started.
 - `souls` accumulate but currently have no use.
@@ -113,6 +115,26 @@ Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `el
 After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.
 
 #2 Shield bearer — keep (automated playtest; pending the user's hands-on feel check): head-on costs 22–64 HP while all three answers work at 0 damage (jump behind 2.5–3.3 s, dash through the wind-up 0.7–1.5 s, Eclipse 0.4–0.7 s for 35 MP), so it forces the intended choice; open: P3 turn delay during stun, `!` contrast and turn-cue taste notes, real-device check, generated sprite.
+
+#19 Wind-up limit — keep (automated playtest; pending the user's hands-on feel check): at most 2 (stages 1–3) / 3 simultaneous warnings keeps crowds attack-dense (16 attacks per 6 s) but readable.
+
+#16 Spearman — keep (automated playtest; pending the user's hands-on feel check): jump, dash-through and bait-and-punish all take 0 damage, standing at mid-range gets hit, and the warning box matches the hit box.
+
+#17 Blood priest — keep (automated playtest; pending the user's hands-on feel check): interrupting the bless works (2.5 s cooldown on cancel) and blessed hits go 13→16; also found and fixed a shared bug where far warnings froze.
+
+#12 Poise and stagger — adjust (automated playtest; pending the user's hands-on feel check): post-stagger armor (1.2 s, boss 0.6 s) was needed to stop tap-rhythm stun-lock, and knights break on combo cycle 2; open: knight pressure on a stationary tapper.
+
+#11 Dash thrust and perfect dodge — keep (automated playtest; pending the user's hands-on feel check): ~150 ms perfect window on skeleton and knight with no MP loop (≤4 MP/s); open: bat perfects stay tight even after reach 55.
+
+#10 Air plunge — keep (automated playtest; pending the user's hands-on feel check): works as a crowd tool (each enemy hit once) with a committed fall and no i-frames; the shockwave needs a 40 px minimum fall.
+
+#18 Fallen King three phases — adjust (automated playtest; pending the user's hands-on feel check): HP 640→900 after a skilled bot killed it in ~20 s, and every move has an answer; open: phase 3 is still short (~4–7 s for a perfect bot) and dash i-frames answer most warnings.
+
+#13 Elemental relics — adjust (automated playtest; pending the user's hands-on feel check): fixed the freeze lock, Eclipse chain wipes and per-enemy Blood Flames; balance follow-up in #30.
+
+#14 Attack-form relics — keep (automated playtest; pending the user's hands-on feel check): each form changes how you play, and beam and ground-wave reach is capped to the visible screen; tuning in #30.
+
+#15 Opening pick and synergy offers — keep (automated playtest, still in review; pending the user's hands-on feel check): one owned partner raises its offer share from ~17% to ~27% without forcing any relic, and the opening pick appears exactly once per run.
 
 ## The Fallen King (stage 5 boss)
 

@@ -31,6 +31,11 @@ export const RELICS = [
   { id: 'plunge', icon: 'star', apply: p => p.plungeRadius = Math.min(190, p.plungeRadius + 24) },
   { id: 'vortex', icon: 'moon', apply: () => {} },
 ];
+// Symmetric synergy pairs; the i18n key is `synergy.<first>-<second>` in either direction. Only text: the relics already do the work.
+const SYNERGY_PAIRS = [['arcane', 'vortex'], ['arcane', 'fire'], ['arcane', 'frost'], ['dash', 'pierce'], ['wave', 'shock'], ['wave', 'vortex'], ['wave', 'bleed'], ['pierce', 'vortex'], ['plunge', 'frost'], ['plunge', 'fire'], ['fire', 'bleed']];
+for (const r of RELICS) r.synergies = SYNERGY_PAIRS.filter(p => p.includes(r.id)).map(p => ({ with: p[0] === r.id ? p[1] : p[0], key: `synergy.${p[0]}-${p[1]}` }));
+export const BUILD_POOL = ['wave', 'pierce', 'plunge', 'vortex', 'fire', 'frost', 'shock', 'bleed']; // opening-pick relics
+const SYNERGY_WEIGHT = .8;
 const STATUS_TIMERS = ['chill', 'frozen', 'freezeImmune', 'shock'];
 const SHOT_POISE = 8;
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -63,7 +68,24 @@ export class Game {
   }
   rand() { let t = this.randomState += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
   emit(type, data = {}) { this.onEvent({ type, ...data }); }
-  start() { this.state = 'playing'; this.emit('stage', { stage: this.stage }); }
+  start() { this.rollChoices('start', BUILD_POOL); } // the run opens with a build pick; stage 1 begins after it
+  // Offer 3 distinct relics (weighted sampling without replacement); reason is 'start' or 'stage'.
+  rollChoices(reason, pool) {
+    this.state = 'upgrade'; this.pickReason = reason;
+    const left = RELICS.filter(r => !pool || pool.includes(r.id)), choices = [];
+    const weight = r => 1 + SYNERGY_WEIGHT * r.synergies.filter(s => this.relics.includes(s.with)).length;
+    while (choices.length < 3 && left.length) {
+      let roll = this.rand() * left.reduce((n, r) => n + weight(r), 0), i = 0;
+      while (i < left.length - 1 && (roll -= weight(left[i])) >= 0) i++;
+      choices.push(...left.splice(i, 1));
+    }
+    this.choices = choices;
+    this.emit('upgrade', { choices, reason });
+  }
+  // Owned partners of a relic, as [{ with, key }] (for "Synergy: <partner>" lines on cards).
+  synergyPartners(id) { return RELICS.find(r => r.id === id).synergies.filter(s => this.relics.includes(s.with)); }
+  // Pairs where both relics are owned, as [{ a, b, key }] (for the pause menu).
+  activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
     this.stage = index;
     const spec = STAGES[index];
@@ -217,7 +239,7 @@ export class Game {
         s.hit.add(e);
         const crit = this.rand() < p.crit;
         const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
-        const blocked = e.type === 'shield' && e.guardBreak <= 0 && (s.x - e.x) * e.dir >= 0; // frontal only; a returning crescent can hit a back
+        const blocked = e.type === 'shield' && e.guardBreak <= 0 && s.vx * e.dir < 0; // frontal only (decided by travel direction, robust at low frame rates); a returning crescent can hit a back
         this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, s.back ? 'back' : true);
       }
     }
@@ -268,9 +290,9 @@ export class Game {
     const p = this.player;
     if (p.mp < p.magicCost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
     p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
-    this.emit('magic', { x: p.x, y: p.y - 32 });
     this.flameUsed = false;
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
+    this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
     if (vortex) for (const e of caught) e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
     for (const e of caught) {
@@ -602,20 +624,19 @@ export class Game {
   finishStage() {
     this.player.plunge = 0; this.player.move = '';
     if (this.stage === 4) { this.state = 'won'; this.emit('win'); return; }
-    this.state = 'upgrade';
-    this.choices = [...RELICS];
-    for (let i = this.choices.length - 1; i > 0; i--) { const j = Math.floor(this.rand() * (i + 1)); [this.choices[i], this.choices[j]] = [this.choices[j], this.choices[i]]; }
-    this.choices = this.choices.slice(0, 3);
-    this.emit('upgrade', { choices: this.choices });
+    this.rollChoices('stage');
   }
   chooseRelic(id) {
     if (this.state !== 'upgrade') return false;
     const relic = this.choices.find(r => r.id === id);
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
-    this.player.mp = this.player.maxMp;
-    this.loadStage(this.stage + 1); this.state = 'playing';
+    if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
+    else {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
+      this.player.mp = this.player.maxMp;
+      this.loadStage(this.stage + 1); this.state = 'playing';
+    }
     this.emit('stage', { stage: this.stage });
     return true;
   }
