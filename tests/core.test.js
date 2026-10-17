@@ -853,3 +853,94 @@ test('dash cooldown never drops below 0.35 s', () => {
   for (let i = 0; i < 20; i++) dash.apply(player);
   assert.equal(player.dashCooldown, .35);
 });
+
+function airborne(game, y = FLOOR - 150) { const p = game.player; p.y = y; p.vy = 0; p.grounded = false; p.jumps = 1; p.x = 400; p.dir = 1; }
+
+test('plunge: only in the air; grounded attack stays a combo hit and the combo is untouched by a plunge', () => {
+  const { game, player, events } = arena();
+  game.attack();
+  assert.equal(player.move, '');
+  assert.equal(player.combo, 1);
+  advance(game, .5);
+  airborne(game); player.comboWindow = .8;
+  game.attack();
+  assert.equal(player.move, 'plunge');
+  advance(game, 1);
+  assert.equal(player.combo, 1);
+  assert.equal(events.filter(e => e.type === 'plunge').length, 1);
+});
+
+test('plunge: falls through an enemy and hits it once, then the shockwave skips it and hits others', () => {
+  const { game, player, events } = arena();
+  player.crit = 0;
+  const under = enemy(game, 400);
+  const side = enemy(game, 400 + 80);
+  const far = enemy(game, 400 + 120);
+  const high = enemy(game, 400 - 60, { y: FLOOR - 120 });
+  airborne(game);
+  game.attack();
+  advance(game, 1);
+  assert.equal(under.maxHp - under.hp, Math.round(player.damage * 1.25));
+  assert.equal(side.maxHp - side.hp, player.damage);
+  assert.equal(far.hp, far.maxHp, 'outside radius 90 + half width');
+  assert.equal(high.hp, high.maxHp, 'above the vertical reach');
+  const e = events.find(x => x.type === 'plunge');
+  assert.deepEqual([e.radius, e.y], [90, FLOOR]);
+  assert.equal(events.filter(x => x.type === 'hit').length, 2);
+});
+
+test('plunge: not blocked by a shield bearer facing the hero; poise 45', () => {
+  const { game, player, events } = arena();
+  player.crit = 0;
+  const s = enemy(game, 400, { type: 'shield' }); s.dir = -1;
+  const s2 = enemy(game, 450, { type: 'shield' }); s2.dir = -1;
+  airborne(game); player.x = 360;
+  game.attack(); advance(game, 1);
+  assert.equal(events.some(x => x.type === 'block'), false);
+  assert.ok(s.hp < s.maxHp && s2.hp < s2.maxHp);
+  assert.equal(s2.maxPoise - s2.poise, 45);
+});
+
+test('plunge: no jump or dash during it; buffered dash fires after recovery', () => {
+  const { game, player } = arena();
+  airborne(game);
+  game.attack();
+  game.jump(); game.dash();
+  assert.equal(player.dash, 0);
+  assert.equal(player.jumps, 1);
+  advance(game, 1);
+  assert.equal(player.plunge, 0);
+  assert.ok(player.grounded);
+  game.jump();
+  assert.equal(player.jumps, 1);
+});
+
+test('plunge: reach relic widens the shockwave up to 150, state cleared by loadStage', () => {
+  const { game, player } = arena();
+  const reach = RELICS.find(r => r.id === 'reach');
+  reach.apply(player);
+  assert.equal(player.plungeRadius, 102);
+  for (let i = 0; i < 20; i++) reach.apply(player);
+  assert.equal(player.plungeRadius, 150);
+  airborne(game); game.attack();
+  assert.equal(player.plunge, 1);
+  game.loadStage(1);
+  assert.deepEqual([player.plunge, player.move], [0, '']);
+});
+
+test('thrust auto-face prefers the facing side within 200, else the nearest', () => {
+  const { game, player } = arena();
+  player.x = 400; player.dir = 1; player.thrustWindow = .5;
+  enemy(game, 590); enemy(game, 340);
+  game.attack();
+  assert.equal(player.dir, 1);
+});
+
+test('bat attack reaches 55 px', () => {
+  const { game, player } = arena();
+  const b = enemy(game, 400 + 52, { type: 'bat' });
+  b.y = player.y; b.tell = .001; b.cd = 5;
+  player.x = 400; player.invulnerable = 0;
+  game.updateEnemy(b, 1 / 120);
+  assert.ok(player.hp < player.maxHp);
+});

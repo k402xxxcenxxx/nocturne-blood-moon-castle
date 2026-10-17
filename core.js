@@ -14,7 +14,7 @@ export const RELICS = [
   { id: 'vital', icon: 'heart', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
   { id: 'leech', icon: 'drop', apply: p => p.leech += 5 },
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
-  { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; } },
+  { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; p.plungeRadius = Math.min(150, p.plungeRadius + 12); } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
   { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
   { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
@@ -22,7 +22,7 @@ export const RELICS = [
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source. Add plunge entries here when that move exists.
-const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35 };
+const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35, plunge: 45 };
 
 export class Game {
   constructor(onEvent = () => {}, seed = randomSeed()) {
@@ -43,7 +43,7 @@ export class Game {
       speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
-      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10,
+      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeRadius: 90,
     };
     this.loadStage(0);
   }
@@ -68,7 +68,7 @@ export class Game {
     }
     if (index === 4) this.spawnEnemy('boss', spec.width - 400, index);
     this.totalEnemies = this.enemies.length;
-    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false });
+    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
@@ -93,9 +93,14 @@ export class Game {
     else if (p.dashBuf > 0) this.dash(true);
     if (input.magic) this.magic();
     if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
-    if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0) this.attack();
+    if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0 && !p.plunge) this.attack();
     if (input.attack) this.attack();
-    if (p.dash > 0) p.vx = p.dir * 730;
+    if (p.plunge === 1 && (p.plungeT -= dt) <= 0) p.plunge = 2;
+    if (p.plunge === 1) p.vy = 0; // hang for the wind-up
+    if (p.plunge === 2) p.vy = Math.max(p.vy, 800);
+    if (p.plunge === 3 && (p.plungeT -= dt) <= 0) { p.plunge = 0; p.move = ''; }
+    if (p.plunge === 3) p.vx = 0;
+    else if (p.dash > 0) p.vx = p.dir * 730;
     else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
     else p.vx = direction * p.speed * (p.attack > 0 ? .65 : 1);
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
@@ -108,6 +113,7 @@ export class Game {
       for (const plat of this.platforms) if (oldY <= plat.y + 1 && p.y >= plat.y && p.x + p.w / 2 > plat.x && p.x - p.w / 2 < plat.x + plat.w) floor = Math.min(floor, plat.y);
       if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.jumps = 0; }
     }
+    if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
     if (this.state !== 'playing') return;
@@ -131,25 +137,32 @@ export class Game {
   }
   jump() {
     const p = this.player;
-    if (p.jumps >= 2 || p.dash > 0) return;
+    if (p.jumps >= 2 || p.dash > 0 || p.plunge) return;
     p.vy = p.jumps === 0 ? -575 : -520;
     p.jumps++; p.grounded = false;
     this.emit('jump', { x: p.x, y: p.y, double: p.jumps === 2 });
   }
   dash(fromBuffer = false) {
     const p = this.player;
-    if (p.dashCd > 0 || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
+    if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
     p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {
     const p = this.player;
-    if (p.attackCd > 0 || p.dash > 0) { p.buffer = .16; return; }
+    if (p.attackCd > 0 || p.dash > 0 || p.plunge) { p.buffer = .16; return; }
     p.buffer = 0;
+    if (!p.grounded) { // air attack wins over a thrust; it neither advances nor resets the combo
+      Object.assign(p, { plunge: 1, plungeT: .07, move: 'plunge', attack: 0, thrustWindow: 0 });
+      this.hitSet = new Set();
+      this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge' });
+      return;
+    }
     const thrust = p.thrustWindow > 0;
-    if (thrust && !this.heldDir) { // auto-face the nearest living enemy within 200 when no direction is held
-      const t = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= 200).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+    if (thrust && !this.heldDir) { // auto-face a living enemy within 200 (facing side first, else nearest) when no direction is held
+      const near = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= 200).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x));
+      const t = near.find(e => (e.x - p.x) * p.dir > 0) || near[0]; // prefer the facing side
       if (t && t.x !== p.x) p.dir = Math.sign(t.x - p.x);
     }
     if (thrust) p.thrustWindow = 0; // a thrust neither advances nor resets the combo
@@ -176,6 +189,28 @@ export class Game {
       p.mp = Math.min(p.maxMp, p.mp + 2);
     }
   }
+  // Plunge hits: sword-style damage, never blocked (it comes from above); the fall and the landing shockwave share this.hitSet.
+  plungeStrike(e, mul, poise, knock) {
+    const p = this.player, crit = this.rand() < p.crit;
+    this.hitSet.add(e);
+    this.damageEnemy(e, Math.round(p.damage * mul * (crit ? 2 : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
+    p.mp = Math.min(p.maxMp, p.mp + 2);
+  }
+  plungeHit(oldY) {
+    const p = this.player;
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > (e.w + p.w) / 2 || e.y < oldY - p.h || e.y - e.h > p.y) continue;
+      this.plungeStrike(e, 1.25, POISE_DAMAGE.plunge, 1);
+    }
+    if (!p.grounded) return;
+    const radius = p.plungeRadius;
+    p.plunge = 3; p.plungeT = .09;
+    this.emit('plunge', { x: p.x, y: p.y, radius });
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
+      this.plungeStrike(e, 1, POISE_DAMAGE.plunge, 1.4);
+    }
+  }
   magic() {
     const p = this.player;
     if (p.mp < p.magicCost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
@@ -187,7 +222,7 @@ export class Game {
     }
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
-  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false) {
+  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1) {
     e.hp -= amount; e.flash = .14;
     const wasHalf = e.hp + amount < e.maxHp / 2;
     const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
@@ -207,8 +242,8 @@ export class Game {
       const quiet = armored && !(eclipse && e.type !== 'boss'); // Eclipse still interrupts armored non-bosses
       if (!quiet && (!keepsTell || e.type === 'boss')) {
         e.stun = Math.max(e.stun, e.type === 'boss' ? .08 : heavy ? .42 : .24);
-        e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
-      } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * .4;
+        e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * (e.type === 'boss' ? .25 : 1);
+      } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * .4;
       if (!quiet && !keepsTell && e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
@@ -316,7 +351,7 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'spear' });
       if (b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir);
     } else {
-      const range = e.type === 'boss' ? 155 : e.type === 'bat' ? 43 : e.type === 'shield' ? 70 : 82;
+      const range = e.type === 'boss' ? 155 : e.type === 'bat' ? 55 : e.type === 'shield' ? 70 : 82;
       if (e.type === 'shield') e.turn = .6;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: e.type === 'boss' });
       if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : e.type === 'boss' ? 100 : 77)) this.hurt(dmg, e.dir);
@@ -340,7 +375,7 @@ export class Game {
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;
     this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual });
-    if (p.hp === 0) { this.state = 'dead'; this.emit('death'); }
+    if (p.hp === 0) { this.state = 'dead'; p.plunge = 0; p.move = ''; this.emit('death'); }
   }
   finishStage() {
     if (this.stage === 4) { this.state = 'won'; this.emit('win'); return; }
