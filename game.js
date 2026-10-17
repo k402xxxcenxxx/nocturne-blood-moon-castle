@@ -122,6 +122,7 @@ function handleEvent(e) {
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
     case 'plunge':
+      if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
       audio.play('plunge', 1.1); rumble(5, .14);
       effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.radius, life: .35, max: .35 });
       burst(e.x - e.radius * .8, e.y - 2, '#9a8c77', 5, 90, -1, 3); burst(e.x + e.radius * .8, e.y - 2, '#9a8c77', 5, 90, 1, 3); burst(e.x, e.y - 2, '#b8adcf', 8, 110);
