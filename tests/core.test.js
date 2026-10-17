@@ -443,3 +443,90 @@ test('spearman retreats when the hero is closer than 80', () => {
   Object.assign(player, { x: 440, y: FLOOR }); e.cd = 5;
   advance(game, .3); assert.ok(e.x > 500);
 });
+
+test('priest bless buffs allies in range, not far ones or itself, and blessed allies hit harder', () => {
+  const { game, player } = arena();
+  player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  const near = enemy(game, 1150), far = enemy(game, 1400);
+  priest.cd = 0; near.cd = far.cd = 99;
+  advance(game, .1);
+  assert.equal(priest.blessRadius, 250);
+  advance(game, 1);
+  assert.equal(priest.blessRadius, 0);
+  assert.ok(near.blessed > 0);
+  assert.equal(far.blessed, 0);
+  assert.equal(priest.blessed, 0);
+  Object.assign(near, { x: player.x + 30, tell: .01, cd: 99, dir: -1 });
+  const hp = player.hp; advance(game, .05);
+  assert.equal(hp - player.hp, Math.round(near.damage * 1.25 * player.armor));
+});
+
+test('hitting the priest during the bless warning cancels the bless', () => {
+  const { game, player } = arena();
+  player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  const ally = enemy(game, 1150); ally.cd = 99;
+  advance(game, .2);
+  assert.ok(priest.tell > 0 && priest.blessRadius);
+  game.damageEnemy(priest, 1, 1, false, false);
+  assert.equal(priest.blessRadius, 0);
+  advance(game, 1);
+  assert.equal(ally.blessed, 0);
+});
+
+test('a cancelled bless puts the priest on a bless cooldown', () => {
+  const { game, player } = arena();
+  player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  const ally = enemy(game, 1150); ally.cd = 99;
+  advance(game, .2);
+  assert.ok(priest.blessRadius);
+  game.damageEnemy(priest, 1, 1, false, false);
+  assert.ok(priest.blessCd > 2);
+  advance(game, .5);
+  assert.equal(priest.blessRadius, 0);
+});
+
+test('priest without allies fires a bolt', () => {
+  const { game, player } = arena();
+  player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  priest.cd = 0;
+  advance(game, 1.2);
+  assert.equal(game.projectiles.length, 1);
+});
+
+test('priests never spawn on stages 0 and 1', () => {
+  for (let seed = 1; seed <= 30; seed++) for (const stage of [0, 1]) {
+    const game = new Game(() => {}, seed); game.start(); game.loadStage(stage);
+    assert.ok(!game.enemies.some(e => e.type === 'priest'));
+  }
+});
+
+test('a priest bless warning counts down while the hero is out of range', () => {
+  const { game, player } = arena();
+  player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  const ally = enemy(game, 1150); ally.cd = 99;
+  priest.cd = 0;
+  advance(game, .05);
+  assert.ok(priest.blessRadius > 0 && priest.tell > 0);
+  const before = priest.tell;
+  player.x = 60; // 940 px away: beyond the idle range, the warning must still tick down
+  advance(game, .5);
+  assert.ok(priest.tell < before - .4, `tell stayed at ${priest.tell.toFixed(2)}`);
+});
+
+test('a priest blocked by the wind-up limiter fires neither a bless nor a bolt', () => {
+  const { game, player } = arena();
+  game.stage = 2; player.x = 600;
+  const priest = enemy(game, 1000, { type: 'priest' });
+  const ally = enemy(game, 1150); ally.cd = 99;
+  priest.cd = 0;
+  for (const x of [700, 650]) { const mage = enemy(game, x, { type: 'mage' }); mage.tell = 5; mage.cd = 99; }
+  advance(game, .3);
+  assert.equal(priest.tell, 0);
+  assert.equal(priest.blessRadius, 0);
+  assert.equal(game.projectiles.length, 0);
+});

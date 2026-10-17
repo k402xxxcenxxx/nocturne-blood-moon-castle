@@ -121,6 +121,7 @@ function handleEvent(e) {
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
     case 'enemySwing': if (e.kind === 'spear') audio.play('thrust'); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
+    case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
@@ -334,7 +335,7 @@ function render(dt) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime);
       if (e.type !== 'boss' && e.hp < e.maxHp) {
-        const barY = e.y - e.h - (e.type === 'knight' ? 29 : e.type === 'mage' ? 17 : e.type === 'shield' ? 21 : 9);
+        const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
       }
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.fillStyle = '#f4ae84'; ctx.fillText('!', Math.round(e.x), Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15))); }
