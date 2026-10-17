@@ -105,6 +105,7 @@ function handleEvent(e) {
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
     case 'jump': audio.play('jump', e.double ? .65 : .45); burst(e.x, e.y - 4, e.double ? '#b8adcf' : '#9a8c77', e.double ? 15 : 7, 75); break;
+    case 'perfectDash': flashNumber({ ...e, amount: t('float.perfect') }, '#e8ecf8'); break;
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;
@@ -347,7 +348,7 @@ function render(dt) {
         const bw = e.type === 'boss' ? 56 : 30, by = Math.round(e.y + 5);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - bw / 2), by, bw, 3); ctx.fillStyle = e.punishable ? '#ffd36e' : '#c9a85a'; ctx.fillRect(Math.round(e.x - bw / 2 + 1), by + 1, Math.max(0, Math.round((bw - 2) * e.poise / e.maxPoise)), 1);
       }
-      if (e.stun > .45 && e.hp > 0) { // stagger stun (flinches are <= .42 s): ring of gold stars over the head
+      if (e.armor > 1.2 && e.hp > 0) { // armor > 1.2 only while a stagger stun runs: ring of gold stars over the head
         const ry = Math.round(e.y - e.h - 6), rw = e.type === 'boss' ? 26 : 16; ctx.fillStyle = '#ffd36e';
         for (let i = 0; i < 4; i++) { const a = worldTime * 6 + i * Math.PI / 2; ctx.fillRect(Math.round(e.x + Math.cos(a) * rw) - 2, Math.round(ry + Math.sin(a) * 4) - 2, 4, 4); }
       }

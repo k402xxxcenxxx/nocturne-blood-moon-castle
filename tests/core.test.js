@@ -531,7 +531,7 @@ test('a priest blocked by the wind-up limiter fires neither a bless nor a bolt',
   assert.equal(game.projectiles.length, 0);
 });
 
-test('poise: three full combos break a skeleton, stagger stuns 1 s and refills poise', () => {
+test('poise: one full combo breaks a skeleton, stagger stuns 1 s and refills poise', () => {
   const { game, player, events } = arena();
   const e = enemy(game, 100 + 40);
   player.x = 100; player.dir = 1;
@@ -645,4 +645,131 @@ test('poise: a knight keeping its warning still takes 40% knockback', () => {
   assert.ok(e.tell > 0 && e.stun === 0);
   assert.equal(e.vx, player.knockback * .4);
   assert.equal(e.maxPoise, 110);
+});
+
+test('dash thrust: only within 0.65 s after a dash, longer reach, does not touch the combo', () => {
+  const { game, player, events } = arena();
+  player.crit = 0; player.x = 300; player.dir = 1;
+  const far = enemy(game, 300 + 140);
+  game.attack();
+  assert.equal(far.hp, far.maxHp, 'a plain swing does not reach 140');
+  assert.equal(events.findLast(e => e.type === 'swing').move, 'combo');
+  advance(game, 1);
+  player.combo = 2; player.comboWindow = 5; game.hitSet = new Set();
+  game.dash(); advance(game, .18 + .6);
+  player.x = 300; far.x = 440; far.cd = 99; far.stun = 0;
+  game.attack();
+  assert.equal(events.findLast(e => e.type === 'swing').move, 'thrust');
+  assert.ok(far.hp < far.maxHp, 'thrust reaches 140');
+  assert.equal(player.combo, 2, 'combo is not advanced');
+  assert.ok(player.comboWindow > 0, 'combo window is not reset');
+  advance(game, 1);
+  player.x = 300; player.dir = 1; game.dash(); advance(game, .18 + .7);
+  game.attack();
+  assert.equal(events.findLast(e => e.type === 'swing').move, 'combo', 'window expired');
+});
+
+test('dash thrust: shield bearer blocks it from the front', () => {
+  const { game, player } = arena();
+  player.crit = 0; player.x = 300; player.dir = 1;
+  const s = enemy(game, 380, { type: 'shield' });
+  s.dir = -1; player.thrustWindow = .5;
+  game.attack();
+  assert.ok(s.hp > s.maxHp - 10, 'blocked damage is reduced');
+});
+
+test('perfect dodge: once per dash, grants MP, refreshes the thrust window, only in the first 0.15 s', () => {
+  const { game, player, events } = arena();
+  player.mp = 20;
+  game.dash();
+  game.hurt(10, 1); game.hurt(10, 1);
+  assert.equal(player.hp, player.maxHp);
+  assert.equal(events.filter(e => e.type === 'perfectDash').length, 1);
+  assert.ok(player.mp >= 30 && player.mp < 31);
+  assert.ok(player.thrustWindow >= .9);
+  assert.ok(game.freeze >= .05, 'perfect dodge hit-stop');
+  const late = arena().game;
+  late.dash(); advance(late, .16);
+  late.hurt(10, 1);
+  assert.equal(late.player.hp, late.player.maxHp, 'still invulnerable');
+  assert.equal(late.player.perfectUsed, false, 'no perfect dodge after 0.15 s');
+});
+
+test('perfect dodge: a projectile during the window counts', () => {
+  const { game, player, events } = arena();
+  game.dash();
+  game.projectiles.push({ x: player.x, y: player.y - 30, vx: 0, vy: 0, r: 9, life: 1, damage: 25 });
+  game.update(1 / 120);
+  assert.equal(events.filter(e => e.type === 'perfectDash').length, 1);
+});
+
+test('input buffer: an attack pressed during cooldown fires when allowed, and a thrust pressed in a dash fires after it', () => {
+  const { game, player, events } = arena();
+  game.attack();
+  advance(game, .2);
+  game.attack(); // pressed while cooling down
+  const swings = () => events.filter(e => e.type === 'swing').length;
+  assert.equal(swings(), 1);
+  advance(game, .12);
+  assert.equal(swings(), 2, 'buffered attack fired');
+  advance(game, 1);
+  game.attack(); advance(game, .5); // let it finish
+  player.attackCd = 0; player.attack = 0;
+  game.dash(); game.attack();
+  const before = swings();
+  advance(game, .3);
+  assert.equal(swings(), before + 1);
+  assert.equal(events.findLast(e => e.type === 'swing').move, 'thrust');
+});
+
+test('input buffer: expires after 0.16 s', () => {
+  const { game, player, events } = arena();
+  player.attackCd = .5; game.attack();
+  advance(game, .6);
+  assert.equal(events.filter(e => e.type === 'swing').length, 0);
+});
+
+test('dash cannot cancel an attack before 74% of it has played', () => {
+  const { game, player } = arena();
+  game.attack();
+  game.dash();
+  assert.equal(player.dash, 0);
+  advance(game, .24 * .75);
+  game.dash();
+  assert.ok(player.dash > 0);
+});
+
+test('relic dash stacks thrust damage and perfect-dodge MP', () => {
+  const { game, player } = arena();
+  const dash = RELICS.find(r => r.id === 'dash');
+  dash.apply(player);
+  assert.ok(Math.abs(player.thrustMul - 1.7) < 1e-9);
+  assert.equal(player.perfectMp, 18);
+  for (let i = 0; i < 20; i++) dash.apply(player);
+  assert.ok(player.thrustMul <= 2.4 && player.perfectMp <= 30);
+});
+
+test('poise: blocked hits deal 25% poise damage', () => {
+  const { game, player } = arena();
+  player.crit = 0; player.x = 300; player.dir = 1;
+  const s = enemy(game, 340, { type: 'shield' }); s.dir = -1;
+  game.attack();
+  assert.equal(s.poise, s.maxPoise - 17 * .25);
+});
+
+test('poise: the boss refills poise when it drops below half health', () => {
+  const { game } = arena();
+  const b = enemy(game, 500, { type: 'boss', hp: 640 });
+  b.poise = 10;
+  game.damageEnemy(b, 330, 1, false, false, false, 5);
+  assert.equal(b.poise, b.maxPoise);
+});
+
+test('poise: Eclipse still cancels a non-boss warning on an armored enemy', () => {
+  const { game, player } = arena();
+  const k = enemy(game, player.x + 60, { type: 'knight' });
+  k.armor = 1; k.tell = .5;
+  game.damageEnemy(k, 5, 1, false, true, false, 55, true);
+  assert.equal(k.tell, 0);
+  assert.ok(k.stun > 0);
 });
