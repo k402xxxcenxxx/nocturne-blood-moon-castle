@@ -375,8 +375,12 @@ function drawShot(s) { // sized to the hit radius s.r
     ctx.fillStyle = '#fff'; ctx.fillRect(-1, -s.r * .6, 2, s.r * 1.2); ctx.fillRect(-s.r * .6, -1, s.r * 1.2, 2);
   } else { // ground: low ripple, two arcs, hit width 2r
     ctx.globalAlpha = Math.min(1, s.life / s.maxLife * 3 + .3); ctx.lineWidth = 2;
-    ctx.strokeStyle = '#d9c9a0'; ctx.beginPath(); ctx.ellipse(0, 0, s.r, 4, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = '#8a7a5c'; ctx.beginPath(); ctx.ellipse(0, 0, s.r * .55, 2, 0, 0, Math.PI * 2); ctx.stroke();
+    // dome sits on the surface (s.y + s.r) and rises to the full hit height 2r, so it covers the hit circle
+    ctx.shadowColor = '#ffe9b0'; ctx.shadowBlur = 6;
+    ctx.fillStyle = '#ffe9b030'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r, s.r * 2, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fff1c4'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r, s.r * 2, 0, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = '#d9c9a0'; ctx.beginPath(); ctx.ellipse(0, s.r, s.r * .55, s.r * 1.1, 0, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = '#fff1c4'; ctx.fillRect(-s.r, s.r - 1, s.r * 2, 2);
   }
   ctx.restore();
 }
