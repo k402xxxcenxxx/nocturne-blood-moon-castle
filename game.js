@@ -87,7 +87,7 @@ function handleEvent(e) {
       audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
-    case 'swing': audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
+    case 'swing': if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
       rumble(e.crit || e.heavy ? 6 : 3, e.heavy ? .16 : .1);
@@ -105,7 +105,7 @@ function handleEvent(e) {
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
     case 'jump': audio.play('jump', e.double ? .65 : .45); burst(e.x, e.y - 4, e.double ? '#b8adcf' : '#9a8c77', e.double ? 15 : 7, 75); break;
-    case 'perfectDash': flashNumber({ ...e, amount: t('float.perfect') }, '#e8ecf8'); break;
+    case 'perfectDash': audio.play('perfect'); flashNumber({ ...e, amount: t('float.perfect') }, '#e8ecf8'); break;
     case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
     case 'magic':
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290); break;

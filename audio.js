@@ -126,7 +126,7 @@ export class AudioSystem {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
-      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -148,6 +148,18 @@ export class AudioSystem {
         tone('noise', 5200, 0.09, 0.2, 1400);
         tone('triangle', 1250, 0.08, 0.07, 520);
         break;
+      case 'lunge': // hero thrust: longer, lower, heavier whoosh than the enemy spear hiss, with a bright blade edge
+        tone('noise', 6000, 0.16, 0.24, 900);
+        tone('triangle', 900, 0.12, 0.08, 320);
+        tone('sine', 190, 0.12, 0.1, 80);
+        break;
+      case 'perfect': { // perfect dodge: bright metallic ting, short ring; random detune avoids mechanical repeats
+        const d = 0.98 + Math.random() * 0.04;
+        tone('noise', 7500, 0.03, 0.1, 3000);
+        [2637, 3951, 5274].forEach((f, i) => tone('sine', f * d, 0.22 - i * 0.05, 0.1 - i * 0.025));
+        tone('triangle', 1760 * d, 0.14, 0.06, 1700 * d);
+        break;
+      }
       case 'hit':
       case 'crit': {
         const critical = name === 'crit';
