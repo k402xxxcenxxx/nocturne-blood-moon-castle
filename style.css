@@ -1891,7 +1891,7 @@ b[data-i18n] {
   .app {
     padding:0;
   }
-  .masthead,.game-topline,.under-game,.journey,.app>footer {
+  .brand,.masthead-center,.game-topline,.under-game,.journey,.app>footer {
     display:none;
   }
   .game-frame {
@@ -2191,12 +2191,15 @@ b[data-i18n] {
   font-style:normal;
   font-size:10px;
   line-height:1.6;
-  color:#b79ae6;
+  color:#aba4a5;
 }
 .card-synergy span {
   display:block;
-  color:#aba4a5;
-  margin-top:2px;
+  margin-top:3px;
+}
+.card-synergy b {
+  color:#b79ae6;
+  font-weight:normal;
 }
 .pause-synergies {
   list-style:none;
@@ -2215,13 +2218,69 @@ b[data-i18n] {
 }
 @media (max-height:480px) {
   .card-synergy {
-    margin-top:6px;
-    padding-top:5px;
-    font-size:8px;
-    line-height:1.45;
+    margin-top:4px;
+    padding-top:3px;
+    font-size:10px;
+    line-height:1.25;
+  }
+  .card-synergy span {
+    margin-top:1px;
   }
   .pause-synergies {
-    font-size:8px;
+    font-size:10px;
     margin-top:3px;
+  }
+}
+@media(max-height:600px) and (orientation:landscape) {
+  .header-actions {
+    position:fixed;
+    bottom:6px;
+    left:6px;
+    z-index:110;
+  }
+  .masthead {
+    height:0;
+    border:0;
+  }
+  .header-actions .version {
+    display:none;
+  }
+  .icon-button {
+    width:44px;
+    height:44px;
+  }
+  body:not(:has(#title-screen:not([hidden]))):not(:has(.relic-choices)) .header-actions {
+    display:none;
+  }
+}
+@media(max-height:480px) and (orientation:landscape) {
+  .modal-panel:has(.relic-choices) {
+    max-width:740px;
+  }
+  .modal-panel:has(.relic-choices) h2 {
+    margin:4px 0;
+    font-size:22px;
+  }
+  .modal-panel:has(.relic-choices)>p {
+    margin:2px 0;
+  }
+  .relic-choices {
+    margin:8px 0 6px;
+    gap:10px;
+  }
+  .relic-card {
+    padding:9px 12px 8px;
+  }
+  .relic-card>svg {
+    width:22px;
+    height:22px;
+    margin-bottom:3px;
+  }
+  .relic-card strong {
+    font-size:15px;
+    margin:2px 0 4px;
+  }
+  .relic-card p {
+    line-height:1.45;
   }
 }

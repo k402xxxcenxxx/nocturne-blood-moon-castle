@@ -232,7 +232,7 @@ function openHelp() {
 }
 function synergyLine(id) {
   const partners = game.synergyPartners(id);
-  return partners.length ? `<em class="card-synergy">${t('upgrade.synergy', { name: partners.map(p => t(`relic.${p.with}.name`)).join(' / ') })}<span>${t(partners[0].key)}</span></em>` : '';
+  return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
 }
 function openUpgrade(choices) {
   openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
@@ -275,7 +275,7 @@ $('modal').addEventListener('click', e => {
     return;
   }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
-  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.play('upgrade'); game.chooseRelic(id); } return; }
+  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play('upgrade'); game.chooseRelic(id); } return; }
   switch (button.dataset.command) {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;
