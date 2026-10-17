@@ -9,6 +9,7 @@ export class AudioSystem {
     this._voices = new Set();
     this._musicTimer = null;
     this._step = 0;
+    this._phase = 1;
   }
 
   async unlock() {
@@ -57,6 +58,9 @@ export class AudioSystem {
     this.music = Boolean(value);
     this._syncMusic();
   }
+
+  // Music intensity: 1 = normal, 2-3 = boss phases (faster, extra low layers). Takes effect on the next scheduled note.
+  setIntensity(phase) { this._phase = Math.max(1, Math.min(3, phase | 0)); }
 
   // iOS Safari does not expose vibration; the game still plays normally.
   vibrate(pattern) {
@@ -126,6 +130,7 @@ export class AudioSystem {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
+      roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
@@ -210,6 +215,37 @@ export class AudioSystem {
         tone('triangle', 2150 * d, 0.3, 0.08, 1900 * d, 0.03);
         break;
       }
+      case 'roar': { // boss phase change: detuned low growl with a falling sweep; intensity 1.3 for phase 3
+        const d = 0.97 + Math.random() * 0.06;
+        tone('sawtooth', 95 * d, 1.1, 0.16, 48);
+        tone('sawtooth', 99 * d, 1.1, 0.12, 50);
+        tone('sine', 55, 1.2, 0.4, 28);
+        tone('noise', 1400, 1, 0.22, 140);
+        break;
+      }
+      case 'bossSlash': // boss blade: heavier, lower swing
+        tone('noise', 3000, 0.2, 0.28, 400);
+        tone('sawtooth', 150, 0.18, 0.09, 60);
+        break;
+      case 'bossSlam': // overhead slam: low impact with stone crunch
+        tone('sine', 70, 0.45, 0.5, 28);
+        tone('noise', 2200, 0.3, 0.34, 160, 0.03);
+        tone('sawtooth', 100, 0.16, 0.08, 38, 0.03);
+        break;
+      case 'bossCharge': // rush: rising whoosh with a low drive
+        tone('noise', 800, 0.5, 0.25, 4200);
+        tone('sawtooth', 70, 0.5, 0.12, 190);
+        break;
+      case 'bossVolley': // projectile release: stacked quick hisses with a hollow thump
+        [0, 0.05, 0.1].forEach(dl => tone('noise', 5500, 0.09, 0.16, 1500, dl));
+        tone('sine', 120, 0.2, 0.3, 50);
+        break;
+      case 'bossBurst': // ritual detonation: sudden crack, deep boom, dark choir tail
+        tone('noise', 6000, 0.35, 0.34, 200);
+        tone('sine', 62, 0.7, 0.5, 26);
+        tone('sawtooth', 110, 0.5, 0.09, 55);
+        notes([110, 164.81], 0.05, 0.05);
+        break;
       case 'bless': // blood priest release: low minor choir swell, slow attack; no vibration
         [110, 130.81, 164.81, 220].forEach((f, i) => {
           const d = 1 + (i % 2 ? 0.004 : -0.004); // slight detune for a choral beat
@@ -280,8 +316,11 @@ export class AudioSystem {
           this._voice('sine', chord[0] / 2, 3.7, 0.057, this._nextNote, undefined, true);
           this._voice('triangle', chord[2] / 2, 3.5, 0.022, this._nextNote, undefined, true);
         }
+        // Boss phases: phase 2+ adds a low pulse on every beat pair, phase 3 also a filtered rumble.
+        if (this._phase > 1 && this._step % 2 === 0) this._voice('sine', chord[0] / 2, 0.4, 0.045 * (this._phase - 1), this._nextNote, undefined, true);
+        if (this._phase > 2 && this._step % 4 === 0) this._voice('noise', 260, 0.9, 0.05, this._nextNote, 90, true);
         this._step++;
-        this._nextNote += 0.48;
+        this._nextNote += 0.48 / (1 + 0.14 * (this._phase - 1));
       }
     };
     schedule();

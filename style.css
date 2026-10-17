@@ -850,6 +850,18 @@ kbd {
   background:#170f1a;
   margin-top:7px;
   padding:1px;
+  position:relative;
+}
+/* phase ticks at 67% and 34% health */
+.boss-hud>div::after {
+  content:"";
+  position:absolute;
+  inset:-2px 1px;
+  pointer-events:none;
+  background:
+    linear-gradient(#e8d9c4,#e8d9c4) 67% 0/2px 100% no-repeat,
+    linear-gradient(#e8d9c4,#e8d9c4) 34% 0/2px 100% no-repeat;
+  filter:drop-shadow(0 0 2px #000);
 }
 .boss-hud i {
   display:block;
