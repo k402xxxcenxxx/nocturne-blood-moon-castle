@@ -176,7 +176,10 @@ function handleEvent(e) {
       break;
     }
     case 'obstacleHit': audio.play('hit', .5); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
-    case 'break': audio.play('kill', .7); rumble(4, .14); burst(e.x, e.y, e.kind === 'altar' ? '#c9627f' : '#a8814f', 22, 200); burst(e.x, e.y, '#6b5236', 10, 140, 0, 3); break;
+    case 'break': audio.play('kill', .7); rumble(4, .14); burst(e.x, e.y, e.kind === 'altar' ? '#c9627f' : '#a8814f', 22, 200); burst(e.x, e.y, '#6b5236', 10, 140, 0, 3);
+      effects.push({ type: 'debris', x: e.x, y: FLOOR, altar: e.kind === 'altar', life: .9, max: .9, bits: Array.from({ length: 9 }, (_, i) => ({ a: -.4 - i * .3, d: 22 + (i * 37 % 30), s: 3 + i % 3 })) });
+      if (e.traps) for (const id of e.traps) { const tr = game.traps[id]; if (tr) { effects.push({ type: 'snap', x: e.x, y: FLOOR - 2, x2: tr.x, life: .5, max: .5 }); burst(tr.x, FLOOR - 6, '#3a2a30', 8, 70, 0, 3); } } // linked glow lines snap and the traps die
+      break;
     case 'trapActive': burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break; // placeholder: audio and art hook here
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
@@ -418,6 +421,14 @@ function drawEffects(dt) {
         ctx.fillRect(Math.round(Math.cos(a) * d) - 2, Math.round(Math.sin(a) * d * .8) - 2, 4 - (i > 3), 4 - (i > 3));
       }
       ctx.restore();
+    } else if (fx.type === 'debris') { // chunks arc out and settle on the floor; altars also flash a pink core
+      ctx.save(); ctx.translate(Math.round(fx.x), fx.y);
+      for (const b of fx.bits) { const k = Math.min(1, progress * 1.8), bx = Math.round(Math.cos(b.a) * b.d * k * (b.a % 2 > 1 ? -1 : 1)), by = Math.round(Math.sin(b.a) * b.d * k * 1.4 - Math.sin(k * Math.PI) * 14);
+        ctx.globalAlpha = 1 - progress * progress; ctx.fillStyle = fx.altar ? (b.s & 1 ? '#5a4650' : '#2c2128') : (b.s & 1 ? '#7a5a38' : '#4d3820'); ctx.fillRect(bx - b.s, Math.min(-2, by) - b.s, b.s * 2, b.s); }
+      if (fx.altar) { ctx.globalAlpha = (1 - progress) * .6; ctx.fillStyle = '#ff6a8a'; ctx.fillRect(-26, -38 * (1 - progress), 52, 6); }
+      ctx.restore();
+    } else if (fx.type === 'snap') { // the broken altar's glow line to a trap fades out
+      ctx.save(); ctx.globalAlpha = (1 - progress) * .8; ctx.strokeStyle = '#ff8a9a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(fx.x), fx.y); ctx.lineTo(Math.round(fx.x + (fx.x2 - fx.x) * (1 - progress)), fx.y); ctx.stroke(); ctx.restore();
     } else if (fx.type === 'dust') { // ring of dust expanding along the floor to the plunge radius
       const r = fx.radius * Math.sin(progress * Math.PI / 2);
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .8;
@@ -478,7 +489,7 @@ function render(dt) {
     for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
     for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
-    for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime);
+    for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
