@@ -126,7 +126,7 @@ export class AudioSystem {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
-      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -144,6 +144,18 @@ export class AudioSystem {
         tone('noise', 3800, 0.12, 0.23, 700);
         tone('triangle', 260, 0.09, 0.09, 95);
         break;
+      case 'dive': // air plunge start: falling whoosh, filter and pitch sweep down; no vibration
+        tone('noise', 4200, 0.28, 0.22, 380);
+        tone('triangle', 520, 0.26, 0.09, 90);
+        break;
+      case 'plunge': { // air plunge landing: heavy low thud plus stone crunch; detune avoids repeats
+        const d = 0.95 + Math.random() * 0.1;
+        tone('sine', 85 * d, 0.38, 0.5, 30);
+        tone('noise', 2600, 0.22, 0.34, 180);
+        tone('sawtooth', 120 * d, 0.14, 0.09, 40);
+        tone('noise', 5000, 0.06, 0.16, 900, 0.02);
+        break;
+      }
       case 'thrust': // enemy spear: short piercing hiss, narrower and higher than swing; no vibration
         tone('noise', 5200, 0.09, 0.2, 1400);
         tone('triangle', 1250, 0.08, 0.07, 520);

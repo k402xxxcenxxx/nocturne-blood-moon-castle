@@ -345,11 +345,13 @@ export function drawHero(ctx, p = {}, time = 0) {
   poly(ctx, '#131b29', [[-10, -44], [-15, -41], [-13, -30], [-9, -28], [-7, -33]]);
   rect(ctx, '#858589', -15, -39, 4, 8); rect(ctx, '#d3b67d', -14, -42, 6, 2); rect(ctx, '#454553', -13, -29, 5, 5);
   // Front arm changes pose during a slash; engine supplies the animated blade arc.
-  const attacking = (p.attack || 0) > 0, armX = attacking ? 14 : 10, armY = attacking ? -37 : -32;
+  const diving = p.plunge === 1 || p.plunge === 2, attacking = (p.attack || 0) > 0 && !diving, armX = diving ? 12 : attacking ? 14 : 10, armY = diving ? -26 : attacking ? -37 : -32;
   poly(ctx, '#111825', [[5, -45], [11, -43], [armX + 4, armY], [armX - 1, armY + 5], [5, -36]]);
   poly(ctx, '#76777f', [[8, -42], [11, -41], [armX + 3, armY], [armX, armY + 2]]);
   rect(ctx, '#d0bb8d', 6, -45, 8, 3); rect(ctx, '#a09c94', armX - 1, armY + 1, 6, 5);
-  if (!attacking) {
+  if (diving) { // plunge pose: rapier held point-down in front of the body
+    rect(ctx, '#c6a76b', armX - 3, armY + 4, 10, 3); rect(ctx, '#7b8797', armX + 1, armY + 7, 3, 30); rect(ctx, '#e0e2da', armX + 2, armY + 7, 1, 30); rect(ctx, '#d9bd7a', armX, armY + 1, 5, 3);
+  } else if (!attacking) {
     // Idle rapier has a crisp silver edge and gilt crossguard.
     poly(ctx, '#7b8797', [[armX + 3, armY + 3], [armX + 28, armY - 19], [armX + 26, armY - 14], [armX + 5, armY + 6]]);
     line(ctx, '#e0e2da', armX + 4, armY + 3, armX + 28, armY - 19, 1);
