@@ -148,9 +148,12 @@ function handleEvent(e) {
       if (e.name === 'shatter') {
         const shards = []; for (let i = 0; i < 14; i++) { const a = Math.random() * Math.PI * 2, d = e.radius * (.35 + Math.random() * .65); shards.push({ a, d, s: 4 + (Math.random() * 6 | 0), r: Math.random() * 6 }); }
         effects.push({ type: 'shards', x: e.x, y: e.y, radius: e.radius, shards, life: .5, max: .5 }); rumble(5, .12);
+        audio.play('shatter');
       } else if (e.name === 'bloodFlame') {
         effects.push({ type: 'flameCol', x: e.x, y: e.y, radius: e.radius, life: .6, max: .6 }); rumble(4, .12);
+        audio.play('bloodFlame');
       } else {
+        audio.play('chain');
         for (const to of e.targets) {
           const pts = [[e.x, e.y]], n = 5, dx = to.x - e.x, dy = to.y - e.y, len = Math.hypot(dx, dy) || 1;
           for (let i = 1; i < n; i++) pts.push([e.x + dx * i / n - dy / len * (Math.random() - .5) * 26, e.y + dy * i / n + dx / len * (Math.random() - .5) * 26]);
@@ -159,7 +162,9 @@ function handleEvent(e) {
       }
       break;
     }
+    case 'status': if (e.name === 'frozen') audio.play('freeze'); break;
     case 'statusTick': { // merge rapid ticks from one source near one spot into a single small number
+      if (e.source === 'burn' || e.source === 'bleed') audio.play('tick', e.source === 'burn' ? 1 : .8); // reactions have their own sound
       const col = { burn: '#ff9a3a', bleed: '#d8445a', shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a', frost: '#9fd8ff', shock: '#ffe97a' }[e.source] || '#c9c2d8';
       const n = numbers.find(o => o.tick === e.source && o.life > .45 && Math.abs(o.x - e.x) < 26 && Math.abs(o.y - e.y) < 40);
       if (n) { n.sum += e.amount; n.text = String(n.sum); n.life = .7; }
