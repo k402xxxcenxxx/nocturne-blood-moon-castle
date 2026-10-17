@@ -16,7 +16,7 @@ export const RELICS = [
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
   { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
-  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown *= .7; p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
+  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
   { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
 ];
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -42,7 +42,7 @@ export class Game {
       speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
-      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, perfectUsed: false, perfectMp: 10,
+      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10,
     };
     this.loadStage(0);
   }
@@ -82,12 +82,14 @@ export class Game {
     this.elapsed += dt;
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
-    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect']) p[key] = Math.max(0, p[key] - dt);
+    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) p[key] = Math.max(0, p[key] - dt);
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction && p.dash <= 0) p.dir = direction;
     if (input.jump) this.jump();
+    this.heldDir = direction;
     if (input.dash) this.dash();
+    else if (p.dashBuf > 0) this.dash(true);
     if (input.magic) this.magic();
     if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
     if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0) this.attack();
@@ -111,8 +113,7 @@ export class Game {
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
-        if (p.dash > 0) { this.perfectDodge(); continue; } // dash passes through projectiles
-        this.hurt(b.damage, Math.sign(b.vx)); b.life = 0;
+        this.hurt(b.damage, Math.sign(b.vx)); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
@@ -134,11 +135,11 @@ export class Game {
     p.jumps++; p.grounded = false;
     this.emit('jump', { x: p.x, y: p.y, double: p.jumps === 2 });
   }
-  dash() {
+  dash(fromBuffer = false) {
     const p = this.player;
-    if (p.dashCd > 0 || (p.attack > p.attackLen * .26 && p.attack > 0)) return; // an attack can only be cancelled after 74% of it has played
-    p.perfect = .15; p.perfectUsed = false;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = .23 + p.dashShield; p.vy = Math.min(p.vy, 0);
+    if (p.dashCd > 0 || (p.attack > p.attackLen * .26 && p.attack > 0)) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
+    p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
+    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {
@@ -146,6 +147,10 @@ export class Game {
     if (p.attackCd > 0 || p.dash > 0) { p.buffer = .16; return; }
     p.buffer = 0;
     const thrust = p.thrustWindow > 0;
+    if (thrust && !this.heldDir) { // auto-face the nearest living enemy within 200 when no direction is held
+      const t = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= 200).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      if (t && t.x !== p.x) p.dir = Math.sign(t.x - p.x);
+    }
     if (thrust) p.thrustWindow = 0; // a thrust neither advances nor resets the combo
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
@@ -265,7 +270,7 @@ export class Game {
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
-      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .3; e.cd = 1.3; }
+      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .36; e.cd = 1.3; }
     } else if (e.type === 'mage') {
       if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
@@ -320,7 +325,7 @@ export class Game {
   // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.
   perfectDodge() {
     const p = this.player;
-    if (p.perfect <= 0 || p.perfectUsed) return;
+    if (p.perfect <= 0 || p.perfectUsed || p.invulnerable <= p.otherInv) return; // only if the dash itself stopped the hit
     p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); p.thrustWindow = Math.max(p.thrustWindow, .9);
     this.freeze = Math.max(this.freeze, .05);
     this.emit('perfectDash', { x: p.x, y: p.y - 30 });

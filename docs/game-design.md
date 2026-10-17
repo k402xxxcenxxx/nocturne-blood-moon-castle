@@ -29,11 +29,11 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 | Jump | Double jump: first jump velocity -575, second -520; no jumping while dashing |
 | Three-hit combo | Base damage 24; combo multipliers 1 / 1.15 / 1.8 (heavy finisher); third hit +24 reach; poise damage 17 / 17 / 62; attack cooldown 0.29 s, 0.39 s on the third hit; 0.8 s combo window |
 | Critical | 12% chance, double damage, capped at 80% |
-| Dash | Lasts 0.18 s at speed 730; 0.85 s cooldown; 0.23 s invulnerability; passes through enemy projectiles unharmed |
-| Dash thrust | An attack pressed within 0.65 s after a dash ends (the window runs from the end of the dash) becomes a thrust: lunges forward at 420 during its active frames, reach 155, height 30 around the chest, damage ×1.35, heavy knockback, 35 poise damage; does not advance or reset the ground combo; blocked by a shield bearer's front like any sword hit. Swing event has `move: 'thrust'` |
-| Perfect dodge | The first 0.15 s of a dash. An enemy hit or projectile that would hurt then is ignored as usual and also gives +10 MP and refreshes the thrust window to 0.9 s; once per dash; emits `perfectDash` |
-| Input buffer | An attack pressed during attack recovery or a dash is buffered for 0.16 s (held through the dash) and fires as soon as allowed |
-| Dash cancel | A dash can cancel an attack only after 74% of its 0.24 s has played; earlier dash input is ignored |
+| Dash | Lasts 0.18 s at speed 730; 0.85 s cooldown (floor 0.35 s however many Raven Shadow stacks); 0.23 s invulnerability, which never shortens longer immunity already running (max, not assignment); a projectile that meets the dashing (or dash-shielded) hero is consumed without hurting |
+| Dash thrust | An attack pressed within 0.65 s after a dash ends (the window runs from the end of the dash) becomes a thrust: lunges forward at 420 during its active frames, reach 155, height 30 around the chest, damage ×1.35, auto-faces the nearest living enemy within 200 horizontally when no direction is held at thrust start, heavy knockback, 35 poise damage; does not advance or reset the ground combo; blocked by a shield bearer's front like any sword hit. Swing event has `move: 'thrust'` |
+| Perfect dodge | The first 0.15 s of a dash. An enemy hit or projectile that would have hurt, and was stopped only by the dash's own invulnerability (not by earlier hit/Eclipse immunity), gives +10 MP and refreshes the thrust window to 0.9 s counted from the perfect-dodge moment; once per dash; emits `perfectDash` |
+| Input buffer | An attack pressed during attack recovery or a dash is buffered for 0.16 s (held through the dash) and fires as soon as allowed. A dash pressed while not allowed (cooldown, or before 74% of an attack) is likewise buffered for 0.16 s |
+| Dash cancel | A dash can cancel an attack only after 74% of its 0.24 s has played; earlier dash input is buffered (see Input buffer) |
 | Eclipse magic | Costs 35 MP; 58 damage; radius 210; clears projectiles within 230; 0.65 s cooldown; 0.28 s invulnerability on cast |
 | Taking damage | 0.8 s invulnerability afterwards; 0.06 s hit-stop |
 
@@ -44,7 +44,7 @@ Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×
 | Type | Base health | Speed | Behavior | Warning time |
 | --- | --- | --- | --- | --- |
 | Skeleton `skeleton` | 43 | 72 | Closes in for a melee attack, range 82 | 0.43 s |
-| Bat `bat` | 27 | 115 | Tracks the player in the air, then swoops | 0.3 s |
+| Bat `bat` | 27 | 115 | Tracks the player in the air, then swoops | 0.36 s |
 | Armored knight `knight` | 65 | 57 | Melee; appears from stage 2 | 0.6 s |
 | Shield bearer `shield` | 55 | 50 | Faces the player; starts a shield bash within 70 that hits only its front (range 70); facing is locked during the warning; after the bash, a 0.6 s turn delay where it keeps its old facing and stands still; replaces some knights from stage 2 | 0.55 s |
 | Spearman `spear` | 53 | 77 | Keeps 80-145 from the hero (walks in beyond 145, backs off at ×0.8 speed inside 80). Thrusts when within 193 horizontally and 64 vertically: hit box from 10 to 194 in front, 54 tall up from the feet (`thrustBox`, set at warning start); facing locked during the warning; 0.72 s standing recovery after the thrust; normal flinch; the hit test uses the hero's full width, so the real safe distance is about 208 px centre-to-centre (the other melee enemies use a centre-distance check and ignore the hero's width; only the spear thrust uses the hero's full width); replaces ~28% of knights from stage 2 | 0.64 s |

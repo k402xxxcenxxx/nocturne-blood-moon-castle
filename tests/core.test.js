@@ -773,3 +773,64 @@ test('poise: Eclipse still cancels a non-boss warning on an armored enemy', () =
   assert.equal(k.tell, 0);
   assert.ok(k.stun > 0);
 });
+
+// QA (Issue #11 playtest): the three tests below fail on purpose until the engineer fixes the rule.
+test('dash never shortens invulnerability from an earlier hit', () => {
+  const { game, player } = arena();
+  game.hurt(10, 1); // 0.8 s of immunity
+  advance(game, .1);
+  game.dash();
+  assert.ok(player.invulnerable >= .6, `dash cut immunity to ${player.invulnerable.toFixed(2)} s`);
+});
+
+test('perfect dodge pays only for a hit that the dash itself stopped', () => {
+  const { game, player, events } = arena();
+  game.hurt(10, 1); // earlier hit: immunity without any dash
+  advance(game, .1);
+  player.mp = 20;
+  game.dash();
+  game.hurt(10, 1); // would have been ignored anyway
+  assert.equal(events.filter(e => e.type === 'perfectDash').length, 0);
+  assert.equal(player.mp, 20);
+});
+
+test('a projectile that meets a dashing hero is consumed and cannot hit after the dash', () => {
+  const { game, player } = arena();
+  player.x = 300;
+  player.dir = -1;
+  game.projectiles.push({ x: player.x - 30, y: player.y - 30, vx: -250, vy: 0, r: 7, life: 4, damage: 25 });
+  game.dash();
+  advance(game, .6);
+  assert.equal(player.hp, player.maxHp, 'the shot hit the hero from behind after the dash');
+});
+
+test('a dash pressed too early is buffered for 0.16 s and fires when allowed', () => {
+  const { game, player, events } = arena();
+  game.attack();
+  advance(game, .1);
+  game.dash();
+  assert.equal(player.dash, 0);
+  advance(game, .1);
+  assert.equal(events.filter(e => e.type === 'dash').length, 1, 'buffered dash fired');
+  const { game: g2, player: p2 } = arena();
+  p2.dashCd = .5; g2.dash();
+  advance(g2, .4);
+  assert.equal(p2.dash, 0, 'buffer expired');
+});
+
+test('a thrust faces the nearest living enemy within 200 when no direction is held', () => {
+  const { game, player } = arena();
+  player.x = 400; player.dir = 1; player.thrustWindow = .5;
+  enemy(game, 700);
+  enemy(game, 330);
+  enemy(game, 250, { hp: 0 });
+  game.attack();
+  assert.equal(player.dir, -1);
+});
+
+test('dash cooldown never drops below 0.35 s', () => {
+  const { player } = arena();
+  const dash = RELICS.find(r => r.id === 'dash');
+  for (let i = 0; i < 20; i++) dash.apply(player);
+  assert.equal(player.dashCooldown, .35);
+});
