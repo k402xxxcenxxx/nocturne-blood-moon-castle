@@ -121,7 +121,11 @@ function handleEvent(e) {
       burst(e.x, e.y, '#8e99a8', 10, 230, 0, 4); burst(e.x, e.y, '#d6b46a', 12, 260); burst(e.x, e.y, '#f4ecd6', 8, 150);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .22, max: .22, dir: e.dir });
       break;
-    case 'plunge': audio.play('plunge', 1.1); break;
+    case 'plunge':
+      audio.play('plunge', 1.1); rumble(5, .14);
+      effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.radius, life: .35, max: .35 });
+      burst(e.x - e.radius * .8, e.y - 2, '#9a8c77', 5, 90, -1, 3); burst(e.x + e.radius * .8, e.y - 2, '#9a8c77', 5, 90, 1, 3); burst(e.x, e.y - 2, '#b8adcf', 8, 110);
+      break;
     case 'stagger':
       audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); rumble(e.boss ? 7 : 5, .18);
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
@@ -307,6 +311,11 @@ function drawEffects(dt) {
       ctx.strokeStyle = '#8e73be'; ctx.lineWidth = 10 * (1 - progress); ctx.beginPath(); ctx.arc(0, 0, radius - 8, 0, Math.PI * 2); ctx.stroke();
       for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + progress; ctx.fillStyle = '#f0e4ff'; ctx.fillRect(Math.cos(a) * radius - 2, Math.sin(a) * radius - 2, 4, 4); }
       ctx.restore();
+    } else if (fx.type === 'dust') { // ring of dust expanding along the floor to the plunge radius
+      const r = fx.radius * Math.sin(progress * Math.PI / 2);
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .8;
+      ctx.strokeStyle = '#b3a68f'; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.ellipse(0, -3, r, 9 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#e4dccb'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, -3, r * .92, 7 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     } else if (fx.type === 'impact') {
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = fx.life / fx.max;
       ctx.fillStyle = '#fff5cd'; ctx.beginPath(); ctx.moveTo(-24, -3); ctx.lineTo(-4,-6); ctx.lineTo(-2,-25); ctx.lineTo(3,-5); ctx.lineTo(28,0); ctx.lineTo(4,4); ctx.lineTo(0,21); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill(); ctx.restore();
@@ -362,6 +371,10 @@ function render(dt) {
         for (let i = 0; i < 4; i++) { const a = worldTime * 6 + i * Math.PI / 2; ctx.fillRect(Math.round(e.x + Math.cos(a) * rw) - 2, Math.round(ry + Math.sin(a) * 4) - 2, 4, 4); }
       }
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; ctx.strokeText('!', bx, by2); ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', bx, by2); ctx.lineWidth = 1; }
+    }
+    if (p.plunge === 2) { // short vertical streak above the falling hero
+      const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
+      ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
     }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3); }
