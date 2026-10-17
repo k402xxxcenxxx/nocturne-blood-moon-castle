@@ -14,7 +14,7 @@ const storedSettings = readSaved('nocturne-settings', {});
 const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, lang: detectLanguage(navigator.language), ...storedSettings };
 const records = { runs: 0, wins: 0, best: 0, ...readSaved('nocturne-records', {}) };
 let game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
-let shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
+let phaseTime = 0, dustTimer = 0, shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
 let announceTime = 0, toastTime = 0, trailTimer = 0, returnState = null, modalKind = '', modalReturn = null, previousFocus = null;
 const held = new Map(), buffered = new Map();
 const keyControls = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyJ: 'attack', KeyZ: 'attack', KeyK: 'dash', ShiftLeft: 'dash', ShiftRight: 'dash', KeyX: 'dash', KeyL: 'magic', KeyC: 'magic' };
@@ -132,7 +132,11 @@ function handleEvent(e) {
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
-    case 'bossPhase': toast(t('boss.phase' + e.phase)); break;
+    case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
+      toast(t('boss.phase' + e.phase)); phaseTime = 1.6; rumble(10, .5);
+      burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3);
+      effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
+      break;
     case 'enemySwing': if (e.kind === 'spear') audio.play('thrust'); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
@@ -303,6 +307,16 @@ function drawThrust(x, y, dir, progress) { // long thin trail covering the 155 p
   ctx.fillStyle = '#fffbee'; ctx.fillRect(12, -1, len - 12, 2);
   ctx.restore();
 }
+function drawGroundWave(b) { // low floor ripple: rising crest at the front, trailing tail; the faint circle is the exact r hit area
+  const d = Math.sign(b.vx) || 1, x = Math.round(b.x), y = Math.round(b.y), r = b.r, f = Math.sin(worldTime * 30) * 2;
+  ctx.save(); ctx.translate(x, y); ctx.scale(d, 1);
+  ctx.strokeStyle = '#ff7a6a66'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowColor = '#d4423a'; ctx.shadowBlur = 8; ctx.fillStyle = '#b8453f';
+  ctx.beginPath(); ctx.moveTo(-46, r - 6); ctx.lineTo(-18, 2); ctx.lineTo(0, -r + 2 + f); ctx.lineTo(r, r - 6); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffd0b0'; ctx.beginPath(); ctx.moveTo(-6, -2); ctx.lineTo(0, -r + 2 + f); ctx.lineTo(10, 4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#9a8c77'; for (let i = 0; i < 4; i++) ctx.fillRect(-12 - i * 11, r - 9 - ((i * 7 + Math.round(worldTime * 20)) % 6), 3, 3); // dust trail
+  ctx.restore();
+}
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
@@ -360,6 +374,7 @@ function render(dt) {
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       drawEnemy(ctx, e, worldTime);
+      if (e.type === 'boss' && e.travel > 0 && (dustTimer -= dt) <= 0) { dustTimer = .035; burst(e.x - e.dir * 28, e.y - 2, '#9a8c77', 3, 90, -e.dir, 3); } // charge dust kicked up behind the feet
       if (e.type !== 'boss' && e.hp < e.maxHp) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
@@ -381,11 +396,17 @@ function render(dt) {
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3); }
     for (const b of game.projectiles) {
+      if (b.ground) { drawGroundWave(b); continue; }
       ctx.shadowColor = '#d46ea3'; ctx.shadowBlur = 14; ctx.fillStyle = '#ca6a9c'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0; ctx.fillStyle = '#ffe0e7'; ctx.fillRect(Math.round(b.x - 2), Math.round(b.y - 2), 4, 4);
     }
   }
   drawEffects(dt); ctx.restore();
+  if (phaseTime > 0) { // phase roar: screen darkens, then a red pulse blooms on the moon (steady when reduced motion is on)
+    const k = Math.max(0, Math.min(1, phaseTime / .4, (1.6 - phaseTime) / .15)), pulse = settings.shake ? .5 + .5 * Math.sin(phaseTime * 14) : 1;
+    ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
+    for (let mx = 715 - (Math.floor(camera * .13) % 1440); mx < viewWidth + 200; mx += 1440) { const mr = 150 + 40 * pulse, gr = ctx.createRadialGradient(mx, 150, 10, mx, 150, mr); gr.addColorStop(0, `rgba(255,70,60,${.7 * k})`); gr.addColorStop(1, 'rgba(255,70,60,0)'); ctx.fillStyle = gr; ctx.fillRect(mx - mr, 150 - mr, mr * 2, mr * 2); }
+  }
   if (damageFlash > 0) { ctx.fillStyle = `rgba(144,27,50,${damageFlash * .65})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (whiteFlash > 0) { ctx.fillStyle = `rgba(255,232,193,${whiteFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (silverFlash > 0) { ctx.fillStyle = `rgba(214,224,255,${silverFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
@@ -399,6 +420,7 @@ function tick(now) {
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
+  phaseTime = Math.max(0, phaseTime - dt);
   damageFlash = Math.max(0, damageFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt); silverFlash = Math.max(0, silverFlash - dt);
   comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
   if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) $('stage-announcement').classList.remove('show'); }

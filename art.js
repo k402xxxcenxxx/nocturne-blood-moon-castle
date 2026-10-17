@@ -511,10 +511,49 @@ function spearman(c, e, time, white) {
   line(c, white || '#d2ac75', 8 - 20 * k, -36, sx, -30, 2); poly(c, white || '#c2a4de', [[sx, -35], [sx + 14, -30], [sx, -25]]);
   poly(c, white || '#c2a4de', [[8 - 20 * k, -36], [-2 - 20 * k, -42], [-2 - 20 * k, -32]]); // pennant at the butt silhouettes it from the knight
 }
+const tellMax = new WeakMap(); // total warning time per e.warn object, remembered on the first frame it is seen
+// Boss warnings draw the exact e.warn hit areas from core.js, filling as the warning counts down (gold when punishable).
+function drawBossWarn(ctx, e, time) {
+  const w = e.warn; if (!w || !(e.tell > 0)) return;
+  if (!tellMax.has(w)) tellMax.set(w, e.tell);
+  const p = Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))), rgb = e.punishable ? '255,211,110' : '231,92,80', edge = e.punishable ? '#ffd36e' : '#ff7a6a', d = e.dir === -1 ? -1 : 1;
+  const fillBox = b => { // outline = full hit box, inner fill grows from the boss outward
+    const fw = Math.round(b.w * p); ctx.fillStyle = `rgba(${rgb},.14)`; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = `rgba(${rgb},${.18 + .3 * p})`; ctx.fillRect(d === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h);
+    ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+  };
+  ctx.save();
+  if (w.kind === 'slash' || w.kind === 'slam') fillBox(w.box);
+  if (w.kind === 'charge') {
+    fillBox(w.box); const l = w.line; ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 2; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d;
+    ctx.beginPath(); ctx.moveTo(Math.round(l.x1), Math.round(l.y1)); ctx.lineTo(Math.round(l.x2), Math.round(l.y2)); ctx.stroke(); ctx.setLineDash([]);
+    const tx = Math.round(l.x2), ty = Math.round(l.y2), a = d * 12; ctx.fillStyle = '#ffe0d0'; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - a, ty - 8); ctx.lineTo(tx - a, ty + 8); ctx.fill();
+  }
+  if (w.wave) { // phase 2+ slam: the ground wave runs along the floor line
+    const v = w.wave; ctx.strokeStyle = `rgba(${rgb},${.3 + .4 * p})`; ctx.lineWidth = 3; ctx.setLineDash([14, 8]); ctx.lineDashOffset = -time * 60 * d;
+    ctx.beginPath(); ctx.moveTo(Math.round(v.x1), Math.round(v.y1)); ctx.lineTo(Math.round(v.x2), Math.round(v.y2)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = edge; const tx = Math.round(v.x2), a = d * 10; ctx.beginPath(); ctx.moveTo(tx, v.y2); ctx.lineTo(tx - a, v.y2 - 7); ctx.lineTo(tx - a, v.y2 + 7); ctx.fill();
+  }
+  if (w.lines) for (const l of w.lines) { // faint band = orb width (r 9), bright line = flight path, dot = tip
+    ctx.strokeStyle = `rgba(${rgb},${.1 + .14 * p})`; ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+    ctx.strokeStyle = `rgba(${rgb},${.6 + .4 * p})`; ctx.lineWidth = 3; ctx.setLineDash([9, 6]); ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = edge; ctx.fillRect(Math.round(l.x2) - 3, Math.round(l.y2) - 3, 6, 6);
+  }
+  if (w.circles) for (const c of w.circles) { // ground-centred disc: dome above the floor plus a ring on it; centre fill grows to the full radius
+    const cx = Math.round(c.x), cy = Math.round(c.y), r = c.r;
+    ctx.fillStyle = `rgba(${rgb},.12)`; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = `rgba(${rgb},${.2 + .35 * p})`; ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, r * p), Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = `rgba(${rgb},.8)`; ctx.beginPath(); ctx.ellipse(cx, cy - 1, r, 8, 0, 0, 7); ctx.stroke();
+    for (let i = 0; i < 6; i++) { const a = time * 1.5 + i * Math.PI / 3; ctx.fillStyle = edge; ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy - 1 + Math.sin(a) * 8) - 1, 3, 3); }
+  }
+  ctx.restore();
+}
 export function drawEnemy(ctx, e = {}, time = 0) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? 70 : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
+  if (boss) drawBossWarn(ctx, e, time);
   if (e.tell > 0 && e.thrustBox) { const b = e.thrustBox; ctx.save(); ctx.fillStyle = '#e7746640'; ctx.strokeStyle = '#e7746699'; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
     // dashed path along the box centre with a bright tip at the far end, so the whole reach reads as the weapon's path
     const fx = e.dir === -1 ? b.x : b.x + b.w, my = Math.round(b.y + b.h / 2); ctx.strokeStyle = '#ec8b7c'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(Math.round(e.x + (e.dir === -1 ? -10 : 10)), my); ctx.lineTo(Math.round(fx), my); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#e4cfbc'; ctx.fillRect(Math.round(fx) - (e.dir === -1 ? 0 : 6), my - 3, 6, 6); ctx.restore(); }
@@ -522,7 +561,7 @@ export function drawEnemy(ctx, e = {}, time = 0) {
   if (e.blessed > 0) { const pu = Math.sin(time * 6) * .5 + .5, hy = Math.round(y - 88 - pu * 2); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.2 + pu * .1})`; ctx.strokeStyle = `rgba(255,106,92,${.6 + pu * .4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 29, 26, 40, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#ff6a5c'; ctx.beginPath(); ctx.moveTo(x, hy - 7); ctx.quadraticCurveTo(x + 7, hy + 1, x, hy + 5); ctx.quadraticCurveTo(x - 7, hy + 1, x, hy - 7); ctx.fill(); ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
   const white = e.flash > 0 ? '#fff0d0' : null;
-  if (boss) { ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
+  if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
   else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
   else if (e.type === 'spear') spearman(ctx, e, time, white);
