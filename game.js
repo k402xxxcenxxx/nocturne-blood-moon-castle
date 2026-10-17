@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawPortal } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawStatus, drawPortal } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
@@ -142,7 +142,30 @@ function handleEvent(e) {
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
       effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
-    case 'reaction': flashNumber({ ...e, y: e.y - 30, size: 22, amount: t('reaction.' + e.name) }, { shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a' }[e.name]); break;
+    case 'reaction': {
+      const col = { shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a' }[e.name];
+      flashNumber({ ...e, y: e.y - 30, size: 22, amount: t('reaction.' + e.name) }, col);
+      if (e.name === 'shatter') {
+        const shards = []; for (let i = 0; i < 14; i++) { const a = Math.random() * Math.PI * 2, d = e.radius * (.35 + Math.random() * .65); shards.push({ a, d, s: 4 + (Math.random() * 6 | 0), r: Math.random() * 6 }); }
+        effects.push({ type: 'shards', x: e.x, y: e.y, radius: e.radius, shards, life: .5, max: .5 }); rumble(5, .12);
+      } else if (e.name === 'bloodFlame') {
+        effects.push({ type: 'flameCol', x: e.x, y: e.y, radius: e.radius, life: .6, max: .6 }); rumble(4, .12);
+      } else {
+        for (const to of e.targets) {
+          const pts = [[e.x, e.y]], n = 5, dx = to.x - e.x, dy = to.y - e.y, len = Math.hypot(dx, dy) || 1;
+          for (let i = 1; i < n; i++) pts.push([e.x + dx * i / n - dy / len * (Math.random() - .5) * 26, e.y + dy * i / n + dx / len * (Math.random() - .5) * 26]);
+          pts.push([to.x, to.y]); effects.push({ type: 'arc', pts, life: .22, max: .22 }); burst(to.x, to.y, '#ffe97a', 4, 90, 0, 2);
+        }
+      }
+      break;
+    }
+    case 'statusTick': { // merge rapid ticks from one source near one spot into a single small number
+      const col = { burn: '#ff9a3a', bleed: '#d8445a', shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a', frost: '#9fd8ff', shock: '#ffe97a' }[e.source] || '#c9c2d8';
+      const n = numbers.find(o => o.tick === e.source && o.life > .45 && Math.abs(o.x - e.x) < 26 && Math.abs(o.y - e.y) < 40);
+      if (n) { n.sum += e.amount; n.text = String(n.sum); n.life = .7; }
+      else if (numbers.length < 40) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
+      break;
+    }
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
@@ -340,6 +363,21 @@ function drawEffects(dt) {
     } else if (fx.type === 'impact') {
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = fx.life / fx.max;
       ctx.fillStyle = '#fff5cd'; ctx.beginPath(); ctx.moveTo(-24, -3); ctx.lineTo(-4,-6); ctx.lineTo(-2,-25); ctx.lineTo(3,-5); ctx.lineTo(28,0); ctx.lineTo(4,4); ctx.lineTo(0,21); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill(); ctx.restore();
+    } else if (fx.type === 'shards') { // ice shards fly outward, then fall; pale ring marks the radius
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .9;
+      ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, fx.radius * Math.min(1, progress * 3), 0, Math.PI * 2); ctx.stroke();
+      for (const s of fx.shards) { const k = Math.sin(Math.min(1, progress * 1.6) * Math.PI / 2), sx = Math.round(Math.cos(s.a) * s.d * k), sy = Math.round(Math.sin(s.a) * s.d * k * .7 + progress * progress * 40);
+        ctx.fillStyle = '#e9f8ff'; ctx.beginPath(); ctx.moveTo(sx, sy - s.s); ctx.lineTo(sx + 2 + s.r * .3, sy + s.s * .5); ctx.lineTo(sx - 2, sy + s.s * .4); ctx.fill(); ctx.fillStyle = '#7fc4f0'; ctx.fillRect(sx, sy, 1, s.s >> 1); }
+      ctx.restore();
+    } else if (fx.type === 'flameCol') { // rising blood-flame column plus a floor ring of the exact radius
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .85;
+      const hgt = 40 + 120 * Math.sin(Math.min(1, progress * 1.5) * Math.PI / 2), wd = 22 * (1 - progress * .5);
+      ctx.fillStyle = '#9c1f2e'; ctx.fillRect(-wd, -hgt, wd * 2, hgt + 20); ctx.fillStyle = '#ff6a3c'; ctx.fillRect(-wd * .6, -hgt * .85, wd * 1.2, hgt * .85 + 20); ctx.fillStyle = '#ffe08a'; ctx.fillRect(-wd * .25, -hgt * .6, wd * .5, hgt * .6 + 20);
+      ctx.strokeStyle = '#ff8a5c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 18, fx.radius * Math.min(1, progress * 3 + .2), 12, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'arc') { // jagged bolt, drawn twice (glow then core), fades fast
+      ctx.save(); ctx.globalAlpha = fx.life / fx.max; ctx.lineJoin = 'miter';
+      for (const [w, c] of [[4, '#ffe97a88'], [1.5, '#fffbd0']]) { ctx.lineWidth = w; ctx.strokeStyle = c; ctx.beginPath(); fx.pts.forEach(([px, py], i) => i ? ctx.lineTo(Math.round(px), Math.round(py)) : ctx.moveTo(Math.round(px), Math.round(py))); ctx.stroke(); }
+      ctx.restore();
     } else drawSlash(fx.x, fx.y, fx.dir, progress, fx.boss, true);
     fx.life -= dt;
   }
@@ -350,7 +388,7 @@ function drawEffects(dt) {
   }
   ctx.globalAlpha = 1; particles = particles.filter(p => p.life > 0);
   for (const number of numbers) {
-    number.y -= dt * 37; number.life -= dt; ctx.globalAlpha = Math.min(1, number.life * 3);
+    number.y -= dt * 37; number.life -= dt; ctx.globalAlpha = Math.min(number.soft ? .75 : 1, number.life * 3);
     ctx.font = `bold ${number.size || (number.crit ? 23 : 16)}px Georgia`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#13101b'; ctx.strokeText(number.text, number.x, number.y); ctx.fillStyle = number.color; ctx.fillText(number.text, number.x, number.y);
     if (number.crit) { ctx.font = '7px sans-serif'; ctx.fillText('CRITICAL', number.x, number.y - 22); }
   }
@@ -378,7 +416,7 @@ function render(dt) {
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
-      drawEnemy(ctx, e, worldTime);
+      drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
       if (e.type === 'boss' && e.travel > 0 && (dustTimer -= dt) <= 0) { dustTimer = .035; burst(e.x - e.dir * 28, e.y - 2, '#9a8c77', 3, 90, -e.dir, 3); } // charge dust kicked up behind the feet
       if (e.type !== 'boss' && e.hp < e.maxHp) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
