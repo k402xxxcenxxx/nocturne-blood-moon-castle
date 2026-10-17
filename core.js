@@ -69,10 +69,10 @@ export class Game {
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0 });
   }
   spawnEnemy(type, x, stage = 0) {
-    const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 74, boss: 120, spear: 48, priest: 42 }[type];
+    const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 640 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0 });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -166,17 +166,18 @@ export class Game {
     p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.emit('magic', { x: p.x, y: p.y - 32 });
     for (const e of this.enemies) if (e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 210) {
-      this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse);
+      this.damageEnemy(e, Math.round(p.magicDamage), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
-  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0) {
+  damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false) {
     e.hp -= amount; e.flash = .14;
     const wasHalf = e.hp + amount < e.maxHp / 2;
-    if (e.hp > 0) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
+    const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
+    if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
     const broken = e.hp > 0 && e.poise <= 0;
-    const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken; // light hits don't interrupt heavy enemies
+    const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken && !(eclipse && e.type !== 'boss'); // light hits don't interrupt heavy enemies
     if (blocked) {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
@@ -186,11 +187,12 @@ export class Game {
       this.freeze = Math.max(this.freeze, .035);
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
     } else {
-      if (!keepsTell || e.type === 'boss') {
-        e.stun = e.type === 'boss' ? .08 : heavy ? .42 : .24;
+      const quiet = armored && !(eclipse && e.type !== 'boss'); // Eclipse still interrupts armored non-bosses
+      if (!quiet && (!keepsTell || e.type === 'boss')) {
+        e.stun = Math.max(e.stun, e.type === 'boss' ? .08 : heavy ? .42 : .24);
         e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * (e.type === 'boss' ? .25 : 1);
-      }
-      if (!keepsTell && e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
+      } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * .4;
+      if (!quiet && !keepsTell && e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
     }
@@ -208,6 +210,7 @@ export class Game {
     if (e.blessRadius) e.blessCd = 2.5;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false; e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : 1;
+    e.armor = e.stun + 1.2; // counts down with the stun, so 1.2 s of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
     this.freeze = Math.max(this.freeze, .055);
     this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss' });
@@ -230,6 +233,7 @@ export class Game {
     e.flash = Math.max(0, e.flash - dt);
     e.cd = Math.max(0, e.cd - dt);
     e.stun = Math.max(0, e.stun - dt);
+    e.armor = Math.max(0, e.armor - dt);
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt);

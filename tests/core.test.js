@@ -558,7 +558,7 @@ test('poise: light hits keep a knight tell, a break cancels it', () => {
   e.tell = .5; e.cd = 5;
   game.damageEnemy(e, 1, 1, false, false, false, 17);
   assert.ok(e.tell > 0 && e.stun === 0);
-  game.damageEnemy(e, 1, 1, false, false, false, 62);
+  game.damageEnemy(e, 1, 1, false, false, false, 110);
   assert.equal(e.tell, 0);
   assert.ok(e.stun > 0);
 });
@@ -585,4 +585,64 @@ test('poise: damage doubles during the boss cleave wind-up', () => {
   game.damageEnemy(b, 1, 1, false, false, false, 17);
   assert.equal(b.poise, b.maxPoise - 34);
   assert.ok(b.tell > 0);
+});
+
+test('poise: a light hit during a stagger stun does not shorten the 1 s stun', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140);
+  player.x = 100; player.dir = 1;
+  e.poise = 1;
+  game.damageEnemy(e, 1, 1, false, false, false, 17);
+  assert.ok(e.stun >= .99);
+  advance(game, .3);
+  const remaining = e.stun;
+  game.damageEnemy(e, 1, 1, false, false, false, 17);
+  assert.ok(e.stun >= remaining, `stun dropped from ${remaining.toFixed(2)} to ${e.stun.toFixed(2)}`);
+});
+
+test('poise: after a stagger the enemy takes damage but no poise damage, flinch or knockback for 1.2 s', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140);
+  player.x = 100; player.dir = 1;
+  e.poise = 1;
+  game.damageEnemy(e, 1, 1, false, false, false, 17);
+  advance(game, 1.05);
+  game.enemies[0].stun = 0;
+  assert.ok(e.armor > 0);
+  e.tell = .5; e.vx = 0;
+  game.damageEnemy(e, 5, 1, false, true, false, 62);
+  assert.equal(e.hp, 500 - 1 - 5);
+  assert.equal(e.poise, e.maxPoise);
+  assert.ok(e.tell > 0 && e.stun === 0 && e.vx === 0);
+  game.damageEnemy(e, 1, 1, false, false, false, 17, true);
+  assert.equal(e.tell, 0);
+  assert.ok(e.stun > 0, 'Eclipse still interrupts');
+  advance(game, 1.4);
+  assert.equal(e.armor, 0);
+});
+
+test('poise: a skeleton under a 0.9 s tap rhythm still lands swings', () => {
+  const { game, player } = arena();
+  player.x = 300; player.invulnerable = 0;
+  const e = enemy(game, 340);
+  let hits = 0, last = player.hp;
+  for (let t = 0; t < 12; t += .9) {
+    player.attackCd = 0; player.dir = 1; game.attack();
+    for (let s = 0; s < .9; s += 1 / 120) {
+      e.hp = e.maxHp; player.hp = player.maxHp; player.x = 300; game.update(1 / 120, {});
+      if (player.hp < last) hits++;
+      last = player.hp;
+    }
+  }
+  assert.ok(hits >= 2, `landed ${hits}`);
+});
+
+test('poise: a knight keeping its warning still takes 40% knockback', () => {
+  const { game, player } = arena();
+  const e = enemy(game, 140, { type: 'knight' });
+  player.x = 100; e.tell = .5; e.vx = 0;
+  game.damageEnemy(e, 1, 1, false, false, false, 17);
+  assert.ok(e.tell > 0 && e.stun === 0);
+  assert.equal(e.vx, player.knockback * .4);
+  assert.equal(e.maxPoise, 110);
 });
