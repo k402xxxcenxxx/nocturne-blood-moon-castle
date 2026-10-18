@@ -40,8 +40,9 @@ const STATUS_TIMERS = ['chill', 'frozen', 'freezeImmune', 'shock'];
 const SHOT_POISE = 8;
 // Stage hazards. Traps cycle idle -> warn (TRAP_WARN s) -> active; obstacles are breakable solids (x = centre, y = base, h up, like enemies).
 const TRAP_WARN = .7;
-const TRAP_KINDS = { 0: 'spikes', 2: 'gears', 3: 'pillar' }, TRAP_HEIGHT = { spikes: 34, gears: 44, pillar: 96 };
+const TRAP_KINDS = { 0: 'spikes', 2: 'gears', 3: 'pillar' }, TRAP_HEIGHT = { spikes: 34, gears: 44, pillar: 80 };
 const OBSTACLES = { barricade: { w: 40, h: 62 }, altar: { w: 46, h: 74 } };
+const PILLAR_LINK = 600; // a pillar stands within this horizontal distance of its altar
 const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spawn and the Moon Gate
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -123,23 +124,23 @@ export class Game {
   placeHazards(index) {
     if (index === 4) return;
     const taken = [], lo = 150 + SPAWN_CLEAR, hi = this.portalX - SPAWN_CLEAR;
-    const free = (x, w, pad) => x - w / 2 >= lo && x + w / 2 <= hi && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
-    const place = w => { // random tries between enemies, then anywhere, then a left-to-right scan: always finds room
-      for (const pad of [20, -999]) for (let i = 0; i < 40; i++) { const x = Math.round(lo + w / 2 + this.rand() * (hi - lo - w)); if (free(x, w, pad)) { taken.push({ x, w }); return x; } }
-      for (let x = lo + w / 2; x <= hi - w / 2; x += 5) if (free(x, w, -999)) { taken.push({ x, w }); return x; }
+    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
+    const place = (w, near = null) => { // random tries between enemies, then anywhere, then a left-to-right scan; `near` limits |x - near| to PILLAR_LINK
+      const a = near === null ? -Infinity : near - PILLAR_LINK, b = near === null ? Infinity : near + PILLAR_LINK, from = Math.max(lo + w / 2, a), to = Math.min(hi - w / 2, b);
+      for (const pad of [20, -999]) for (let i = 0; i < 40; i++) { const x = Math.round(from + this.rand() * (to - from)); if (free(x, w, pad, a, b)) { taken.push({ x, w }); return x; } }
+      for (let x = Math.ceil(from); x <= to; x += 5) if (free(x, w, -999, a, b)) { taken.push({ x, w }); return x; }
       return null;
     };
     const kind = TRAP_KINDS[index], altars = index === 3 ? 1 + Math.floor(this.rand() * 2) : 0;
     const pillars = kind ? (altars === 1 ? 2 : 2 + Math.floor(this.rand() * 2)) : 0;
+    const altarObjs = []; // altars first so each pillar can be placed within PILLAR_LINK of the altar that disables it
+    for (let i = 0; i < altars; i++) { const x = place(OBSTACLES.altar.w); if (x !== null) altarObjs.push(this.spawnObstacle('altar', x, index)); }
     for (let i = 0; i < pillars; i++) {
-      const w = Math.round(60 + this.rand() * 30), period = 3.4 + this.rand() * 1.1, active = 1.1 + this.rand() * 1.05, x = place(w);
-      if (x !== null) this.spawnTrap(kind, x, w, period, active, this.rand() * period, index);
-    }
-    for (let i = 0; i < altars; i++) {
-      const x = place(OBSTACLES.altar.w);
+      const altar = altarObjs.length ? altarObjs[i % altarObjs.length] : null;
+      const w = Math.round(60 + this.rand() * 30), period = 3.4 + this.rand() * 1.1, active = kind === 'pillar' ? 1.8 + this.rand() * .35 : 1.1 + this.rand() * 1.05, x = place(w, altar && altar.x);
       if (x === null) continue;
-      const altar = this.spawnObstacle('altar', x, index);
-      this.traps.forEach((t, j) => { if (j % altars === i) { t.altar = altar.id; altar.traps.push(t.id); } });
+      const trap = this.spawnTrap(kind, x, w, period, active, this.rand() * period, index);
+      if (altar) { trap.altar = altar.id; altar.traps.push(trap.id); }
     }
     const barricades = 1 + Math.floor(this.rand() * 2);
     for (let i = 0; i < barricades; i++) { const x = place(OBSTACLES.barricade.w); if (x !== null) this.spawnObstacle('barricade', x, index); }
@@ -372,7 +373,13 @@ export class Game {
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
-    if (vortex) for (const e of caught) e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
+    if (vortex) for (const e of caught) {
+      const from = e.x; e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
+      if (e.type !== 'bat') for (const o of this.obstacles) { // stay on the near side of any solid in the way
+        const half = (e.w + o.w) / 2;
+        if (e.y > o.y - o.h + 1 && Math.abs(from - o.x) >= half && (Math.abs(e.x - o.x) < half || (from - o.x) * (e.x - o.x) < 0)) e.x = o.x + Math.sign(from - o.x) * half;
+      }
+    }
     for (const e of caught) {
       this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }

@@ -1749,6 +1749,16 @@ test('a boss charge stops at a barricade', () => {
   assert.equal(boss.travel, 0);
 });
 
+test('a vortex pull does not carry a ground enemy across a barricade (obstacles stay solid)', () => {
+  const { game, player } = arena();
+  game.relics = ['vortex'];
+  game.spawnObstacle('barricade', 600, 0);
+  const e = enemy(game, 540, { hp: 500 });
+  player.x = 720; player.y = FLOOR; player.mp = 100; player.invulnerable = 99;
+  game.magic();
+  assert.ok(e.x < 600 - (27 + 40) / 2 + 0.01, `enemy pulled through the barricade to x=${e.x}`);
+});
+
 test('obstacles are not enemies: the Moon Gate rule and enemy logic ignore them', () => {
   const { game, player } = arena();
   game.spawnObstacle('barricade', 700, 0);
@@ -1797,6 +1807,8 @@ test('hazard placement obeys the spacing rules over many seeds and skips stages 
       const altars = game.obstacles.filter(o => o.kind === 'altar');
       assert.equal(altars.length > 0, stage === 3);
       for (const a of altars) assert.ok(a.traps.length >= 1 && a.traps.length <= 2);
+      for (const t of game.traps.filter(t => t.altar !== null)) assert.ok(Math.abs(t.x - game.obstacles.find(o => o.id === t.altar).x) <= 600, `pillar within 600 px of its altar, seed ${seed}`);
+      for (const t of game.traps.filter(t => t.kind === 'pillar')) assert.ok(t.active >= 1.8 && t.active <= 2.15);
       for (const t of game.traps) { assert.ok(t.w >= 60 && t.w <= 90 && t.period >= 3.4 && t.period <= 4.5 && t.active >= 1.1 && t.active <= 2.15); assert.ok(t.period - t.active >= 0.7); }
       for (const [i, a] of all.entries()) {
         assert.ok(a.x - a.w / 2 >= 400 && a.x + a.w / 2 <= game.portalX - 250, 'clear of spawn and gate');
@@ -1804,6 +1816,15 @@ test('hazard placement obeys the spacing rules over many seeds and skips stages 
       }
     }
   }
+});
+
+test('an active pillar does not hit a hero standing on a FLOOR-85 platform above it', () => {
+  const { game, player } = arena();
+  const tr = trapAt(game, 500, { kind: 'pillar', t: 0.1 });
+  assert.equal(tr.state, 'active');
+  player.x = 500; player.y = FLOOR - 85; player.vy = 0; player.grounded = true; player.invulnerable = 0;
+  game.updateTraps(1 / 120);
+  assert.equal(player.hp, 100);
 });
 
 test('rollChoices honours a pool and BUILD_POOL ids are real relics', () => {
