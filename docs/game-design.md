@@ -111,7 +111,7 @@ Hazards are placed after enemies on the floor of stages I to IV (never the boss 
 
 Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass through enemies, hit each enemy once per pass, are not cleared by Eclipse, deal 8 poise damage, are not heavy (no Shatter or Blood Flame) and never trigger Chain Lightning, but apply elemental statuses like a sword hit. A shield bearer blocks them (×0.15, no shove) when the projectile is on the side it faces; a returning crescent can hit its back. Cleared by loadStage. Events: `shot` {kind: 'wave' | 'beam' | 'ground', x, y, dir, speed, life}; hits use `hit`.
 
-## Elemental statuses and reactions
+## Cursed relics
 
 **Cursed relics** (#1; `cursed: true`, type "Cursed", deep red card frame with a cost line; never in the opening pick; at most one per offer of three; no synergies). Each has a `max` copy count, after which it is no longer offered:
 
@@ -120,6 +120,8 @@ Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass 
 | bloodOath | Blood Oath Blade | 2 | Sword hit damage ×1.6 per copy (`swordMul`: combo, thrust, plunge fall and shockwave; not wave, beam, ground-wave or Eclipse damage) | Damage taken ×1.25 per copy (`takenMul`), applied after `armor` |
 | lunaticMoon | Lunatic Moon | 1 | Eclipse costs no MP and the `noMana` event never fires | Eclipse cooldown 6 s (instead of 0.65 s); `mpRegen` becomes 0 (hit, kill and perfect-dodge MP, chests and stage restores still apply) |
 | nightwalk | Endless Nightwalk | 2 | Movement speed ×1.2, dash cooldown ×0.6 (floor 0.35 s) | Max HP -25 (floor 40, unreachable with the 2-copy cap); current HP drops to the new max if above |
+
+## Elemental statuses and reactions
 
 "Hits" are sword hits (combo, thrust, plunge fall and shockwave) and Eclipse. "Base" is the hero's `damage`. "Stacks" are copies of the relic owned; every per-stack value uses the stack count directly. Blocked shield-bearer hits apply nothing. Damage over time ticks every 0.5 s. Damage-over-time, bonus-hit and reaction damage cause no hit-stop, stun, flinch or poise damage, apply no statuses, emit `statusTick` {source, x, y, amount} and give kill credit (souls, `leech`, MP, drops) like any kill, but only while the run is `playing` (no kills, souls or leech after the hero dies; enemies still die). The damage-number overlay shows at most 12 `statusTick` numbers at once. Statuses live on the enemy (`burn`, `bleed`, `bleedStacks`, `chill`, `frozen`, `frostMeter`, `shock`) and reset on stage load. Reactions read the enemy's state before the hit, then the hit applies its own statuses. Heavy = combo hit 3, thrust, plunge, Eclipse.
 
@@ -138,6 +140,17 @@ Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass 
 | Chain Lightning | shock owned, any sword hit (not Eclipse; Eclipse still applies shock) on an already shocked enemy | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining) | `reaction` {name:'chain', x, y, targets:[{x,y}]} |
 
 Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `elements()` hook they should call.
+
+## Endless Trial
+
+Approved in #22; explicitly **not balanced**: it exists for combination testing and long-tail replay. Title-screen option, unlocked after the first completed normal run (`records.wins >= 1`). The normal five-stage run is unchanged.
+
+- `Game(onEvent, seed, 'endless')` has `mode` (`'normal'` | `'endless'`) and a 1-based `floor`. `stage` stays the 0-4 theme index, `(floor - 1) % 5`, so rooms, art and text are reused. Every 5th floor is the Fallen King's arena; clearing it opens the usual relic pick and continues to the next floor (no `won` state, no `win` event). The opening build pick happens as in a normal run.
+- Scaling: floor multipliers are `1.22^(floor-1)` for enemy health and `1.13^(floor-1)` for damage (x1.0 on floor 1), capped at 1e9 so they stay finite. They multiply the existing per-stage value: health = (base + 12 x stage) x floor multiplier, damage = (8 + 2.5 x stage) x floor multiplier (boss: 900 and 22). The elite multipliers apply on top. Traps and obstacles do not scale.
+- From floor 6, each regular (non-required, non-boss) enemy has a 20% chance (`this.rand()`) of being elite: elite health, damage and a random affix like the chest guard. These bonus elites (`bonus: true`) emit `eliteKill` but grant **no reward pick**; only the chest guard's elite does.
+- After each floor: the three-choice relic pick (+20 HP, full MP). Relics stack with no run-length cap; existing caps (crit 0.8, magic cost 15, cursed `max`, plunge radius and so on) stay. After every pick, any player stat that is NaN or beyond 1e12 is clamped, so deep stacks never produce `Infinity` or `NaN`.
+- Death ends the trial and leaves `best`, `wins` and `runs` alone. `bestFloor` is saved with the other records.
+- HUD shows "Floor N"; the result screen shows the floor reached and the best floor.
 
 ## Playtest verdicts
 

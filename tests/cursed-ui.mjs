@@ -11,7 +11,7 @@ catch { ({ chromium } = require('/opt/codex/cua_node/lib/node_modules/playwright
 const executablePath = process.env.CHROMIUM_PATH || (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:8080';
 const browser = await chromium.launch({ headless: true, executablePath, args: ['--no-sandbox'] });
-const failures = [];
+const failures = [], errors = [];
 async function check(name, fn) {
   try { await fn(); console.log(`PASS ${name}`); }
   catch (error) { failures.push(name); console.log(`FAIL ${name}\n     ${error.message.split('\n')[0]}`); }
@@ -19,6 +19,8 @@ async function check(name, fn) {
 
 try {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(`${baseUrl}/?test`);
   await page.locator('#start-button').click();
   await page.waitForFunction(() => window.__nocturne.game.state === 'upgrade');
@@ -43,7 +45,7 @@ try {
 
   await check('a room banner for the same room is not shown twice in a row while the hero stays there', async () => {
     await page.evaluate(() => { const g = window.__nocturne.game; g.player.invulnerable = 1000; g.enemies.forEach(e => e.hp = 0); });
-    await page.waitForTimeout(3000); // stage announcement ends
+    await page.waitForFunction(() => !document.getElementById('stage-announcement').classList.contains('show'), null, { timeout: 10000 });
     const rooms = await page.evaluate(() => window.__nocturne.game.rooms.map(r => ({ x: r.x, w: r.w })));
     await page.evaluate(() => {
       const el = document.getElementById('room-banner'); window.__banner = [];
@@ -55,7 +57,7 @@ try {
       while (performance.now() - s < 2000) { const r = rooms[i++ % 2]; g.player.x = r.x + r.w / 2; await new Promise(res => setTimeout(res, 30)); }
       g.player.x = rooms[1].x + rooms[1].w / 2;
     }, rooms);
-    await page.waitForTimeout(7000);
+    await page.waitForFunction(() => window.__banner.length > 0 && !document.getElementById('room-banner').classList.contains('show'), null, { timeout: 15000 }); // the last banner has faded
     const shows = await page.evaluate(() => window.__banner);
     const repeats = shows.reduce((n, t, i) => n + (i > 0 && shows[i - 1] === t ? 1 : 0), 0);
     assert.equal(repeats, 0, `banner shown ${repeats} extra time(s) in a row: ${JSON.stringify(shows)}`);
@@ -63,5 +65,6 @@ try {
 } finally {
   await browser.close();
 }
+if (errors.length) { console.log(`page errors: ${errors.join('; ')}`); process.exitCode = 1; }
 if (failures.length) { console.log(`${failures.length} check(s) failing: ${failures.join('; ')}`); process.exitCode = 1; }
 else console.log('all cursed UI checks passed');

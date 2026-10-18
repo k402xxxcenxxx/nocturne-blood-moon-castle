@@ -12,7 +12,7 @@ function readSaved(key, fallback) { try { return JSON.parse(localStorage.getItem
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Private browsing can disable storage. The run still works. */ } }
 const storedSettings = readSaved('nocturne-settings', {});
 const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, lang: detectLanguage(navigator.language), ...storedSettings };
-const records = { runs: 0, wins: 0, best: 0, ...readSaved('nocturne-records', {}) };
+const records = { runs: 0, wins: 0, best: 0, bestFloor: 0, ...readSaved('nocturne-records', {}) };
 let game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
 let phaseTime = 0, dustTimer = 0, shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
 let announceTime = 0, roomTime = 0, toastTime = 0, trailTimer = 0, returnState = null, modalKind = '', modalReturn = null, previousFocus = null;
@@ -26,7 +26,10 @@ function applySettings() {
   frame.classList.toggle('reduced-motion', !settings.shake);
   save('nocturne-settings', settings);
 }
-function updateBest() { $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
+const endlessUnlocked = () => records.wins >= 1;
+const stageLabel = (stage, floor = game.floor) => game.mode === 'endless' ? t('hud.floor', { n: floor }) : `${roman[stage]} — V`;
+function updateBest() {
+  const eb = $('endless-button'); eb.disabled = !endlessUnlocked(); eb.querySelector('span').textContent = t(endlessUnlocked() ? 'title.endlessHint' : 'title.endlessLocked'); $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
 function relicTray() { return game.relics.map(id => { const r = RELICS.find(x => x.id === id); return `<span class="relic-icon"${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}</span>`; }).join(''); }
 function applyLanguage() {
   setLanguage(settings.lang); document.documentElement.lang = language();
@@ -71,22 +74,23 @@ const WARD_COLOR = '#9fd0ff';
 const bannerQueue = []; // top banners (room names, elite sightings) wait for the stage announcement and each other
 function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, size: e.size, color }); }
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
-function recordResult(win) { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; save('nocturne-records', records); updateBest(); }
+function recordResult(win) { if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
-      $('stage-number').textContent = `${roman[e.stage]} — V`; $('stage-name').textContent = t(`stage.${e.stage}.name`);
+      $('stage-number').textContent = stageLabel(e.stage, e.floor); $('stage-name').textContent = t(`stage.${e.stage}.name`);
       const announcement = $('stage-announcement');
-      announcement.querySelector('small').textContent = t('decor.announce', { stage: roman[e.stage], name: t(`decor.stage.${e.stage}`) });
+      announcement.querySelector('small').textContent = t('decor.announce', { stage: e.mode === 'endless' ? e.floor : roman[e.stage], name: t(`decor.stage.${e.stage}`) });
       announcement.querySelector('strong').textContent = t(`stage.${e.stage}.name`);
       announcement.querySelector('span').textContent = t(`stage.${e.stage}.subtitle`);
       announcement.classList.add('show'); announceTime = 2.8;
       [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === e.stage ? 'current' : i < e.stage ? 'done' : ''; });
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
       $('relic-tray').innerHTML = relicTray();
-      records.best = Math.max(records.best, e.stage + 1); save('nocturne-records', records); updateBest();
+      if (e.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, e.floor); else records.best = Math.max(records.best, e.stage + 1);
+      save('nocturne-records', records); updateBest();
       audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
@@ -207,10 +211,11 @@ function handleEvent(e) {
     case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
-function startRun() {
+function startRun(mode = 'normal') {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
-  shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
+  game = new Game(handleEvent, undefined, mode); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
+  shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; if (mode === 'normal') records.runs++; // an endless trial never touches normal-run progress
+  save('nocturne-records', records);
   game.start();
 }
 // Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
@@ -239,11 +244,11 @@ function pauseRelics() {
   const ids = Object.keys(counts);
   if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
   const syn = game.activeSynergies().map(s => `<li title="${t(s.key)}"><b>${t(`relic.${s.a}.name`)} + ${t(`relic.${s.b}.name`)}</b> ${t(s.key)}</li>`).join('');
-  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${RELICS.find(r => r.id === id).cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${RELICS.find(r => r.id === id).cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}${RELICS.find(r => r.id === id).cursed ? `<em class="pause-cost">${t(`relic.${id}.cost`)}</em>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
+  return `<ul class="pause-relics">${ids.map(id => { const r = RELICS.find(x => x.id === id); return `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}${r.cursed ? `<em class="pause-cost">${t(`relic.${id}.cost`)}</em>` : ''}</li>`; }).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
-  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t('pause.info', { stage: roman[game.stage], name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
+  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t(game.mode === 'endless' ? 'pause.infoEndless' : 'pause.info', { stage: roman[game.stage], n: game.floor, name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
 }
 function openSettings() {
   if (['upgrade', 'dead', 'won'].includes(modalKind)) modalReturn = modalKind;
@@ -265,12 +270,12 @@ function openUpgrade(choices) {
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${t(win ? 'result.winText' : 'result.loseText')}</p><div class="result-stats"><div><strong>${roman[game.stage]} / V</strong><span>${t('result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p><div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
   camera = 0; $('boss-hud').hidden = true; $('relic-tray').innerHTML = ''; $('stage-announcement').classList.remove('show');
-  $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = 'I — V';
+  $('stage-name').textContent = t('stage.0.name'); $('stage-number').textContent = stageLabel(0);
   [...$('stage-dots').children].forEach((e,i) => e.className = i === 0 ? 'current' : '');
   [...$('journey-stages').children].forEach((e,i) => e.className = i === 0 ? 'active' : '');
   hitCount = 0; comboTime = 0; updateHud();
@@ -282,7 +287,8 @@ function showTitle() {
   audio.suspend(); audio.setIntensity(1);
 }
 
-$('start-button').addEventListener('click', startRun);
+$('start-button').addEventListener('click', () => startRun());
+$('endless-button').addEventListener('click', () => { if (endlessUnlocked()) startRun('endless'); });
 $('help-button').addEventListener('click', openHelp);
 $('settings-button').addEventListener('click', openSettings);
 $('pause-button').addEventListener('click', () => { if (game.state === 'title') openHelp(); else if (game.state === 'paused') closeModal(); else openPause(); });
@@ -310,7 +316,7 @@ $('modal').addEventListener('click', e => {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;
     case 'help': openHelp(); break;
-    case 'restart': startRun(); break;
+    case 'restart': startRun(game.mode); break;
     case 'title': showTitle(); break;
     case 'restart-confirm': openModal(`<div class="modal-eyebrow">${t('decor.confirm')}</div><h2 id="modal-title">${t('confirm.title')}</h2><p>${t('confirm.text')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('pause.resume')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, 'confirm'); break;
   }
@@ -376,7 +382,7 @@ function updateHud() {
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
   document.querySelector('[data-control="magic"]').classList.toggle('unavailable', !p.lunatic && p.mp < p.magicCost);
-  for (const [c, cd, total] of [['magic', p.magicCd, p.lunatic ? 6 : .65], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
+  for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
