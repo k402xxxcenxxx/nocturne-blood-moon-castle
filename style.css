@@ -783,8 +783,16 @@ kbd {
 .magic-button.unavailable {
   opacity:.35;
 }
-.dash-button.cooldown {
+.action-button.cooldown {
   opacity:.4;
+}
+.action-button.cooldown::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  background:conic-gradient(#0009 calc(var(--cd,0) * 360deg),transparent 0);
+  pointer-events:none;
 }
 .attack-button {
   width:81px;
@@ -2337,5 +2345,73 @@ b[data-i18n] {
 @media (max-height:480px) {
   .room-banner.elite {
     top:31%; /* below the objective line, still above the enemy warning band */
+  }
+}
+
+.relic-card[data-cursed] {
+  border-color:#8a1c2c;
+  background:linear-gradient(145deg,#2c1319cc,#140e14dd);
+  box-shadow:inset 0 3px 0 #c4202f,inset 0 0 22px #6a101c55;
+}
+.relic-card[data-cursed][data-synergy] {
+  box-shadow:inset 0 3px 0 #c4202f,inset 0 -3px 0 #8f6cc9,inset 0 0 22px #6a101c55;
+}
+.relic-card[data-cursed]:hover,.relic-card[data-cursed]:focus-visible {
+  border-color:#e0505e;
+  background:#2f1219;
+}
+.relic-card[data-cursed]>svg,.relic-card[data-cursed] small,.relic-card .card-cost b {
+  color:#e0505e;
+}
+.relic-card .card-cost {
+  margin-top:10px;
+  padding:5px 7px;
+  font-size:11px;
+  line-height:1.5;
+  color:#e8b4b9;
+  background:#8a1c2c33;
+  border-left:2px solid #c4202f;
+}
+.relic-card .card-cost b {
+  display:block;
+  font-size:8px;
+  letter-spacing:3px;
+  font-weight:normal;
+}
+.relic-icon[data-cursed],.pause-relics li[data-cursed] {
+  border-color:#c4202f;
+  color:#e0505e;
+  box-shadow:0 0 6px #c4202f88;
+}
+.pause-relics li[data-cursed] {
+  background:#2c1319;
+  color:#e8b4b9;
+}
+.pause-relics li[data-cursed] svg {
+  color:#e0505e;
+}
+.pause-relics li[data-cursed] {
+  flex-wrap:wrap;
+  max-width:230px;
+}
+.pause-relics .pause-cost {
+  flex-basis:100%;
+  font-style:normal;
+  font-size:9px;
+  line-height:1.25;
+  color:#c98c93;
+  text-align:left;
+}
+@media (max-height:480px) {
+  .relic-card .card-cost {
+    margin-top:4px;
+    padding:2px 5px;
+    font-size:9px;
+    line-height:1.35;
+  }
+  .relic-card .card-cost b {
+    display:inline;
+    margin-right:4px;
+    letter-spacing:1px;
   }
 }

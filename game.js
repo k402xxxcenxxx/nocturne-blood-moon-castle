@@ -27,7 +27,7 @@ function applySettings() {
   save('nocturne-settings', settings);
 }
 function updateBest() { $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
-function relicTray() { return game.relics.map(id => `<span class="relic-icon" title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}</span>`).join(''); }
+function relicTray() { return game.relics.map(id => { const r = RELICS.find(x => x.id === id); return `<span class="relic-icon"${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}</span>`; }).join(''); }
 function applyLanguage() {
   setLanguage(settings.lang); document.documentElement.lang = language();
   document.title = t('meta.title'); document.querySelector('meta[name="description"]').content = t('meta.description');
@@ -209,7 +209,7 @@ function handleEvent(e) {
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
@@ -239,7 +239,7 @@ function pauseRelics() {
   const ids = Object.keys(counts);
   if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
   const syn = game.activeSynergies().map(s => `<li title="${t(s.key)}"><b>${t(`relic.${s.a}.name`)} + ${t(`relic.${s.b}.name`)}</b> ${t(s.key)}</li>`).join('');
-  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''} title="${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
+  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${RELICS.find(r => r.id === id).cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${RELICS.find(r => r.id === id).cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}${RELICS.find(r => r.id === id).cursed ? `<em class="pause-cost">${t(`relic.${id}.cost`)}</em>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
@@ -261,7 +261,7 @@ function synergyLine(id) {
 }
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -305,7 +305,7 @@ $('modal').addEventListener('click', e => {
     return;
   }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
-  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play('upgrade'); game.chooseRelic(id); $('relic-tray').innerHTML = relicTray(); } return; }
+  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play(RELICS.find(r => r.id === id)?.cursed ? 'cursedPick' : 'upgrade'); game.chooseRelic(id); $('relic-tray').innerHTML = relicTray(); } return; }
   switch (button.dataset.command) {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;
@@ -351,10 +351,13 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
-function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2 }); }
+let lastRoomText = '';
+function showRoom(stage, index) { for (let i = bannerQueue.length; i--;) if (bannerQueue[i].room !== undefined) bannerQueue.splice(i, 1); bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2, room: index }); }
 function pumpBanner() {
+  while (bannerQueue.length && bannerQueue[0].room !== undefined && bannerQueue[0].room !== game.roomIndex) bannerQueue.shift(); // stale room names from stepping back and forth
   if (announceTime > 0 || roomTime > 0 || !bannerQueue.length) return;
   const b = bannerQueue.shift(), el = $('room-banner');
+  if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
 function updateHud() {
@@ -372,8 +375,8 @@ function updateHud() {
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
-  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', p.mp < p.magicCost);
-  document.querySelector('[data-control="dash"]').classList.toggle('cooldown', p.dashCd > 0);
+  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', !p.lunatic && p.mp < p.magicCost);
+  for (const [c, cd, total] of [['magic', p.magicCd, p.lunatic ? 6 : .65], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
