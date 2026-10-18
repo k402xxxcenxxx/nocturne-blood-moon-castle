@@ -157,7 +157,8 @@ function handleEvent(e) {
     case 'enemySwing':
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
-      effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: .24, max: .24, boss: e.boss }); break;
+      if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
+      if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
       const col = { shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a' }[e.name];
       flashNumber({ ...e, y: e.y - 30, size: 22, amount: t('reaction.' + e.name) }, col);
@@ -412,10 +413,10 @@ const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // 
 let auraG = null, vigG = null, vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
 function auraGradient() { if (!auraG) { auraG = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); auraG.addColorStop(0, 'rgba(255,70,70,.45)'); auraG.addColorStop(1, 'rgba(255,70,70,0)'); } return auraG; }
 function vignetteGradient() { if (!vigG || vigW !== viewWidth) { vigW = viewWidth; vigG = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); vigG.addColorStop(0, 'rgba(160,10,30,0)'); vigG.addColorStop(1, 'rgba(160,10,30,.55)'); } return vigG; }
-function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null) {
+function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
   ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
-  const radius = weapon === 'heavy' ? 118 : weapon === 'twin' ? 62 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
+  const radius = weapon === 'heavy' ? 118 : weapon === 'twin' ? 62 : big ? 135 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
   if (weapon === 'twin') { // two short crossed arcs
     ctx.strokeStyle = tint; ctx.lineWidth = 3;
     for (const f of [1, -1]) { ctx.save(); ctx.scale(1, f); ctx.beginPath(); ctx.arc(7, -3, radius, -.95, .6); ctx.stroke(); ctx.restore(); }
@@ -521,7 +522,7 @@ function drawEffects(dt) {
       ctx.save(); ctx.globalAlpha = fx.life / fx.max; ctx.lineJoin = 'miter';
       for (const [w, c] of [[4, '#ffe97a88'], [1.5, '#fffbd0']]) { ctx.lineWidth = w; ctx.strokeStyle = c; ctx.beginPath(); fx.pts.forEach(([px, py], i) => i ? ctx.lineTo(Math.round(px), Math.round(py)) : ctx.moveTo(Math.round(px), Math.round(py))); ctx.stroke(); }
       ctx.restore();
-    } else drawSlash(fx.x, fx.y, fx.dir, progress, fx.boss, true);
+    } else drawSlash(fx.x, fx.y, fx.dir, progress, fx.boss, true, null, fx.big);
     fx.life -= dt;
   }
   effects = effects.filter(e => e.life > 0);
@@ -567,7 +568,7 @@ function render(dt) {
         if (lastWard.get(e) > 0 && !(e.ward > 0)) { burst(e.x, e.y - 30, '#9fd8ff', 16, 190); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#9fd8ff' }); }
         lastWard.set(e, e.ward);
       }
-      drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
+      drawEnemy(ctx, e, worldTime, !settings.shake); drawStatus(ctx, e, worldTime, !settings.shake);
       if (e.type === 'boss' && e.travel > 0 && (dustTimer -= dt) <= 0) { dustTimer = .035; burst(e.x - e.dir * 28, e.y - 2, '#9a8c77', 3, 90, -e.dir, 3); } // charge dust kicked up behind the feet
       if (e.type !== 'boss' && e.hp < e.maxHp) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
@@ -588,7 +589,7 @@ function render(dt) {
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
-      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; ctx.strokeText('!', bx, by2); ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', bx, by2); ctx.lineWidth = 1; }
+      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 20px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
