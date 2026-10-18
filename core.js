@@ -60,6 +60,7 @@ const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this c
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source.
+const AFFIXES = ['swift', 'splitting', 'warded'], ELITE_BEAT = .8, ELITE_DAMAGE = 1.3, WARD_AMOUNT = 30, WARD_PERIOD = 6, ELITE_NOTICE = 600;
 const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35, plunge: 45 };
 
 export class Game {
@@ -111,12 +112,12 @@ export class Game {
     this.worldWidth = spec.width;
     this.portalX = spec.width - 145;
     this.portalOpen = false;
-    this.freeze = 0;
+    this.freeze = 0; this.eliteBeat = 0;
     this.projectiles = [];
     this.shots = []; // player-owned projectiles; never touched by enemy-projectile code or Eclipse clearing
     this.pickups = [];
     this.platforms = []; this.rooms = []; this.chests = []; this.roomIndex = -1;
-    this.enemies = [];
+    this.enemies = []; this.eliteBeat = 0;
     this.traps = []; this.obstacles = [];
     const spot = boss ? null : this.buildRooms(index);
     const regular = boss ? spec.count : spec.count - 2; // the last two are the required guards at the gate
@@ -134,6 +135,13 @@ export class Game {
       for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, index).required = true; }
       const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest
       Object.assign(guard, { y: spot.y, plat: spot.plat });
+      const mult = index === 0 ? 2.6 : guard.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
+      let affix = AFFIXES[Math.floor(this.rand() * AFFIXES.length)]; // the optional chest's guard is this stage's elite
+      if (affix === 'warded' && guard.type === 'shield') affix = AFFIXES[Math.floor(this.rand() * 2)]; // a shield bearer is never Warded: swift or splitting
+      Object.assign(this.chests[1], { sealed: true }); // sealed until this guard (linked by chest id) is gone
+      Object.assign(guard, { chest: 1, elite: true, affix, damage: guard.damage * ELITE_DAMAGE, hp: Math.round(guard.hp * mult), maxHp: Math.round(guard.hp * mult) });
+      if (affix === 'swift') guard.speed *= 1.5;
+      if (affix === 'warded') { guard.ward = WARD_AMOUNT; guard.wardT = WARD_PERIOD; }
     }
     this.totalEnemies = this.enemies.length;
     this.placeHazards(index);
@@ -162,7 +170,8 @@ export class Game {
     this.chests.push({ id: 0, x: cx, y: FLOOR, ...CHEST_SIZE, kind: 'relic', optional: false, opened: false });
     const top = this.platforms.filter(p => !p.moving && p.x >= side.x && p.x < side.x + side.w).sort((a, b) => a.y - b.y)[0];
     this.chests.push({ id: 1, x: Math.round(top.x + top.w * .25), y: top.y, ...CHEST_SIZE, kind: this.rand() < .5 ? 'relic' : 'heal', optional: true, opened: false });
-    return { x: top.x + top.w * .72, y: top.y, plat: top };
+    const chest = this.chests[1]; // the guard stands just right of the chest (the hero arrives from the left), so taking it means facing it
+    return { x: Math.min(chest.x + 36, top.x + top.w - 14), y: top.y, plat: top };
   }
   mirrorX(x) { const r = this.rooms.find(r => r.mirror && x >= r.x && x < r.x + r.w); return r ? 2 * r.x + r.w - x : x; }
   // Traps, barricades and altars (none on the boss stage; traps only on stages 0, 2, 3). Drawn after enemies so existing seeds keep their layout.
@@ -230,7 +239,7 @@ export class Game {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     return this.enemies.at(-1);
   }
   update(dt, input = {}) {
@@ -238,6 +247,10 @@ export class Game {
     dt = Math.min(dt, 1 / 30);
     this.time += dt;
     this.elapsed += dt;
+    if (this.eliteBeat > 0) { // frozen beat after an elite dies: nothing updates, then the reward pick opens
+      if ((this.eliteBeat -= dt) <= 0) this.rollChoices('elite');
+      return;
+    }
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
     this.updatePlatforms(dt);
@@ -316,8 +329,9 @@ export class Game {
   // A grounded hero beside an unopened chest opens it: a relic chest offers a 3-relic pick (no heal, play resumes in place), a heal chest restores HP and MP.
   updateChests() {
     const p = this.player;
+    for (const c of this.chests) if (c.sealed && !this.enemies.some(e => e.chest === c.id && e.hp > 0)) { c.sealed = false; this.emit('unseal', { x: c.x, y: c.y }); }
     if (!p.grounded) return;
-    for (const c of this.chests) if (!c.opened && Math.abs(p.x - c.x) < CHEST_REACH && Math.abs(p.y - c.y) < 2) {
+    for (const c of this.chests) if (!c.opened && !c.sealed && Math.abs(p.x - c.x) < CHEST_REACH && Math.abs(p.y - c.y) < 2) {
       c.opened = true;
       this.emit('chest', { x: c.x, y: c.y, kind: c.kind, optional: c.optional });
       if (c.kind === 'relic') { this.rollChoices('chest'); return; }
@@ -467,7 +481,8 @@ export class Game {
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
-    e.hp -= amount; e.flash = .14;
+    const through = this.absorb(e, amount), absorbed = amount - through;
+    e.hp -= through; e.flash = .14;
     const armored = e.armor > 0; // post-stagger armor: damage lands, but no poise damage, flinch or knockback
     if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
     const broken = e.hp > 0 && e.poise <= 0;
@@ -492,7 +507,7 @@ export class Game {
       } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * .4;
       if (!quiet && !keepsTell && e.type !== 'boss') { if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
-      this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount, dir, crit, heavy });
+      this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy });
     }
     if (broken) this.stagger(e);
     this.settle(e);
@@ -522,14 +537,36 @@ export class Game {
       }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
       if (e.required) this.emit('guards', this.guardStatus());
+      if (e.affix === 'splitting') this.splitElite(e);
+      if (e.elite) {
+        this.emit('eliteKill', { x: e.x, y: e.y - e.h * .5, affix: e.affix });
+        if (this.state === 'playing') this.eliteBeat = ELITE_BEAT;
+      }
+    }
+  }
+  // A warded elite's shield soaks damage before HP; returns what gets through.
+  absorb(e, amount) { const soak = Math.min(e.ward, amount); e.ward -= soak; return amount - soak; }
+  // Splitting elite death: two copies (0.4x max health, plain enemies) on the same surface, to its left and right, never inside obstacles or off the platform.
+  splitElite(e) {
+    for (const side of [-1, 1]) {
+      let x = e.x;
+      const lo = Math.max(30, e.plat ? e.plat.x + e.w / 2 : 0), hi = Math.min(this.worldWidth - 40, e.plat ? e.plat.x + e.plat.w - e.w / 2 : Infinity);
+      for (let d = 40; d <= 240; d += 20) {
+        const c = clamp(e.x + side * d, lo, hi); // toward the platform interior: clamped, never beyond the edge
+        if (side * (c - e.x) < 12 || this.obstacles.some(o => e.y > o.y - o.h + 1 && Math.abs(c - o.x) < (e.w + o.w) / 2)) continue;
+        x = c; break;
+      }
+      const copy = this.spawnEnemy(e.type, x, this.stage), hp = Math.round(e.maxHp * .4);
+      Object.assign(copy, { hp, maxHp: hp, y: e.y, plat: e.plat, dir: e.dir });
     }
   }
   stacks(id) { return this.relics.filter(r => r === id).length; }
   // Elemental damage: no hit-stop, flinch, poise damage or new statuses. Art listens to 'statusTick'.
   elemDamage(e, amount, source) {
     amount = Math.max(1, Math.round(amount));
-    e.hp -= amount;
-    this.emit('statusTick', { source, x: e.x, y: e.y - e.h * .55, amount });
+    const through = this.absorb(e, amount);
+    e.hp -= through;
+    this.emit('statusTick', { source, x: e.x, y: e.y - e.h * .55, amount: through, absorbed: amount - through });
     this.settle(e);
   }
   // Statuses and reactions for one landed, unblocked sword/Eclipse hit. Reactions read the pre-hit state, then the hit applies its statuses.
@@ -623,6 +660,10 @@ export class Game {
     e.blessed = Math.max(0, e.blessed - dt); e.blessCd = Math.max(0, e.blessCd - dt);
     this.tickStatus(e, dt);
     if (e.hp <= 0) return;
+    if (e.elite) {
+      if (e.affix === 'warded' && (e.wardT -= dt) <= 0) { e.wardT += WARD_PERIOD; e.ward = WARD_AMOUNT; }
+      if (!e.seen && Math.abs(this.player.x - e.x) < ELITE_NOTICE) { e.seen = true; this.emit('elite', { x: e.x, y: e.y, affix: e.affix }); }
+    }
     const speed = e.speed;
     if (e.blessed > 0) e.speed *= 1.15;
     if (e.chill > 0) e.speed *= e.type === 'boss' ? .85 : .68;
@@ -706,6 +747,7 @@ export class Game {
       return;
     }
     if (e.travel > 0) { this.bossCharge(e, dt, face); return; }
+    const tellBefore = e.tell;
     if (e.type === 'bat') {
       e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
       e.vx = e.dir * e.speed; e.x += e.vx * dt;
@@ -737,6 +779,7 @@ export class Game {
       if (distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0 && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
       else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
     }
+    if (e.affix === 'swift' && e.tell > 0 && !(tellBefore > 0)) e.tell = Math.max(.3, e.tell * .8); // Swift: shorter warnings, never under 0.3 s
   }
   // Boss move choice: never the same move twice in a row; null-like '' means walk closer.
   bossPick(e, distance) {
@@ -859,6 +902,7 @@ export class Game {
     const relic = this.choices.find(r => r.id === id);
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
+    if (this.pickReason === 'elite') { this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20); this.player.mp = this.player.maxMp; this.state = 'playing'; return true; } // like a stage pick's restore, but play resumes in place
     if (this.pickReason === 'chest') { this.state = 'playing'; return true; } // chest pick: no heal, no stage change
     if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
     else {

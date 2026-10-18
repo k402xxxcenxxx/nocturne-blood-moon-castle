@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
@@ -58,6 +58,7 @@ function getInput() {
   }
   return input;
 }
+const lastWard = new WeakMap(); // enemy -> ward value last frame
 function toast(message) { $('toast').textContent = message; toastTime = 2.6; $('toast').classList.add('show'); }
 function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   for (let i = 0; i < count; i++) {
@@ -66,6 +67,8 @@ function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   }
   if (particles.length > 300) particles.splice(0, particles.length - 300);
 }
+const WARD_COLOR = '#9fd0ff';
+const bannerQueue = []; // top banners (room names, elite sightings) wait for the stage announcement and each other
 function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, size: e.size, color }); }
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
 function recordResult(win) { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; save('nocturne-records', records); updateBest(); }
@@ -95,12 +98,17 @@ function handleEvent(e) {
       burst(e.x, e.y, e.crit ? '#ffe8a6' : '#e2bb80', e.heavy ? 22 : 12, e.heavy ? 240 : 180);
       burst(e.x, e.y, '#bf6078', 6, 100);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .16, max: .16, dir: e.dir });
-      flashNumber(e, e.crit ? '#fff0a9' : '#f0ddaa'); hitCount++; comboTime = 2.1;
+      if (e.absorbed > 0) numbers.push({ x: e.x + 18, y: e.y - 20, text: String(e.absorbed), life: .85, size: 12, color: WARD_COLOR });
+      if (!(e.amount <= 0 && e.absorbed > 0)) flashNumber(e, e.crit ? '#fff0a9' : '#f0ddaa'); // ward ate everything: no "0"
+      hitCount++; comboTime = 2.1;
       break;
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
       if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
       break;
+    case 'eliteKill': lastEliteAffix = e.affix; // big purple burst, ring and shake
+      audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
@@ -170,9 +178,12 @@ function handleEvent(e) {
     case 'statusTick': { // merge rapid ticks from one source near one spot into a single small number
       if (e.source === 'burn' || e.source === 'bleed') audio.play('tick', e.source === 'burn' ? 1 : .8); // reactions have their own sound
       const col = { burn: '#ff9a3a', bleed: '#d8445a', shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a', frost: '#9fd8ff', shock: '#ffe97a' }[e.source] || '#c9c2d8';
-      const n = numbers.find(o => o.tick === e.source && o.life > .45 && Math.abs(o.x - e.x) < 26 && Math.abs(o.y - e.y) < 40);
-      if (n) { n.sum += e.amount; n.text = String(n.sum); n.life = .7; }
-      else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
+      for (const [key, amount, color, dx] of [[e.source, e.amount, col, 0], [`${e.source}:ward`, e.absorbed, WARD_COLOR, 14]]) {
+        if (!(amount > 0)) continue; // zero damage to HP shows only the ward number
+        const n = numbers.find(o => o.tick === key && o.life > .45 && Math.abs(o.x - e.x - dx) < 26 && Math.abs(o.y - e.y) < 40);
+        if (n) { n.sum += amount; n.text = String(n.sum); n.life = .7; }
+        else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + dx + Math.random() * 10 - 5, y: e.y - 4 - dx, text: String(amount), sum: amount, tick: key, life: .7, size: 11, color, soft: true });
+      }
       break;
     }
     case 'obstacleHit': audio.play(e.kind === 'altar' ? 'stoneHit' : 'woodHit', .6 + Math.min(e.amount || 0, 40) / 100); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
@@ -187,7 +198,9 @@ function handleEvent(e) {
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
+    case 'unseal': burst(e.x, e.y - 18, '#8f6be0', 18, 140); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
+    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t('hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
@@ -196,7 +209,7 @@ function handleEvent(e) {
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); resetHud(); particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
@@ -246,8 +259,9 @@ function synergyLine(id) {
   const partners = game.synergyPartners(id);
   return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
 }
+let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -264,7 +278,7 @@ function resetHud() {
 function showTitle() {
   closeModal(false); game = new Game(handleEvent); resetHud();
   $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
-  particles = []; effects = []; trails = []; numbers = [];
+  bannerQueue.length = 0; particles = []; effects = []; trails = []; numbers = [];
   audio.suspend(); audio.setIntensity(1);
 }
 
@@ -337,7 +351,12 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
-function showRoom(stage, index) { $('room-banner').textContent = t(`room.${stage}.${index}`); $('room-banner').classList.add('show'); roomTime = 2.2; }
+function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2 }); }
+function pumpBanner() {
+  if (announceTime > 0 || roomTime > 0 || !bannerQueue.length) return;
+  const b = bannerQueue.shift(), el = $('room-banner');
+  el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
+}
 function updateHud() {
   const p = game.player;
   $('hp-text').innerHTML = `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -412,6 +431,9 @@ function drawShot(s) { // sized to the hit radius s.r
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
+    if (fx.type === 'wardBreak') { // expanding ring: blue for a shattered ward, purple for an elite kill
+      ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = fx.color; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.arc(fx.x, fx.y, Math.round(20 + progress * (fx.r || 60)), 0, 7); ctx.stroke(); ctx.restore();
+    }
     if (fx.type === 'magic') {
       ctx.save(); ctx.translate(fx.x, fx.y); ctx.globalAlpha = (1 - progress) * .85;
       const radius = 28 + Math.sin(progress * Math.PI / 2) * 185;
@@ -500,6 +522,10 @@ function render(dt) {
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
+      if (e.elite) { // ward broke since last frame: shatter flash (render-only; compares against the previous frame)
+        if (lastWard.get(e) > 0 && !(e.ward > 0)) { burst(e.x, e.y - 30, '#9fd8ff', 16, 190); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#9fd8ff' }); }
+        lastWard.set(e, e.ward);
+      }
       drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
       if (e.type === 'boss' && e.travel > 0 && (dustTimer -= dt) <= 0) { dustTimer = .035; burst(e.x - e.dir * 28, e.y - 2, '#9a8c77', 3, 90, -e.dir, 3); } // charge dust kicked up behind the feet
       if (e.type !== 'boss' && e.hp < e.maxHp) {
@@ -520,6 +546,7 @@ function render(dt) {
         ctx.fillStyle = '#13111b'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#e0bd6a'; ctx.stroke(); ctx.lineWidth = 1;
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
+      if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; ctx.strokeText('!', bx, by2); ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
@@ -559,6 +586,7 @@ function tick(now) {
   comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
   if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
   if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
+  pumpBanner();
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);

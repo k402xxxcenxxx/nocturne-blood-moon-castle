@@ -290,6 +290,14 @@ export function drawChest(ctx, c, time = 0) {
   rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, '#7a5632', x + 1, y + 1, c.w - 2, 8);
   rect(ctx, gold, x + 1, y + 3, c.w - 2, c.optional ? 4 : 2); // optional chests: wide gold lid band
   rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8);
+  if (c.sealed) { // purple chain band across the lid and body, pulsing rune at the centre
+    const pulse = .6 + .4 * Math.sin(time * 5);
+    rect(ctx, '#1b1030', x - 3, y + 5, c.w + 6, 7); rect(ctx, '#8f6be0', x - 2, y + 6, c.w + 4, 5);
+    for (let i = 0; i < c.w + 4; i += 6) rect(ctx, '#1b1030', x - 2 + i, y + 8, 3, 2);
+    ctx.globalAlpha = pulse; rect(ctx, '#e6d8ff', x + c.w / 2 - 4, y + 4, 8, 9); ctx.globalAlpha = 1;
+    rect(ctx, '#3a1f78', x + c.w / 2 - 2, y + 6, 4, 5);
+    return;
+  }
   const mx = x + c.w / 2, sy = y + 11; // shape symbol on a dark plate: heart = heal, diamond = relic (readable without colour)
   rect(ctx, '#140f0c', mx - 7, sy - 6, 14, 12);
   if (heal) { rect(ctx, '#e9fff1', mx - 5, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx + 1, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx - 5, sy - 1, 10, 2); rect(ctx, '#e9fff1', mx - 3, sy + 1, 6, 2); rect(ctx, '#e9fff1', mx - 1, sy + 3, 2, 1); }
@@ -625,6 +633,11 @@ export function drawEnemy(ctx, e = {}, time = 0) {
     const fx = e.dir === -1 ? b.x : b.x + b.w, my = Math.round(b.y + b.h / 2); ctx.strokeStyle = '#ec8b7c'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(Math.round(e.x + (e.dir === -1 ? -10 : 10)), my); ctx.lineTo(Math.round(fx), my); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#e4cfbc'; ctx.fillRect(Math.round(fx) - (e.dir === -1 ? 0 : 6), my - 3, 6, 6); ctx.restore(); }
   if (e.blessRadius > 0 && e.tell > 0) { const p = Math.min(1, 1 - e.tell / .9); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.12 + .3 * p})`; ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - 2, e.blessRadius, 20, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); } // flat floor reach: fills as the warning ends
   if (e.blessed > 0) { const pu = Math.sin(time * 6) * .5 + .5, hy = Math.round(y - 88 - pu * 2); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.2 + pu * .1})`; ctx.strokeStyle = `rgba(255,106,92,${.6 + pu * .4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 29, 26, 40, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#ff6a5c'; ctx.beginPath(); ctx.moveTo(x, hy - 7); ctx.quadraticCurveTo(x + 7, hy + 1, x, hy + 5); ctx.quadraticCurveTo(x - 7, hy + 1, x, hy - 7); ctx.fill(); ctx.restore(); }
+  if (e.elite) { // purple aura hugging the body (faint fill so the "!" and bars stay readable); ward ring shrinks and fades as the shield drains
+    const pu = Math.sin(time * 4) * .5 + .5; ctx.save(); ctx.fillStyle = `rgba(150,90,220,${.1 + pu * .07})`; ctx.strokeStyle = `rgba(190,140,255,${.45 + pu * .3})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 30, 30 + pu * 3, 44 + pu * 3, 0, 0, 7); ctx.fill(); ctx.stroke();
+    for (let i = 0; i < 3; i++) { const p = (time * .7 + i / 3) % 1; ctx.fillStyle = `rgba(214,180,255,${1 - p})`; ctx.fillRect(Math.round(x + Math.sin(i * 2.4 + time) * 20) - 1, Math.round(y - 8 - p * 70), 3, 3); } // rising motes
+    if (e.ward > 0) { const r = Math.min(1, e.ward / 30); ctx.strokeStyle = `rgba(159,216,255,${.35 + .65 * r})`; ctx.lineWidth = 1 + 2 * r; ctx.beginPath(); ctx.arc(x, y - 30, Math.round(40 + 10 * r), 0, 7); ctx.stroke(); }
+    ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
@@ -777,5 +790,16 @@ export function drawStatus(ctx, e, time = 0, calm = false) {
     for (let i = 0; i < n; i++) { const ph = (t * 1.3 + i * .31) % 1; ctx.globalAlpha = 1 - ph * .6; ctx.fillRect(l + 3 + (i * 6143 % Math.max(1, w - 6)), Math.round(top + h * .3 + ph * h * .6), 2, 3 + (ph > .5 ? 1 : 0)); }
   }
   if (e.frostMeter > 0 && !frozen) { ctx.globalAlpha = .9; for (let i = 0; i < 3; i++) { ctx.fillStyle = i < e.frostMeter ? '#bfe8ff' : '#2b3a52'; ctx.fillRect(x - 8 + i * 6, y + 3, 4, 3); } }
+  ctx.restore();
+}
+
+// Affix icon (swift arrow / splitting diamond / warded shield) at (x, y), about 10 px wide.
+export function drawAffixIcon(ctx, affix, x, y) {
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.lineJoin = 'round';
+  ctx.fillStyle = '#13111bcc'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, 7); ctx.fill(); ctx.strokeStyle = '#b48cf0'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = ctx.fillStyle = '#efe2ff'; ctx.lineWidth = 1.5;
+  if (affix === 'swift') { ctx.beginPath(); ctx.moveTo(-5, -3); ctx.lineTo(0, -3); ctx.moveTo(-5, 0); ctx.lineTo(3, 0); ctx.moveTo(-5, 3); ctx.lineTo(0, 3); ctx.stroke(); ctx.beginPath(); ctx.moveTo(2, -4); ctx.lineTo(6, 0); ctx.lineTo(2, 4); ctx.fill(); }
+  else if (affix === 'splitting') { ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(5, 0); ctx.lineTo(0, 5); ctx.lineTo(-5, 0); ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 5); ctx.stroke(); }
+  else if (affix === 'warded') { ctx.strokeStyle = ctx.fillStyle = '#9fd8ff'; ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(4, -4); ctx.lineTo(4, 0); ctx.lineTo(0, 5); ctx.lineTo(-4, 0); ctx.closePath(); ctx.stroke(); ctx.fillRect(-1, -2, 2, 3); }
   ctx.restore();
 }
