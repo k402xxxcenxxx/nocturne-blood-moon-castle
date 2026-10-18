@@ -170,7 +170,7 @@ function handleEvent(e) {
         audio.play('bloodFlame');
       } else {
         audio.play('chain');
-        if (e.solo) burst(e.x, e.y, '#ffe97a', 8, 120, 0, 2); // no targets: a local spark on the zapped enemy
+        if (e.solo) burst(e.x, e.y, '#ffe97a', 12, 160, 0, 2); // no targets: a local spark on the zapped enemy
         for (const to of e.targets) {
           const pts = [[e.x, e.y]], n = 5, dx = to.x - e.x, dy = to.y - e.y, len = Math.hypot(dx, dy) || 1;
           for (let i = 1; i < n; i++) pts.push([e.x + dx * i / n - dy / len * (Math.random() - .5) * 26, e.y + dy * i / n + dx / len * (Math.random() - .5) * 26]);

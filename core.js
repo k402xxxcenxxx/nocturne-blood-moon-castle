@@ -618,7 +618,7 @@ export class Game {
       if (targets.length) {
         this.emit('reaction', { name: 'chain', ...mid(e), targets: targets.map(mid) });
         for (const o of targets) { this.elemDamage(o, zap, 'chain'); if (o.hp > 0) o.shock = 4; }
-      } else { // no one to arc to: the shocked target takes half the chain damage itself
+      } else if (e.hp > 0) { // no one to arc to: the living shocked target takes half the chain damage itself
         this.emit('reaction', { name: 'chain', ...mid(e), targets: [], solo: true });
         this.elemDamage(e, zap * .5, 'chain');
         if (e.hp <= 0) return;

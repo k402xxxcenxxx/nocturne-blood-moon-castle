@@ -2503,3 +2503,15 @@ test('#30 wave + frost: a throw lands one frost hit per enemy across both passes
   advance(game, 3);
   assert.equal(events.filter(ev => ev.type === 'statusTick' && ev.source === 'frost').length, 1);
 });
+
+// QA #30: a sword blow that kills a lone shocked enemy runs the solo zap on the corpse, which settles the death a second time.
+test('#30 QA regression: a killing blow on a lone shocked enemy credits one kill and emits one kill event', () => {
+  const { game, events } = elem('shock');
+  const e = enemy(game, 600, { hp: 10 });
+  e.shock = 4; game.chainUsed = false;
+  const kills = game.kills;
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(e.hp, 0);
+  assert.equal(game.kills - kills, 1, 'one kill, not two');
+  assert.equal(events.filter(ev => ev.type === 'kill').length, 1);
+});
