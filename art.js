@@ -270,6 +270,15 @@ function torch(c, x, y, t) {
   rect(c, '#ffe5a1', x - 2, y, 4, 6);
   rect(c, '#eab36199', x + Math.sin(t * 3 + x) * 5, y - 22 - (t * 12 + x) % 18, 2, 2);
 }
+// Placeholder chest (the artist replaces it): relic = violet glow, heal = green, optional chests get a gold lid band; opened chests sit dim.
+export function drawChest(ctx, c, time = 0) {
+  const x = Math.round(c.x - c.w / 2), y = Math.round(c.y - c.h), tint = c.kind === 'heal' ? '#82c9a3' : '#c5b6f4';
+  shadow(ctx, c.x, c.y, c.w + 8);
+  if (!c.opened) { ctx.globalAlpha = .35 + .15 * Math.sin(time * 4); ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(c.x, c.y - c.h / 2, 26, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+  rect(ctx, '#2b1f17', x, y + 8, c.w, c.h - 8); rect(ctx, '#6b4a2b', x + 2, y + 10, c.w - 4, c.h - 12);
+  if (c.opened) { rect(ctx, '#1b1410', x + 2, y + 8, c.w - 4, 5); rect(ctx, '#4d3820', x, y - 2, c.w, 5); return; }
+  rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, c.optional ? '#d6b46a' : '#8a6a3c', x + 1, y + 1, c.w - 2, 8); rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8); rect(ctx, tint, x + c.w / 2 - 1, y + 9, 2, 3);
+}
 export function drawScene(ctx, { camera = 0, width = 960, height = 540, time = 0, stage = 0, platforms = [], worldWidth = 4000 } = {}) {
   stage = Math.max(0, Math.min(4, Math.floor(stage) || 0));
   if (!cache.has(stage)) cache.set(stage, makeScene(stage));
@@ -290,6 +299,7 @@ export function drawScene(ctx, { camera = 0, width = 960, height = 540, time = 0
     rect(ctx, '#090d18bb', x + 4, y + 12, w, 15);
     rect(ctx, '#403b3b', x, y, w, 15); rect(ctx, p.light, x, y, w, 3); rect(ctx, p.trim, x, y + 3, w, 7); rect(ctx, '#27252e', x, y + 12, w, 4);
     rect(ctx, '#c8b28c44', x + 1, y + 4, w - 2, 1);
+    if (platform.moving) rect(ctx, '#c9a24a', x, y + 12, w, 2); // placeholder: amber rail marks a moving platform
     for (let bx = 35; bx < w; bx += 38) rect(ctx, '#292731', x + bx, y + 3, 2, 9);
     poly(ctx, '#4f4640', [[x + 8, y + 16], [x + 28, y + 16], [x + 14, y + 32], [x + 8, y + 32]]);
     poly(ctx, '#4f4640', [[x + w - 28, y + 16], [x + w - 8, y + 16], [x + w - 8, y + 32], [x + w - 14, y + 32]]);
