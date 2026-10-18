@@ -1,4 +1,4 @@
-import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, SKILL_MIN } from './core.js';
+import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN } from './core.js';
 import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -264,8 +264,9 @@ function openSettings() {
   openModal(`<div class="modal-eyebrow">${t('decor.settings')}</div><h2 id="modal-title">${t('settings.title')}</h2><div class="settings-list"><div class="setting"><div><strong>${t('settings.language')}</strong><small>${t('settings.languageDesc')}</small></div><div class="language-options" role="group" aria-label="${t('settings.language')}">${languages}</div></div>${list.map(id => `<div class="setting"><div><strong>${t(`settings.${id}`)}</strong><small>${t(`settings.${id}Desc`)}</small></div><button class="toggle" data-setting="${id}" aria-label="${t(`settings.${id}`)}" aria-pressed="${settings[id]}"></button></div>`).join('')}</div><p class="modal-footnote">${t('vibrate' in navigator ? 'settings.vibrateYes' : 'settings.vibrateNo')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('settings.back')}</button></div>`, 'settings');
 }
 function openHelp() {
-  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', 'magic'], ['gem', 'relics'] ];
-  openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
+  const castle = game.mode === 'castle' && game.state !== 'title';
+  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'] ];
+  openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t(castle ? 'help.castleFootnote' : 'help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function synergyLine(id) {
   const partners = game.synergyPartners(id);
@@ -276,11 +277,11 @@ function openUpgrade(choices) {
   openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function openVigil() { // rest point: one weapon card each, choosing one starts floor 1
-  openModal(`<div class="modal-eyebrow">${t('rest.title')}</div><h2 id="modal-title">${t('rest.choose')}</h2><div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.frenzy`)}</p></button>`).join('')}</div>`, 'vigil', false);
+  openModal(`<div class="modal-eyebrow">${t('rest.title')}</div><h2 id="modal-title">${t('rest.choose')}</h2><div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${game.mode === 'castle' ? t('mode.castle') : t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -381,11 +382,16 @@ function pumpBanner() {
 }
 function updateHud() {
   const p = game.player;
-  const castle = game.mode === 'castle'; // the blood meter reuses the HP bar; the MP bar is empty (the proper blood bar is UX work)
+  const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
+  $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy);
+  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); $('mp-text').textContent = ''; }
+  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; }
+  const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');
+  if (magicLabel.textContent !== want) magicLabel.textContent = want;
   $('hp-text').innerHTML = castle ? `${Math.ceil(p.blood)} <em>/ ${BLOOD_MAX}</em>` : `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
   $('hp-bar').style.width = `${castle ? p.blood / BLOOD_MAX * 100 : p.hp / p.maxHp * 100}%`;
-  $('mp-bar').style.width = castle ? '0%' : `${p.mp / p.maxMp * 100}%`;
-  $('mp-text').textContent = castle ? (p.frenzy ? t('hud.frenzy') : '') : `${Math.floor(p.mp)} / ${p.maxMp}`;
+  $('mp-bar').style.width = `${p.mp / p.maxMp * 100}%`;
+  if (!castle) $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
   $('souls').textContent = game.souls;
   const guards = game.guardStatus();
   const bossStage = game.stage === 4; // only the king is required there, so no guard counter
