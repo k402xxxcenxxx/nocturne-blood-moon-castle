@@ -156,7 +156,10 @@ export class Game {
       for (const [dx, rise, w, kind, axis] of list) this.platforms.push(this.makePlatform(room.x + (room.mirror ? room.w - dx - w : dx), FLOOR - rise, w, THEMES[index], kind || PLATFORM_KINDS[index], axis));
     });
     const main = this.rooms[1 + Math.floor(this.rand() * 3)], side = this.rooms[1 + Math.floor(this.rand() * 3)];
-    this.chests.push({ id: 0, x: Math.round(main.x + main.w * (.3 + this.rand() * .4)), y: FLOOR, ...CHEST_SIZE, kind: 'relic', optional: false, opened: false });
+    let cx = Math.round(main.x + main.w * (.3 + this.rand() * .4));
+    const clear = x => this.platforms.every(p => x < p.x - 60 || x > p.x + p.w + 60); // the floor chest never sits under or beside a platform span
+    for (let d = 0; !clear(cx) && d <= main.w; d += 5) for (const s of [d, -d]) if (clear(Math.round(main.x + main.w * .5) + s)) { cx = Math.round(main.x + main.w * .5) + s; d = main.w; break; }
+    this.chests.push({ id: 0, x: cx, y: FLOOR, ...CHEST_SIZE, kind: 'relic', optional: false, opened: false });
     const top = this.platforms.filter(p => !p.moving && p.x >= side.x && p.x < side.x + side.w).sort((a, b) => a.y - b.y)[0];
     this.chests.push({ id: 1, x: Math.round(top.x + top.w * .25), y: top.y, ...CHEST_SIZE, kind: this.rand() < .5 ? 'relic' : 'heal', optional: true, opened: false });
     return { x: top.x + top.w * .72, y: top.y, plat: top };
@@ -166,7 +169,7 @@ export class Game {
   placeHazards(index) {
     if (index === 4) return;
     const taken = this.chests.filter(c => c.y === FLOOR).map(c => ({ x: c.x, w: 50 })), lo = 150 + SPAWN_CLEAR, hi = this.portalX - SPAWN_CLEAR;
-    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
+    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && (w !== OBSTACLES.altar.w || this.platforms.every(p => x + w / 2 < p.x || x - w / 2 > p.x + p.w)) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
     const place = (w, near = null) => { // random tries between enemies, then anywhere, then a left-to-right scan; `near` limits |x - near| to PILLAR_LINK
       const a = near === null ? -Infinity : near - PILLAR_LINK, b = near === null ? Infinity : near + PILLAR_LINK, from = Math.max(lo + w / 2, a), to = Math.min(hi - w / 2, b);
       for (const pad of [20, -999]) for (let i = 0; i < 40; i++) { const x = Math.round(from + this.rand() * (to - from)); if (free(x, w, pad, a, b)) { taken.push({ x, w }); return x; } }
@@ -626,11 +629,23 @@ export class Game {
     const prevX = e.x;
     this.moveEnemy(e, dt);
     e.speed = speed;
+    // Hero above and a step up is in reach: hold at the platform edge instead of walking off, until the jump cooldown allows the jump.
+    // Only while a reachable step exists and the cooldown runs, so it can never wait forever.
+    const pl = e.plat, hp = this.player;
+    if (pl && e.vy === 0 && e.jumpCd > 0 && hp.grounded && e.y - hp.y > 50 && e.stun <= 0 && e.frozen <= 0 && (e.x < pl.x || e.x > pl.x + pl.w) && this.stepUpFor(e)) e.x = clamp(e.x, pl.x, pl.x + pl.w);
     this.collideEnemy(e, prevX, dt);
     if (e.type !== 'bat' && e.type !== 'boss' && !e.vault) this.groundEnemy(e, dt);
   }
   // Ground enemy vertical life: gravity, standing on platforms, riding moving ones, a jump up toward a hero above (only onto a platform within a single jump)
   // and a drop through toward a hero below. A hero 90 px above the enemy's platform chain is reached step by step; an enemy directly under a 160 step just waits.
+  stepUpFor(e) { // a platform one jump up, within 50 px sideways, and not above the hero; the one nearest the hero
+    const p = this.player; let best = null, bestGap = 1e9;
+    for (const pl of this.platforms) {
+      const rise = e.y - pl.y, side = Math.max(pl.x - e.x, e.x - (pl.x + pl.w), 0);
+      if (rise >= 40 && rise <= 95 && side <= 50 && pl.y >= p.y - 10 && Math.abs(pl.x + pl.w / 2 - p.x) < bestGap) { best = pl; bestGap = Math.abs(pl.x + pl.w / 2 - p.x); }
+    }
+    return best;
+  }
   groundEnemy(e, dt) {
     const p = this.player, near = Math.abs(p.x - e.x) < 560, calm = e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0);
     e.jumpCd = Math.max(0, e.jumpCd - dt); e.dropT = Math.max(0, e.dropT - dt);
@@ -638,11 +653,7 @@ export class Game {
     if (calm && near && e.vy === 0) {
       if (e.plat && p.y - e.y > 60) { e.dropT = .4; e.plat = null; e.vy = 1; } // hero clearly below: step off through the platform
       else if (p.grounded && e.y - p.y > 50 && e.jumpCd <= 0) {
-        let best = null, bestGap = 1e9;
-        for (const pl of this.platforms) { // a platform one jump up, within 50 px sideways, and not above the hero
-          const rise = e.y - pl.y, side = Math.max(pl.x - e.x, e.x - (pl.x + pl.w), 0);
-          if (rise >= 40 && rise <= 95 && side <= 50 && pl.y >= p.y - 10 && Math.abs(pl.x + pl.w / 2 - p.x) < bestGap) { best = pl; bestGap = Math.abs(pl.x + pl.w / 2 - p.x); }
-        }
+        const best = this.stepUpFor(e);
         if (best) { e.vy = -575; e.jumpCd = 1.6; e.plat = null; e.jumpVx = e.x < best.x + 8 ? 140 : e.x > best.x + best.w - 8 ? -140 : 0; }
       }
     }

@@ -2039,7 +2039,7 @@ test('enemies never end up stuck in the air or off the world over many seeded st
     for (let t = 0; t < 8; t += 1 / 60) { game.player.x = game.rooms[2].x + 100; game.player.y = FLOOR; game.player.vy = 0; game.update(1 / 60); }
     for (const e of game.enemies.filter(e => e.type !== 'bat' && e.hp > 0)) {
       assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y) && e.x > 0 && e.x < game.worldWidth, 'finite and inside the world');
-      assert.ok(e.y === FLOOR || e.plat, `seed ${seed} stage ${stage} ${e.type} floats at ${e.y}`);
+      assert.ok(e.y === FLOOR || e.plat || e.vault, `seed ${seed} stage ${stage} ${e.type} floats at ${e.y}`);
     }
   }
 });
@@ -2071,4 +2071,30 @@ test('a blocked enemy facing away from the obstacle stops instead of vaulting; a
 
 test('an altar always keeps at least one pillar', () => {
   layouts((game, stage) => { if (stage === 3) for (const a of game.obstacles.filter(o => o.kind === 'altar')) assert.ok(a.traps.length >= 1); });
+});
+
+// QA #20: docs/game-design.md says an enemy on a 90 step can still reach an adjacent 160 step with the hero on it. Today it walks off the
+// 90 step's edge during its 1.6 s jump cooldown, falls, and never climbs. Expected to fail until the enemy waits or stops at the edge.
+test('a ground enemy on a 90 step climbs to an adjacent 160 step with the hero on it, even while its jump cooldown runs', () => {
+  const { game, player } = arena();
+  const low = { x: 500, y: FLOOR - 90, w: 140, h: 18, theme: 'gate', kind: 'stone', moving: false, move: null };
+  const high = { x: 640, y: FLOOR - 160, w: 140, h: 18, theme: 'gate', kind: 'stone', moving: false, move: null };
+  game.platforms = [low, high];
+  const e = enemy(game, 600, { hp: 9999, y: FLOOR - 90 });
+  e.plat = low; e.jumpCd = 1;
+  let reached = false;
+  for (let t = 0; t < 6 && !reached; t += 1 / 120) {
+    Object.assign(player, { x: 720, y: FLOOR - 160, vy: 0, grounded: true, on: high, invulnerable: 99 });
+    game.update(1 / 120);
+    reached = e.plat === high;
+  }
+  assert.ok(reached, `the enemy should reach the 160 step; it stands at x ${e.x.toFixed(0)}, y ${e.y.toFixed(0)}`);
+});
+
+test('floor chests keep 60 px clear of platform spans and altars are never under a platform', () => {
+  for (let seed = 1; seed <= 200; seed++) for (const stage of [0, 1, 2, 3]) {
+    const g = new Game(() => {}, seed); g.start(); g.state = 'playing'; g.loadStage(stage);
+    for (const c of g.chests.filter(c => c.y === FLOOR)) for (const p of g.platforms) assert.ok(c.x < p.x - 60 || c.x > p.x + p.w + 60, `chest ${c.x} near platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
+    for (const o of g.obstacles.filter(o => o.kind === 'altar')) for (const p of g.platforms) assert.ok(o.x + o.w / 2 < p.x || o.x - o.w / 2 > p.x + p.w, `altar ${o.x} under platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
+  }
 });
