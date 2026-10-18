@@ -154,7 +154,7 @@ export class AudioSystem {
       roar: [60, 40, 120], frenzy: [50, 30, 90, 30, 160], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
-      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -448,6 +448,27 @@ export class AudioSystem {
         tone('sawtooth', 140, 0.25, 0.15, 48);
         tone('noise', 1800, 0.2, 0.3, 180);
         tone('sine', 75, 0.3, 0.36, 35);
+        break;
+      case 'heavyWarn': { // heavy wind-up cue: two rising dissonant bell strikes plus a low swell; mid/high partials carry on phone speakers
+        const d = 0.98 + Math.random() * 0.04;
+        tone('sawtooth', 110, 0.55, 0.1, 190, 0);
+        tone('noise', 600, 0.5, 0.1, 3000);
+        [0, 0.16].forEach((dl, i) => {
+          tone('triangle', (i ? 988 : 880) * d, 0.3, 0.14, undefined, dl);
+          tone('square', (i ? 1480 : 1245) * d, 0.12, 0.035, undefined, dl);
+          tone('sine', 55 * (i + 1), 0.25, 0.22, undefined, dl);
+        });
+        break;
+      }
+      case 'heavyWhoosh': // heavy strike swing: long low whoosh, heavier than swing
+        tone('noise', 2400, 0.3, 0.26, 260);
+        tone('sawtooth', 130, 0.28, 0.09, 45);
+        break;
+      case 'heavyHit': // heavy blow lands: deep boom and stone crunch; layered over hurt
+        tone('sine', 55, 0.6, 0.5, 24);
+        tone('noise', 2000, 0.35, 0.34, 150);
+        tone('sawtooth', 90, 0.3, 0.1, 36);
+        tone('triangle', 240, 0.2, 0.12, 100); // mid thump for phone speakers
         break;
       case 'jump':
         tone('triangle', 140, 0.17, 0.1, 340);
