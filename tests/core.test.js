@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE } from '../core.js';
+import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2797,6 +2797,29 @@ test('castle heavy: sword hits and shots do not cancel the wind-up, Eclipse does
   assert.ok(e.hp < 500, 'damage still lands');
   player.magicCd = 0; game.magic();
   assert.ok(!e.heavy && e.tell === 0 && e.warn === null, 'Eclipse cancels');
+});
+
+test('castle heavy: an Eclipse-cancelled heavy still starts the cooldown and the gap, during the tell and during travel', () => {
+  for (const [type, wait] of [['skeleton', .02], ['bat', null]]) {
+    const { game, player, e } = heavyFoe(type, 50);
+    if (type === 'bat') e.y = FLOOR - 95;
+    player.blood = 200; player.invulnerable = 99; advance(game, .02);
+    assert.ok(e.heavy, type + ' winds up');
+    if (wait === null) { for (let i = 0; i < 240 && !(e.strikeT > 0); i++) advance(game, 1 / 120); advance(game, .1); assert.ok(e.strikeT > 0, 'mid-travel'); }
+    player.magicCd = 0; game.magic();
+    assert.ok(!e.heavy && e.heavyCd >= HEAVY_CD - .1 && game.heavyGap > 0, type + ' cooldown set on cancel');
+  }
+});
+
+test('castle heavy: hit events carry punish only while the enemy recovers from its heavy', () => {
+  const { game, player, events, e } = heavyFoe();
+  player.blood = 200; player.invulnerable = 99; advance(game, .02);
+  game.damageEnemy(e, 1, 1, false, false); // during the tell
+  advance(game, .9);
+  game.damageEnemy(e, 1, 1, false, false); // recovering
+  advance(game, 2);
+  game.damageEnemy(e, 1, 1, false, false); // recovered
+  assert.deepEqual(events.filter(ev => ev.type === 'hit').map(ev => ev.punish), [false, true, false]);
 });
 
 test('castle heavy: recovery lasts about a second, punish hits pay +2 and double poise damage, heavy cooldown is 3 s', () => {

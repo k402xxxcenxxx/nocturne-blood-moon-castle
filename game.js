@@ -98,6 +98,7 @@ function handleEvent(e) {
       if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
+      if (e.punish) audio.play('guardBreak', .9); // opening punished
       rumble(e.crit || e.heavy ? 6 : 3, e.heavy ? .16 : .1);
       if (e.crit && settings.shake) whiteFlash = .045;
       burst(e.x, e.y, e.crit ? '#ffe8a6' : '#e2bb80', e.heavy ? 22 : 12, e.heavy ? 240 : 180);

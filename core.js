@@ -72,7 +72,7 @@ const HEAVY = {
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
   knight: { kind: 'greatswing', tell: 1, recover: 1.1, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
 };
-const HEAVY_CD = 3, HEAVY_GAP = .3, HEAVY_RANGE = 620, HEAVY_WHIFF = .4;
+export const HEAVY_CD = 3, HEAVY_GAP = .3, HEAVY_RANGE = 620, HEAVY_WHIFF = .4;
 export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 128 } };
 const SLICE_EXCLUDED = ['vital', 'leech', 'mana', 'arcane', 'lunaticMoon', 'nightwalk']; // relics that only touch HP, MP or magic cost
 export const SLICE_POOL = RELICS.filter(r => !SLICE_EXCLUDED.includes(r.id)).map(r => r.id);
@@ -619,7 +619,7 @@ export class Game {
       } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * .4;
       if (!quiet && !keepsTell && e.type !== 'boss') { if (winding) this.cancelAttack(e); if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
-      this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy });
+      this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy, punish: this.punishing(e) });
     }
     if (broken) this.stagger(e);
     this.settle(e);
@@ -758,6 +758,7 @@ export class Game {
     this.emit('bossPhase', { phase, x: e.x, y: e.y - e.h * .5 });
   }
   cancelAttack(e) {
+    if (e.heavy) { e.heavyCd = HEAVY_CD; this.heavyGap = HEAVY_GAP; } // a cancelled heavy cools down like a landed one
     if (e.blessRadius) e.blessCd = 2.5;
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false;

@@ -79,8 +79,8 @@ try {
     const s = await state(page);
     assert.equal(s.state, 'rest'); assert.equal(s.blood, 100); assert.equal(s.relics, 0); assert.equal(s.weapon, null);
   });
-  await check('no lost relic stays in the HUD tray after death (expected to fail until fixed)', async () => {
-    // The HUD tray still lists the relics of the dead run behind the Vigil; it should be emptied when the run resets.
+  await check('no lost relic stays in the HUD tray after death (regression guard)', async () => {
+    // The HUD tray still lists the relics of the dead run behind the Vigil; it must be emptied when the run resets.
     assert.equal((await state(page)).tray, 0, 'relic tray still shows the lost relics');
   });
   await check('no browser console errors or uncaught exceptions', async () => {
