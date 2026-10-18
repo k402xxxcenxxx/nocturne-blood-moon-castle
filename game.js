@@ -209,7 +209,7 @@ function handleEvent(e) {
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
@@ -239,7 +239,7 @@ function pauseRelics() {
   const ids = Object.keys(counts);
   if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
   const syn = game.activeSynergies().map(s => `<li title="${t(s.key)}"><b>${t(`relic.${s.a}.name`)} + ${t(`relic.${s.b}.name`)}</b> ${t(s.key)}</li>`).join('');
-  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${RELICS.find(r => r.id === id).cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${RELICS.find(r => r.id === id).cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
+  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${RELICS.find(r => r.id === id).cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${RELICS.find(r => r.id === id).cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}${RELICS.find(r => r.id === id).cursed ? `<em class="pause-cost">${t(`relic.${id}.cost`)}</em>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
@@ -351,11 +351,13 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
-function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2, room: index }); }
+let lastRoomText = '';
+function showRoom(stage, index) { for (let i = bannerQueue.length; i--;) if (bannerQueue[i].room !== undefined) bannerQueue.splice(i, 1); bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2, room: index }); }
 function pumpBanner() {
   while (bannerQueue.length && bannerQueue[0].room !== undefined && bannerQueue[0].room !== game.roomIndex) bannerQueue.shift(); // stale room names from stepping back and forth
   if (announceTime > 0 || roomTime > 0 || !bannerQueue.length) return;
   const b = bannerQueue.shift(), el = $('room-banner');
+  if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
 function updateHud() {
@@ -373,8 +375,8 @@ function updateHud() {
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
-  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', p.mp < p.magicCost);
-  document.querySelector('[data-control="dash"]').classList.toggle('cooldown', p.dashCd > 0);
+  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', !p.lunatic && p.mp < p.magicCost);
+  for (const [c, cd, total] of [['magic', p.magicCd, p.lunatic ? 6 : .65], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }

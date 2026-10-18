@@ -43,7 +43,7 @@ export const RELICS = [
   { id: 'vortex', icon: 'moon', apply: () => {} },
   // Cursed relics: a benefit and a cost, never in the opening pick, at most one per offer; `max` copies, then no longer offered.
   { id: 'bloodOath', icon: 'drop', cursed: true, max: 2, apply: p => { p.swordMul *= 1.6; p.takenMul *= 1.25; } }, // swordMul scales sword hits (combo, thrust, plunge), not wave/beam shots; takenMul applies after armor
-  { id: 'lunaticMoon', icon: 'moon', cursed: true, max: 1, apply: p => { p.lunatic = true; p.mpRegen = 0; } }, // Eclipse free, 4 s cooldown; hit / kill / perfect-dodge MP still pays
+  { id: 'lunaticMoon', icon: 'moon', cursed: true, max: 1, apply: p => { p.lunatic = true; p.mpRegen = 0; } }, // Eclipse free, 6 s cooldown; hit / kill / perfect-dodge MP still pays
   { id: 'nightwalk', icon: 'wind', cursed: true, max: 2, apply: p => { p.speed *= 1.2; p.dashCooldown = Math.max(.35, p.dashCooldown * .6); p.maxHp = Math.max(40, p.maxHp - 25); p.hp = Math.min(p.hp, p.maxHp); } },
 ];
 // Symmetric synergy pairs; the i18n key is `synergy.<first>-<second>` in either direction. Only text: the relics already do the work.
@@ -468,7 +468,7 @@ export class Game {
     const p = this.player;
     const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
     if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
-    p.mp -= cost; p.magicCd = p.lunatic ? 4 : .65; p.invulnerable = Math.max(p.invulnerable, .28);
+    p.mp -= cost; p.magicCd = p.lunatic ? 6 : .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.flameUsed = false;
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });

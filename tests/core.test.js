@@ -2369,13 +2369,13 @@ test('Blood Oath Blade multiplies sword damage, stacks, and damage taken applies
   grant(game, 'bloodOath'); assert.ok(Math.abs(player.takenMul - 1.5625) < 1e-9);
 });
 
-test('Lunatic Moon: free Eclipse on a 4 s cooldown, no noMana, no passive MP, hit MP still works', () => {
+test('Lunatic Moon: free Eclipse on a 6 s cooldown, no noMana, no passive MP, hit MP still works', () => {
   const { game, player, events } = arena();
   grant(game, 'lunaticMoon');
   player.mp = 0; enemy(game, player.x + 50, { hp: 9999 }).damage = 0;
   game.magic();
   assert.equal(events.some(x => x.type === 'magic'), true); assert.equal(player.mp, 0);
-  advance(game, 3.5, { magic: true });
+  advance(game, 5.5, { magic: true });
   assert.equal(events.filter(x => x.type === 'magic').length, 1); assert.equal(events.some(x => x.type === 'noMana'), false);
   advance(game, 1, { magic: true });
   assert.equal(events.filter(x => x.type === 'magic').length, 2);

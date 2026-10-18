@@ -783,8 +783,16 @@ kbd {
 .magic-button.unavailable {
   opacity:.35;
 }
-.dash-button.cooldown {
+.action-button.cooldown {
   opacity:.4;
+}
+.action-button.cooldown::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  background:conic-gradient(#0009 calc(var(--cd,0) * 360deg),transparent 0);
+  pointer-events:none;
 }
 .attack-button {
   width:81px;
@@ -2381,6 +2389,18 @@ b[data-i18n] {
 }
 .pause-relics li[data-cursed] svg {
   color:#e0505e;
+}
+.pause-relics li[data-cursed] {
+  flex-wrap:wrap;
+  max-width:230px;
+}
+.pause-relics .pause-cost {
+  flex-basis:100%;
+  font-style:normal;
+  font-size:9px;
+  line-height:1.25;
+  color:#c98c93;
+  text-align:left;
 }
 @media (max-height:480px) {
   .relic-card .card-cost {

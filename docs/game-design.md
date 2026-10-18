@@ -118,8 +118,8 @@ Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass 
 | id | Name | max | Effect | Cost |
 | --- | --- | --- | --- | --- |
 | bloodOath | Blood Oath Blade | 2 | Sword hit damage ×1.6 per copy (`swordMul`: combo, thrust, plunge fall and shockwave; not wave, beam, ground-wave or Eclipse damage) | Damage taken ×1.25 per copy (`takenMul`), applied after `armor` |
-| lunaticMoon | Lunatic Moon | 1 | Eclipse costs no MP and the `noMana` event never fires | Eclipse cooldown 4 s (instead of 0.65 s); `mpRegen` becomes 0 (hit, kill and perfect-dodge MP, chests and stage restores still apply) |
-| nightwalk | Endless Nightwalk | 2 | Movement speed ×1.2, dash cooldown ×0.6 (floor 0.35 s) | Max HP -25 (minimum 40); current HP drops to the new max if above |
+| lunaticMoon | Lunatic Moon | 1 | Eclipse costs no MP and the `noMana` event never fires | Eclipse cooldown 6 s (instead of 0.65 s); `mpRegen` becomes 0 (hit, kill and perfect-dodge MP, chests and stage restores still apply) |
+| nightwalk | Endless Nightwalk | 2 | Movement speed ×1.2, dash cooldown ×0.6 (floor 0.35 s) | Max HP -25 (floor 40, unreachable with the 2-copy cap); current HP drops to the new max if above |
 
 "Hits" are sword hits (combo, thrust, plunge fall and shockwave) and Eclipse. "Base" is the hero's `damage`. "Stacks" are copies of the relic owned; every per-stack value uses the stack count directly. Blocked shield-bearer hits apply nothing. Damage over time ticks every 0.5 s. Damage-over-time, bonus-hit and reaction damage cause no hit-stop, stun, flinch or poise damage, apply no statuses, emit `statusTick` {source, x, y, amount} and give kill credit (souls, `leech`, MP, drops) like any kill, but only while the run is `playing` (no kills, souls or leech after the hero dies; enemies still die). The damage-number overlay shows at most 12 `statusTick` numbers at once. Statuses live on the enemy (`burn`, `bleed`, `bleedStacks`, `chill`, `frozen`, `frostMeter`, `shock`) and reset on stage load. Reactions read the enemy's state before the hit, then the hit applies its own statuses. Heavy = combo hit 3, thrust, plunge, Eclipse.
 
