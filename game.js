@@ -200,9 +200,10 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('roar', 1); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
-    case 'rest': $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('upgrade'); openVigil(); break;
-    case 'sliceEnd': clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
+    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
+    case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
+    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); openVigil(); break;
+    case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
@@ -211,13 +212,13 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
-    case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
+    case 'death': audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
 let startBestFloor = 0;
 function startRun(mode = 'normal') {
-  closeModal(false); clearInput(); audio.unlock(); audio.resume();
+  closeModal(false); clearInput(); audio.setHeartbeat(false); audio.unlock(); audio.resume();
   game = new Game(handleEvent, undefined, mode); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; startBestFloor = records.bestFloor; if (mode === 'normal') records.runs++; // an endless trial never touches normal-run progress
   save('nocturne-records', records);
@@ -295,7 +296,7 @@ function showTitle() {
   closeModal(false); game = new Game(handleEvent); resetHud();
   $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
   bannerQueue.length = 0; particles = []; effects = []; trails = []; numbers = [];
-  audio.suspend(); audio.setIntensity(1);
+  audio.setHeartbeat(false); audio.suspend(); audio.setIntensity(1);
 }
 
 $('start-button').addEventListener('click', () => startRun());
@@ -603,10 +604,17 @@ function render(dt) {
   ctx.restore();
 }
 let hudTimer = 0;
+let prevBlood = null; // castle blood meter feedback: no core event, so compare per frame
+function watchBlood() {
+  const p = game.player, live = game.mode === 'castle' && game.state === 'playing';
+  if (live && prevBlood !== null && p.blood > prevBlood + .5) audio.play(prevBlood < BLOOD_HALF && p.blood >= BLOOD_HALF ? 'bloodHalf' : 'bloodGain', .3 + p.blood / BLOOD_MAX * 1.2);
+  prevBlood = live ? p.blood : null;
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   const input = getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
+  watchBlood();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;

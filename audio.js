@@ -10,6 +10,8 @@ export class AudioSystem {
     this._musicTimer = null;
     this._step = 0;
     this._phase = 1;
+    this._beating = false; // frenzy heartbeat wanted; the timer only runs while audible
+    this._beatTimer = null;
   }
 
   async unlock() {
@@ -43,6 +45,7 @@ export class AudioSystem {
 
   setMuted(value) {
     this.muted = Boolean(value);
+    this._syncBeat();
     if (this.context) {
       this._master.gain.setTargetAtTime(this.muted ? 0 : 0.6, this.context.currentTime, 0.025);
     }
@@ -69,9 +72,26 @@ export class AudioSystem {
     try { globalThis.navigator?.vibrate?.(pattern); } catch { /* Optional hardware. */ }
   }
 
+  // Frenzy heartbeat: a low double thump every 0.7 s, driven by game.js (start on frenzy, stop on end/death/Vigil/title).
+  setHeartbeat(on) { this._beating = Boolean(on); this._syncBeat(); }
+
+  _syncBeat() {
+    const active = this._beating && this.context?.state === 'running' && !this._paused && !this.muted;
+    if (!active) { clearInterval(this._beatTimer); this._beatTimer = null; return; }
+    if (this._beatTimer !== null) return;
+    const beat = () => {
+      const at = this.context.currentTime + 0.01;
+      this._voice('sine', 62, 0.2, 0.34, at, 38);
+      this._voice('sine', 52, 0.22, 0.24, at + 0.2, 34);
+    };
+    beat();
+    this._beatTimer = setInterval(beat, 700);
+  }
+
   suspend() {
     this._paused = true;
     this._syncMusic();
+    this._syncBeat();
     for (const voice of [...this._voices]) voice.stop();
     this.vibrate(0);
     return this.context?.suspend().catch(() => {});
@@ -83,6 +103,7 @@ export class AudioSystem {
     try {
       await this.context.resume();
       this._syncMusic();
+      this._syncBeat();
       return this.context.state === 'running';
     } catch { return false; }
   }
@@ -130,7 +151,7 @@ export class AudioSystem {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], cursedPick: [20, 30, 35], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
-      roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
+      roar: [60, 40, 120], frenzy: [50, 30, 90, 30, 160], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
@@ -329,6 +350,38 @@ export class AudioSystem {
         tone('noise', 1400, 1, 0.22, 140);
         break;
       }
+      case 'frenzy': // Blood Frenzy start: deep detuned roar with a wet crack; the heartbeat loop is separate
+        tone('sawtooth', 80, 0.9, 0.15, 42);
+        tone('sawtooth', 83, 0.9, 0.11, 44);
+        tone('sine', 50, 1, 0.42, 26);
+        tone('noise', 1200, 0.7, 0.2, 160);
+        tone('noise', 5000, 0.08, 0.16, 1200);
+        break;
+      case 'frenzyEnd': // exhale: breath falling away, a sinking tone
+        tone('noise', 1500, 0.7, 0.14, 180);
+        tone('sine', 150, 0.6, 0.2, 48);
+        tone('triangle', 300, 0.5, 0.05, 110);
+        break;
+      case 'bloodHalf': // meter crosses 50% upward: two low rising notes
+        tone('triangle', 196, 0.3, 0.08, 195);
+        tone('triangle', 294, 0.4, 0.08, 293, 0.09);
+        tone('sine', 98, 0.3, 0.12, 80);
+        break;
+      case 'bloodGain': { // intensity = 0.3 + fill * 1.2; pitch climbs two octaves-ish with fill; throttled for combos
+        if (ctx.currentTime - (this._lastGain ?? -1) < 0.09) return;
+        this._lastGain = ctx.currentTime;
+        const f = 300 * 2 ** ((amount - 0.3) / 1.2 * 1.2);
+        tone('sine', f, 0.07, 0.07, f * 1.05);
+        tone('noise', 2000, 0.03, 0.03, 900);
+        break;
+      }
+      case 'vigil': // rest point chime: slow minor bell, calm
+        [440, 523.25, 659.25].forEach((f, i) => {
+          tone('sine', f, 1.1, 0.08, undefined, i * 0.12);
+          tone('sine', f * 2.76, 0.5, 0.02, undefined, i * 0.12);
+        });
+        tone('sine', 110, 1, 0.14, 100);
+        break;
       case 'bossSlash': // boss blade: heavier, lower swing
         tone('noise', 3000, 0.2, 0.28, 400);
         tone('sawtooth', 150, 0.18, 0.09, 60);
