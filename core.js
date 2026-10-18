@@ -384,7 +384,7 @@ export class Game {
     p.buffer = 0;
     if (!p.grounded) { // air attack wins over a thrust; it neither advances nor resets the combo
       Object.assign(p, { plunge: 1, plungeT: .07, plungeY: p.y, move: 'plunge', attack: 0, thrustWindow: 0 });
-      this.hitSet = new Set(); this.flameUsed = false;
+      this.hitSet = new Set(); this.flameUsed = this.chainUsed = false;
       this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge' });
       return;
     }
@@ -398,15 +398,15 @@ export class Game {
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
     p.attack = p.attackLen = .24; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed); // never shorter than the swing animation
-    this.hitSet = new Set(); this.flameUsed = false;
+    this.hitSet = new Set(); this.flameUsed = this.chainUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
     if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, BEAM_REACH / 780, 10);
     this.hitTargets();
   }
-  // Player projectile (a wave's life is only a safety cap; it turns after 0.52 s and ends on reaching the hero): passes through enemies, one hit per enemy per pass, poise 8, never heavy and no Chain Lightning.
+  // Player projectile (a wave's life is only a safety cap; it turns after 0.52 s and ends on reaching the hero): passes through enemies, one hit per enemy per pass (one frost hit per enemy per throw), poise 8, never heavy and no Chain Lightning.
   launchShot(kind, mul, speed, life, r, x = this.player.x, y = this.player.y - 30, dir = this.player.dir) {
-    const shot = { kind, x, y, dir, vx: dir * speed, vy: 0, r, life, maxLife: life, mul, back: false, hit: new Set() };
+    const shot = { kind, x, y, dir, vx: dir * speed, vy: 0, r, life, maxLife: life, mul, back: false, hit: new Set(), frosted: new Set() };
     this.shots.push(shot);
     this.emit('shot', { kind, x, y, dir, speed, life });
   }
@@ -428,7 +428,8 @@ export class Game {
         const crit = this.rand() < p.crit;
         const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
         const blocked = e.type === 'shield' && e.guardBreak <= 0 && s.vx * e.dir < 0; // frontal only (decided by travel direction, robust at low frame rates); a returning crescent can hit a back
-        this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, s.back ? 'back' : true);
+        this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, s.frosted.has(e) ? 'repeat' : true);
+        s.frosted.add(e); // a throw lands at most one frost hit per enemy, on either pass
       }
     }
     this.shots = this.shots.filter(s => s.life > 0 && s.x > 0 && s.x < this.worldWidth);
@@ -482,7 +483,7 @@ export class Game {
     const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
     if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
     p.mp -= cost; p.magicCd = p.magicCdMax; p.invulnerable = Math.max(p.invulnerable, .28);
-    this.flameUsed = false;
+    this.flameUsed = this.chainUsed = false;
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
@@ -580,6 +581,7 @@ export class Game {
       Object.assign(copy, { hp, maxHp: hp, y: e.y, plat: e.plat, dir: e.dir });
     }
   }
+  thawImmunity() { return Math.max(1.2, 2 - .2 * (this.stacks('frost') - 1)); } // each frost stack past the first shortens post-thaw immunity
   stacks(id) { return this.relics.filter(r => r === id).length; }
   // Elemental damage: no hit-stop, flinch, poise damage or new statuses. Art listens to 'statusTick'.
   elemDamage(e, amount, source) {
@@ -598,32 +600,38 @@ export class Game {
     const alive = () => this.enemies.filter(o => o.hp > 0);
     if (heavy && frost && e.frozen > 0) { // Shatter
       const radius = 130 + 10 * frost;
-      e.frozen = 0; if (e.type !== 'boss') e.freezeImmune = 2;
+      e.frozen = 0; if (e.type !== 'boss') e.freezeImmune = this.thawImmunity();
       this.emit('reaction', { name: 'shatter', ...mid(e), radius });
-      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, base * (1 + .65 * frost), 'shatter');
+      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, base * (1 + .35 * frost), 'shatter');
     }
     if (heavy && fire && e.bleedStacks > 0 && !this.flameUsed) { // Blood Flame, once per attack or Eclipse cast
       this.flameUsed = true;
       const n = e.bleedStacks, radius = 115;
       e.bleed = 0; e.bleedStacks = 0;
       this.emit('reaction', { name: 'bloodFlame', ...mid(e), radius });
-      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, (.7 + .3 * n) * base * (1 + .3 * fire), 'bloodFlame');
+      for (const o of alive().filter(o => dist(o) <= radius)) this.elemDamage(o, (.7 + .3 * n) * base * (1 + .3 * fire) * (o === e ? 1 : .5), 'bloodFlame');
     }
-    if (shock && !eclipse && !shot && e.shock > 0) { // Chain (sword hits only) Lightning
+    if (shock && !eclipse && !shot && e.shock > 0 && !this.chainUsed) { // Chain (sword hits only) Lightning, once per attack
       const targets = alive().filter(o => o !== e && dist(o) <= 180 + 14 * shock).sort((a, b) => dist(a) - dist(b)).slice(0, 2 + shock);
+      const zap = (.35 * base + .12 * amount) * shock;
+      this.chainUsed = true;
       if (targets.length) {
         this.emit('reaction', { name: 'chain', ...mid(e), targets: targets.map(mid) });
-        for (const o of targets) { this.elemDamage(o, (.35 * base + .12 * amount) * shock, 'chain'); if (o.hp > 0) o.shock = 4; }
+        for (const o of targets) { this.elemDamage(o, zap, 'chain'); if (o.hp > 0) o.shock = 4; }
+      } else { // no one to arc to: the shocked target takes half the chain damage itself
+        this.emit('reaction', { name: 'chain', ...mid(e), targets: [], solo: true });
+        this.elemDamage(e, zap * .5, 'chain');
+        if (e.hp <= 0) return;
       }
     }
     if (e.hp <= 0) return;
     const at = mid(e), boss = e.type === 'boss';
-    if (fire) { e.burn = 4; e.burnDmg = .14 * base * fire; this.emit('status', { name: 'burn', ...at }); }
+    if (fire) { e.burn = 4; e.burnDmg = .32 * base * fire; this.emit('status', { name: 'burn', ...at }); }
     if (shock) { e.shock = 4; this.emit('status', { name: 'shock', ...at }); }
     if (bleed) { e.bleed = 5; e.bleedStacks = Math.min(10 * bleed, e.bleedStacks + bleed); this.emit('status', { name: 'bleed', ...at, stacks: e.bleedStacks }); }
-    if (frost) {
+    if (frost && shot !== 'repeat') {
       e.chill = 2.5; e.frostT = 3;
-      if (e.frozen <= 0 && e.freezeImmune <= 0 && shot !== 'back') e.frostMeter += frost + (eclipse ? 1 : 0);
+      if (e.frozen <= 0 && e.freezeImmune <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
       if (e.frostMeter >= 3) {
         e.frostMeter = 0;
         if (e.freezeImmune <= 0 && e.frozen <= 0) { // the boss freezes briefly, then ignores freezing for a while
@@ -640,7 +648,7 @@ export class Game {
   tickStatus(e, dt) {
     const wasFrozen = e.frozen > 0;
     for (const k of STATUS_TIMERS) e[k] = Math.max(0, e[k] - dt);
-    if (wasFrozen && e.frozen <= 0 && e.type !== 'boss') e.freezeImmune = 2; // thawed: normal enemies get a window to act
+    if (wasFrozen && e.frozen <= 0 && e.type !== 'boss') e.freezeImmune = this.thawImmunity(); // thawed: normal enemies get a window to act
     if (e.frostMeter > 0 && (e.frostT = (e.frostT || 0) - dt) <= 0) e.frostMeter = 0; // meter decays 3 s after the last frost hit
     if (e.burn <= 0 && e.bleed <= 0) { e.dotT = 0; return; }
     const burning = e.burn > 0, stacks = e.bleed > 0 ? e.bleedStacks : 0; // a tick landing on the frame a timer expires still counts
@@ -650,7 +658,7 @@ export class Game {
     while (e.dotT >= .5 && e.hp > 0) {
       e.dotT -= .5;
       if (burning) this.elemDamage(e, e.burnDmg, 'burn');
-      if (e.hp > 0 && stacks) this.elemDamage(e, .1 * this.player.damage * stacks, 'bleed');
+      if (e.hp > 0 && stacks) this.elemDamage(e, .08 * this.player.damage * stacks, 'bleed');
     }
   }
   enterPhase(e, phase) {
