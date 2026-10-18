@@ -180,15 +180,17 @@ Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). C
 - **Blood** (`player.blood`, 0 to `BLOOD_MAX` 200, life half `BLOOD_HALF` 100) replaces HP and MP. Gains (only while `playing`): sword hit (combo 1-2, thrust, plunge fall or shockwave) +3 per enemy, combo hit 3 +5, blocked shield-bearer hit +1, player projectile hit +1, kill +8, perfect dodge +5. Barricades, altars, Eclipse hits and kills, and damage-over-time, bonus-hit and reaction damage (including kills they cause) give 0. Damage taken comes off blood (armor, `takenMul`, the 0.8 s invulnerability as usual); at 0 the hero dies. No free healing: no heal drops, no chests, picks restore nothing.
 - **Weapon skill**: Eclipse with its normal effect, costs `SKILL_COST` 18 blood and needs at least `SKILL_MIN` 40 (below that it emits `noMana`, shown as a blood toast). Allowed during frenzy.
 - **Blood Frenzy**: starts when blood reaches 200 (`frenzy` {weapon, x, y}). Blood burns `FRENZY_BURN` 12/s (about 8.3 s with no gains); gains are halved (rounded down, minimum 1). It ends when blood is at 100 or less, from burn, damage or the skill (`frenzyEnd` {weapon, debt: 0}); the burn never takes blood below 100. Burn stops during pause, picks and hit-stop. Frenzy carries across floors; death and the Vigil end it.
+- **Swing cost** (`SWING_COST` 2, #47 PR A): every sword swing (combo hits 1-3, dash thrust, air plunge at its press) pays 2 blood as it starts; a buffered press pays only when it fires. Clamped so blood never drops below 1 (cost paid = `min(2, blood - 1)`); free during Blood Frenzy and outside castle mode. The `swing` event carries `cost` (amount actually paid). Net per swing on one target: hit +1, combo hit 3 +3, blocked shield hit -1, whiff -2.
+- **Light attack damage** (`CASTLE_LIGHT`, #47 PR A): castle enemies deal skeleton 10, bat 8, shield bearer 12, spearman 12, knight 14, plus 2 per scaling tier (replaces 8 + 2.5 per tier). Heavy attacks, enemy reactions and the punish bonus are #47 PR B.
 - **Floors** (`castlePlan()`, `loadFloor(n)`): floors 1-9 reuse the Forsaken Gate rooms and art (stage 0) with no chests and 2 required guards (a rolled bat becomes a skeleton). Enemy scaling tier = min(4, floor((floor - 1) / 2)): floors 1-2: 0, 3-4: 1, 5-6: 2, 7-8: 3, 9: 4. HUD reads "Floor N / 10".
 
 | Floor | Enemies |
 | --- | --- |
-| 1 | 7 skeletons |
-| 2 | 3 shield bearers, 4 skeletons (shuffled) |
-| 3 | 3 spearmen, 4 skeletons (shuffled) |
-| 4-7 | 9, every 4th slot (index 1, 5) a bat, others rolled from skeleton, shield bearer, spearman |
-| 8-9 | 11, same pattern, knight added to the roll; plus one bonus elite knight (`bonus: true`, no pick) at the optional-chest spot |
+| 1 | 5 skeletons |
+| 2 | 2 shield bearers, 3 skeletons (shuffled) |
+| 3 | 2 spearmen, 3 skeletons (shuffled) |
+| 4-7 | 6, slot 1 a bat, others rolled from skeleton, shield bearer, spearman |
+| 8-9 | 7, same pattern, knight added to the roll; plus one bonus elite knight (`bonus: true`, no pick) at the optional-chest spot |
 
 - **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
 - **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).

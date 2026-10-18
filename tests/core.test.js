@@ -2558,29 +2558,32 @@ test('castle: the Vigil asks for a weapon, base stats replace the hero stats, th
 
 test('castle: floors follow the table, with no chests and tier-based scaling', () => {
   const { game } = castle(42, 0);
-  assert.equal(game.enemies.length, 7);
+  assert.equal(game.enemies.length, 5);
   assert.ok(game.enemies.every(e => e.type === 'skeleton') && game.chests.length === 0);
   game.loadFloor(2);
-  assert.equal(game.enemies.filter(e => e.type === 'shield').length, 3);
+  assert.equal(game.enemies.length, 5);
+  assert.equal(game.enemies.filter(e => e.type === 'shield').length, 2);
   game.loadFloor(3);
-  assert.equal(game.enemies.filter(e => e.type === 'spear').length, 3);
-  const tier0 = game.enemies.find(e => e.type === 'skeleton').maxHp;
+  assert.equal(game.enemies.length, 5);
+  assert.equal(game.enemies.filter(e => e.type === 'spear').length, 2);
   game.loadFloor(5);
-  assert.equal(game.enemies.length, 9);
+  assert.equal(game.enemies.length, 6);
+  assert.ok(game.enemies.filter(e => e.type === 'bat').length <= 1);
   assert.ok(game.enemies.filter(e => e.required).length === 2);
   game.loadFloor(9);
-  assert.equal(game.enemies.length, 12, '11 plus the bonus elite');
+  assert.equal(game.enemies.length, 8, '7 plus the bonus elite');
   assert.ok(game.enemies.some(e => e.elite && e.bonus));
-  assert.ok(game.enemies.find(e => e.type === 'skeleton' && !e.elite).maxHp > tier0, 'floor 9 uses tier 4');
+  const e9 = game.enemies.find(e => !e.elite);
+  assert.ok(e9.maxHp > game.spawnEnemy(e9.type, 900, 0).maxHp, 'floor 9 uses tier 4');
 });
 
 test('castle: sword hits and kills give blood, the skill gives none and costs 18 above 40', () => {
   const { game, player } = castle();
   const target = enemy(game, player.x + 50, { hp: 500 });
-  game.attack(); // combo hit 1: +3
-  assert.equal(player.blood, 103);
+  game.attack(); // combo hit 1: -2 swing cost, +3
+  assert.equal(player.blood, 101);
   target.hp = 1; target.x = player.x + 50; game.hitSet = new Set(); game.hitTargets();
-  assert.equal(player.blood, 103 + 3 + 8, 'hit plus kill');
+  assert.equal(player.blood, 101 + 3 + 8, 'hit plus kill');
   player.blood = 100; player.magicCd = 0;
   enemy(game, player.x + 60, { hp: 5 });
   game.magic();
@@ -2588,6 +2591,45 @@ test('castle: sword hits and kills give blood, the skill gives none and costs 18
   player.blood = 39; player.magicCd = 0;
   game.magic();
   assert.equal(player.blood, 39, 'below 40 the skill cannot be cast');
+});
+
+test('castle: a swing pays 2 blood as it starts, never below 1, free in frenzy', () => {
+  const { game, player, events } = castle();
+  game.attack();
+  assert.equal(player.blood, 98);
+  assert.equal(events.findLast(ev => ev.type === 'swing').cost, 2);
+  player.blood = 2; player.attackCd = 0; game.attack();
+  assert.equal(player.blood, 1);
+  player.attackCd = 0; game.attack();
+  assert.equal(player.blood, 1, 'the clamp never kills');
+  player.blood = 150; player.frenzy = true; player.attackCd = 0; game.attack();
+  assert.equal(player.blood, 150);
+  assert.equal(events.findLast(ev => ev.type === 'swing').cost, 0);
+});
+
+test('castle: a buffered swing pays only when it fires; the air plunge pays at its press', () => {
+  const { game, player } = castle();
+  player.attackCd = .1; game.attack();
+  assert.equal(player.blood, 100, 'buffered, not swung');
+  advance(game, .15);
+  assert.equal(player.blood, 98, 'paid when the buffer fires');
+  player.grounded = false; player.attackCd = 0; player.plunge = 0; game.attack();
+  assert.equal(player.blood, 96);
+});
+
+test('castle: light attack damage uses the castle table plus 2 per tier; other modes keep 8 + 2.5 per stage', () => {
+  const { game } = castle();
+  assert.deepEqual(['skeleton', 'bat', 'shield', 'spear', 'knight'].map(t => game.spawnEnemy(t, 900, 0).damage), [10, 8, 12, 12, 14]);
+  assert.equal(game.spawnEnemy('knight', 900, 4).damage, 22);
+  assert.equal(new Game(() => {}, 1).spawnEnemy('knight', 900, 2).damage, 13);
+});
+
+test('castle: swings are free outside castle mode', () => {
+  const game = new Game(() => {}, 5);
+  arena(game); game.player.invulnerable = 0;
+  const blood = game.player.blood;
+  game.attack();
+  assert.equal(game.player.blood, blood);
 });
 
 test('castle: noMana fires when the skill is refused for low blood', () => {
