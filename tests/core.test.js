@@ -2191,6 +2191,43 @@ test('Warded absorbs 30 damage (also DoT) before HP and recharges every 6 s with
   assert.equal(e.ward, 30, 'does not stack');
 });
 
+test('the optional chest is sealed while its elite lives: contact does nothing, then it unseals on death and opens (QA #3)', () => {
+  layouts((game, stage, seed) => {
+    if (stage === 4) return;
+    const events = []; game.emit = (type, data) => events.push({ type, ...data });
+    const c = game.chests.find(o => o.optional), e = eliteOf(game);
+    assert.equal(c.sealed, true);
+    game.state = 'playing'; game.enemies = [e];
+    Object.assign(game.player, { x: c.x - 20, y: c.y, vx: 0, vy: 0, grounded: true, invulnerable: 9 });
+    game.updateChests(); assert.equal(c.opened, false, `seed ${seed} stage ${stage}`); assert.equal(c.sealed, true);
+    game.damageEnemy(e, e.hp + e.ward, 1, false, false); // elite dies (through any ward)
+    game.updateChests();
+    assert.equal(c.sealed, false); assert.equal(events.filter(x => x.type === 'unseal').length, 1);
+    assert.equal(c.opened, true, 'opens on contact once unsealed');
+  });
+});
+
+test('a sealed chest unseals if its elite is removed, and a chest without a guard never seals', () => {
+  const { game, player, events } = arena();
+  game.chests = [{ id: 1, x: 600, y: FLOOR, w: 34, h: 28, kind: 'heal', optional: true, opened: false, sealed: true }];
+  player.x = 700; game.updateChests(); // no enemy linked to chest 1 any more
+  assert.equal(game.chests[0].sealed, false); assert.deepEqual(events.find(x => x.type === 'unseal'), { type: 'unseal', x: 600, y: FLOOR });
+  const g = new Game(() => {}, 5); g.loadStage(4); assert.equal(g.chests.length, 0);
+});
+
+test('shield-bearer elites are never Warded, deterministically per seed', () => {
+  let shields = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const g = new Game(() => {}, seed), h = new Game(() => {}, seed);
+    for (let s = 1; s < 4; s++) {
+      g.loadStage(s); h.loadStage(s);
+      const e = eliteOf(g); assert.equal(eliteOf(h).affix, e.affix);
+      if (e.type === 'shield') { shields++; assert.ok(e.affix === 'swift' || e.affix === 'splitting'); }
+    }
+  }
+  assert.ok(shields > 50);
+});
+
 test('the elite is announced once when the hero comes within 600 px', () => {
   const { game, player, e, events } = withAffix('swift');
   Object.assign(e, { x: 1400 }); player.x = 200; advance(game, .1);

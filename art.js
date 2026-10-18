@@ -290,6 +290,14 @@ export function drawChest(ctx, c, time = 0) {
   rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, '#7a5632', x + 1, y + 1, c.w - 2, 8);
   rect(ctx, gold, x + 1, y + 3, c.w - 2, c.optional ? 4 : 2); // optional chests: wide gold lid band
   rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8);
+  if (c.sealed) { // purple chain band across the lid and body, pulsing rune at the centre
+    const pulse = .6 + .4 * Math.sin(time * 5);
+    rect(ctx, '#1b1030', x - 3, y + 5, c.w + 6, 7); rect(ctx, '#8f6be0', x - 2, y + 6, c.w + 4, 5);
+    for (let i = 0; i < c.w + 4; i += 6) rect(ctx, '#1b1030', x - 2 + i, y + 8, 3, 2);
+    ctx.globalAlpha = pulse; rect(ctx, '#e6d8ff', x + c.w / 2 - 4, y + 4, 8, 9); ctx.globalAlpha = 1;
+    rect(ctx, '#3a1f78', x + c.w / 2 - 2, y + 6, 4, 5);
+    return;
+  }
   const mx = x + c.w / 2, sy = y + 11; // shape symbol on a dark plate: heart = heal, diamond = relic (readable without colour)
   rect(ctx, '#140f0c', mx - 7, sy - 6, 14, 12);
   if (heal) { rect(ctx, '#e9fff1', mx - 5, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx + 1, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx - 5, sy - 1, 10, 2); rect(ctx, '#e9fff1', mx - 3, sy + 1, 6, 2); rect(ctx, '#e9fff1', mx - 1, sy + 3, 2, 1); }

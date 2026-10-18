@@ -136,8 +136,10 @@ export class Game {
       const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest
       Object.assign(guard, { y: spot.y, plat: spot.plat });
       const mult = index === 0 ? 2.6 : guard.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
-      const affix = AFFIXES[Math.floor(this.rand() * AFFIXES.length)]; // the optional chest's guard is this stage's elite
-      Object.assign(guard, { elite: true, affix, damage: guard.damage * ELITE_DAMAGE, hp: Math.round(guard.hp * mult), maxHp: Math.round(guard.hp * mult) });
+      let affix = AFFIXES[Math.floor(this.rand() * AFFIXES.length)]; // the optional chest's guard is this stage's elite
+      if (affix === 'warded' && guard.type === 'shield') affix = AFFIXES[Math.floor(this.rand() * 2)]; // a shield bearer is never Warded: swift or splitting
+      Object.assign(this.chests[1], { sealed: true }); // sealed until this guard (linked by chest id) is gone
+      Object.assign(guard, { chest: 1, elite: true, affix, damage: guard.damage * ELITE_DAMAGE, hp: Math.round(guard.hp * mult), maxHp: Math.round(guard.hp * mult) });
       if (affix === 'swift') guard.speed *= 1.5;
       if (affix === 'warded') { guard.ward = WARD_AMOUNT; guard.wardT = WARD_PERIOD; }
     }
@@ -327,8 +329,9 @@ export class Game {
   // A grounded hero beside an unopened chest opens it: a relic chest offers a 3-relic pick (no heal, play resumes in place), a heal chest restores HP and MP.
   updateChests() {
     const p = this.player;
+    for (const c of this.chests) if (c.sealed && !this.enemies.some(e => e.chest === c.id && e.hp > 0)) { c.sealed = false; this.emit('unseal', { x: c.x, y: c.y }); }
     if (!p.grounded) return;
-    for (const c of this.chests) if (!c.opened && Math.abs(p.x - c.x) < CHEST_REACH && Math.abs(p.y - c.y) < 2) {
+    for (const c of this.chests) if (!c.opened && !c.sealed && Math.abs(p.x - c.x) < CHEST_REACH && Math.abs(p.y - c.y) < 2) {
       c.opened = true;
       this.emit('chest', { x: c.x, y: c.y, kind: c.kind, optional: c.optional });
       if (c.kind === 'relic') { this.rollChoices('chest'); return; }
