@@ -94,7 +94,8 @@ function handleEvent(e) {
       audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
-    case 'swing': if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
+    case 'swing': if (e.cost > 0 && settings.shake) $('blood-meter').animate([{ filter: 'brightness(2.2)' }, { filter: 'none' }], 200); // swing cost tick
+      if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
       rumble(e.crit || e.heavy ? 6 : 3, e.heavy ? .16 : .1);
@@ -388,7 +389,7 @@ function pumpBanner() {
 function updateHud() {
   const p = game.player;
   const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
-  $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy);
+  $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy); $('vitals').classList.toggle('danger', castle && !p.frenzy && p.blood <= BLOOD_HALF); // danger: one heavy (100) kills
   if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); $('mp-text').textContent = ''; }
   else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; }
   const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');

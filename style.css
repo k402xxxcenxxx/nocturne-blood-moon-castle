@@ -806,6 +806,13 @@ kbd {
   from { box-shadow:0 0 2px #ff3a4d; }
   to { box-shadow:0 0 12px #ff3a4d; border-color:#ff8a8a; }
 }
+.vitals.danger .health {
+  border-color:#ff8a8a;
+  box-shadow:0 0 8px #ff3a4d;
+}
+@media (prefers-reduced-motion:no-preference) {
+  .game-frame:not(.reduced-motion) .vitals.danger .health { animation:frenzy-pulse 1.1s ease-in-out infinite alternate; }
+}
 @media (prefers-reduced-motion:reduce) {
   .vitals.frenzy .health { animation:none; box-shadow:0 0 8px #ff3a4d; border-color:#ff8a8a; }
 }
