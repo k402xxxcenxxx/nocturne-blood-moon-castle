@@ -806,6 +806,14 @@ kbd {
   from { box-shadow:0 0 2px #ff3a4d; }
   to { box-shadow:0 0 12px #ff3a4d; border-color:#ff8a8a; }
 }
+.vitals.danger .health {
+  border-color:#ff3a4d;
+  outline:2px solid #ff3a4d;
+  box-shadow:0 0 10px #ff3a4d;
+}
+@media (prefers-reduced-motion:no-preference) {
+  .game-frame:not(.reduced-motion) .vitals.danger .health { animation:frenzy-pulse 1.1s ease-in-out infinite alternate; }
+}
 @media (prefers-reduced-motion:reduce) {
   .vitals.frenzy .health { animation:none; box-shadow:0 0 8px #ff3a4d; border-color:#ff8a8a; }
 }
@@ -2139,7 +2147,8 @@ b[data-i18n] {
   .help-grid {
     gap:8px;
     margin:13px 0;
-    grid-template-columns:repeat(3,1fr);
+    grid-template-columns:repeat(4,1fr);
+    max-width:none;
   }
   .help-item {
     padding:8px 7px;
@@ -2184,7 +2193,8 @@ b[data-i18n] {
     font-size:9px;
   }
   .toast {
-    bottom:120px;
+    bottom:auto;
+    top:100px;
   }
 }
 @media(prefers-reduced-motion:reduce) {

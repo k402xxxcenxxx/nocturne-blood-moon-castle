@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL } from '../core.js';
+import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2568,8 +2568,10 @@ test('castle: floors follow the table, with no chests and tier-based scaling', (
   assert.equal(game.enemies.filter(e => e.type === 'spear').length, 2);
   game.loadFloor(5);
   assert.equal(game.enemies.length, 6);
-  assert.ok(game.enemies.filter(e => e.type === 'bat').length <= 1);
+  assert.equal(game.enemies.filter(e => e.type === 'bat').length, 1);
   assert.ok(game.enemies.filter(e => e.required).length === 2);
+  game.loadFloor(8);
+  assert.equal(game.enemies.length, 8, '7 plus the bonus elite');
   game.loadFloor(9);
   assert.equal(game.enemies.length, 8, '7 plus the bonus elite');
   assert.ok(game.enemies.some(e => e.elite && e.bonus));
@@ -2739,4 +2741,202 @@ test('castle: normal mode is untouched by blood rules', () => {
   assert.equal(player.blood, 100);
   game.hurt(10, 1);
   assert.equal(player.hp, 90);
+});
+
+test('castle: a dash thrust pays the swing cost, and splitting copies use the floor tier', () => {
+  const { game, player } = castle(42, 9);
+  player.thrustWindow = .5; player.blood = 100; game.attack();
+  assert.equal(player.move, 'thrust'); assert.equal(player.blood, 98);
+  const elite = game.spawnEnemy('skeleton', 400, 4); Object.assign(elite, { affix: 'splitting', elite: true });
+  const before = game.enemies.length; game.damageEnemy(elite, 1e6, 1, false, false);
+  assert.equal(game.enemies.length, before + 2);
+  assert.equal(game.enemies.at(-1).damage, game.spawnEnemy(elite.type, 0, 4).damage, 'copies carry tier 4 damage');
+});
+
+// ---- Castle heavy attacks (#47 PR B) ----
+function heavyFoe(type = 'skeleton', gap = 50, seed = 42) {
+  const c = castle(seed);
+  c.game.rand = () => 0; // every heavy roll succeeds
+  const e = enemy(c.game, c.player.x + gap, { type });
+  e.cd = 0; e.dir = -1;
+  return { ...c, e };
+}
+const heavyStrikes = events => events.filter(ev => ev.type === 'enemySwing' && ev.heavy);
+
+test('castle heavy: a cleave kills from 100 blood and is survived at 101, with a long tell and a fixed area', () => {
+  for (const [blood, dead] of [[100, true], [101, false]]) {
+    const { game, player, events, e } = heavyFoe();
+    player.blood = blood;
+    advance(game, .02);
+    assert.ok(e.heavy && e.tell > .7 && e.warn.kind === 'cleave', 'red tell with a stored area');
+    assert.equal(events.filter(ev => ev.type === 'enemyHeavy').length, 1);
+    const box = { ...e.warn.box };
+    advance(game, .3); assert.deepEqual(e.warn.box, box, 'the area never moves');
+    advance(game, .8);
+    assert.equal(heavyStrikes(events).length, 1);
+    assert.equal(game.state === 'dead', dead);
+    if (dead) assert.equal(events.findLast(ev => ev.type === 'death').heavy, true);
+    else assert.equal(player.blood, 1);
+  }
+});
+
+test('castle heavy: elites hit for 130, armor applies, Swift keeps the tell at 0.7 s or more', () => {
+  const { game, player, e } = heavyFoe();
+  e.elite = true; e.affix = 'swift'; player.blood = 200; player.armor = .8;
+  advance(game, .02);
+  assert.ok(e.tell >= .65 && e.tell <= .7, 'swift floor 0.7 s');
+  advance(game, .8);
+  assert.equal(player.blood, 200 - Math.round(HEAVY_DAMAGE * 1.3 * .8));
+});
+
+test('castle heavy: sword hits and shots do not cancel the wind-up, Eclipse does', () => {
+  const { game, player, e } = heavyFoe();
+  player.blood = 150; advance(game, .02);
+  const poise = e.poise; game.attack(); advance(game, .1);
+  assert.ok(e.heavy && e.tell > 0 && e.poise === poise && e.stun === 0, 'hyper armor');
+  assert.ok(e.hp < 500, 'damage still lands');
+  player.magicCd = 0; game.magic();
+  assert.ok(!e.heavy && e.tell === 0 && e.warn === null, 'Eclipse cancels');
+});
+
+test('castle heavy: an Eclipse-cancelled heavy still starts the cooldown and the gap, during the tell and during travel', () => {
+  for (const [type, wait] of [['skeleton', .02], ['bat', null]]) {
+    const { game, player, e } = heavyFoe(type, 50);
+    if (type === 'bat') e.y = FLOOR - 95;
+    player.blood = 200; player.invulnerable = 99; advance(game, .02);
+    assert.ok(e.heavy, type + ' winds up');
+    if (wait === null) { for (let i = 0; i < 240 && !(e.strikeT > 0); i++) advance(game, 1 / 120); advance(game, .1); assert.ok(e.strikeT > 0, 'mid-travel'); }
+    player.magicCd = 0; game.magic();
+    assert.ok(!e.heavy && e.heavyCd >= HEAVY_CD - .1 && game.heavyGap > 0, type + ' cooldown set on cancel');
+  }
+});
+
+test('castle heavy: hit events carry punish only while the enemy recovers from its heavy', () => {
+  const { game, player, events, e } = heavyFoe();
+  player.blood = 200; player.invulnerable = 99; advance(game, .02);
+  game.damageEnemy(e, 1, 1, false, false); // during the tell
+  advance(game, .9);
+  game.damageEnemy(e, 1, 1, false, false); // recovering
+  advance(game, 2);
+  game.damageEnemy(e, 1, 1, false, false); // recovered
+  assert.deepEqual(events.filter(ev => ev.type === 'hit').map(ev => ev.punish), [false, true, false]);
+});
+
+test('castle heavy: recovery lasts about a second, punish hits pay +2 and double poise damage, heavy cooldown is 3 s', () => {
+  const { game, player, events, e } = heavyFoe();
+  player.blood = 200; player.invulnerable = 99; advance(game, .02);
+  advance(game, .9);
+  assert.equal(heavyStrikes(events).length, 1);
+  assert.ok(e.recover > 0 && e.punishable && e.heavyCd > 2.5, 'recovering with the cooldown running');
+  player.blood = 100; player.frenzy = false; const poise = e.poise;
+  game.hitSet = new Set(); player.combo = 1; player.move = ''; game.hitTargets();
+  assert.equal(player.blood, 105, '+3 hit +2 punish');
+  assert.equal(poise - e.poise, 34, 'poise damage doubled (17 x 2)');
+  advance(game, 2); // recovery over, heavy cooldown still running
+  assert.ok(!e.heavy && !e.punishable);
+  advance(game, 1.5);
+  assert.equal(heavyStrikes(events).length, 1, 'still on cooldown (light attacks only)');
+  advance(game, 2.5);
+  assert.equal(heavyStrikes(events).length, 2, 'the next heavy comes only after the 3 s cooldown');
+  const { game: n, player: np, events: ne, e: ne1 } = (() => { const c = castle(); c.game.rand = () => 0; const x = enemy(c.game, c.player.x + 50); x.cd = 0; x.heavyCd = 0; return { ...c, e: x }; })();
+  np.blood = 100; n.hitSet = new Set(); np.combo = 1; n.hitTargets();
+  assert.equal(np.blood, 103, 'no bonus on a normal hit');
+});
+
+test('castle heavy: at most one live heavy near the hero and strikes are at least 1.1 s apart', () => {
+  const { game, player, events } = castle();
+  game.rand = () => 0; player.invulnerable = 1e9; player.blood = 200;
+  for (const dx of [45, 55, 65]) { const e = enemy(game, player.x + dx, { hp: 1e6 }); e.cd = 0; e.dir = -1; }
+  const times = []; let seen = 0, maxLive = 0;
+  for (let i = 0; i < 120 * 14; i++) {
+    game.update(1 / 120, {}); player.blood = 200;
+    maxLive = Math.max(maxLive, game.enemies.filter(e => e.heavy && (e.tell > 0 || e.strikeT > 0)).length);
+    const n = heavyStrikes(events).length; if (n > seen) { seen = n; times.push(game.time); }
+  }
+  assert.ok(times.length >= 3, 'all three get a turn');
+  assert.equal(maxLive, 1);
+  for (let i = 1; i < times.length; i++) assert.ok(times[i] - times[i - 1] >= 1.1 - 1e-6, 'strikes are spaced');
+});
+
+test('castle heavy: a visible whiff raises the chance, and the roll uses game.rand()', () => {
+  for (const [whiff, heavy] of [[0, false], [.4, true]]) {
+    const { game, player, e } = heavyFoe();
+    game.rand = () => .3; player.whiff = whiff;
+    game.update(1 / 120, {});
+    assert.equal(e.heavy, heavy, `skeleton heavy chance with whiff=${whiff}`);
+  }
+  const { game, player, e } = heavyFoe('knight', 60);
+  game.rand = () => .3; player.frenzy = true; player.blood = 150;
+  game.update(1 / 120, {});
+  assert.ok(e.heavy, 'knight reads frenzy');
+  const c = heavyFoe('skeleton'); c.player.whiff = 0; c.player.dashCd = .5; c.game.rand = () => .45; c.game.update(1 / 120, {});
+  assert.ok(c.e.heavy, 'a spent dash is read');
+  const f = heavyFoe(); f.player.dashCd = .5; f.player.dash = .1; f.game.rand = () => .45; f.game.update(1 / 120, {});
+  assert.ok(!f.e.heavy, 'a dash in progress is not "spent"');
+});
+
+test('castle heavy: a swing that connects clears the whiff flag, a miss leaves it', () => {
+  const { game, player } = castle();
+  game.attack(); assert.ok(player.whiff > 0);
+  const { game: g2, player: p2 } = castle(); enemy(g2, p2.x + 50); g2.attack();
+  assert.equal(p2.whiff, 0);
+});
+
+test('castle heavy: lunge reaches 230 px and a jump clears it; dive and rush hit a hero who stays and miss one who moves or jumps', () => {
+  let c = heavyFoe('spear', 230); c.player.blood = 150; advance(c.game, .02); assert.equal(c.e.warn.kind, 'lunge');
+  advance(c.game, .95); assert.equal(c.player.blood, 50, 'the old safe distance is hit');
+  c = heavyFoe('spear', 230); c.player.blood = 150; advance(c.game, .02);
+  for (let i = 0; i < 120; i++) { c.player.y = FLOOR - 70; c.player.vy = 0; c.game.update(1 / 120, {}); }
+  assert.equal(c.player.blood, 150, 'jumping clears it');
+  c = heavyFoe('bat', 100); c.e.y = FLOOR - 95; c.player.blood = 150; advance(c.game, .02); assert.equal(c.e.warn.kind, 'dive');
+  advance(c.game, 1.4); assert.equal(c.player.blood, 50);
+  c = heavyFoe('bat', 100); c.e.y = FLOOR - 95; c.player.blood = 150; advance(c.game, .02); c.player.x += 200;
+  advance(c.game, 1.4); assert.equal(c.player.blood, 150, 'stepping aside dodges the dive');
+  c = heavyFoe('shield', 150); c.player.blood = 150; advance(c.game, .02); assert.equal(c.e.warn.kind, 'rush');
+  advance(c.game, 1.4); assert.equal(c.player.blood, 50);
+  c = heavyFoe('shield', 150); c.player.blood = 150; advance(c.game, .02);
+  for (let i = 0; i < 160; i++) { c.player.y = FLOOR - 80; c.player.vy = 0; c.game.update(1 / 120, {}); }
+  assert.equal(c.player.blood, 150, 'jumping over the rush');
+});
+
+test('castle heavy: a dash through the strike avoids it and pays the perfect dodge', () => {
+  const { game, player, events } = heavyFoe();
+  player.blood = 100; advance(game, .02); advance(game, .83);
+  game.dash(); advance(game, .1);
+  assert.ok(heavyStrikes(events).length === 1 && game.state === 'playing');
+  assert.ok(events.some(ev => ev.type === 'perfectDash'));
+});
+
+test('castle heavy: normal runs and Endless Trial never start heavies', () => {
+  for (const mode of ['normal', 'endless']) {
+    const events = [];
+    const game = new Game(ev => events.push(ev), 42, mode);
+    game.start(); game.state = 'playing'; game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = [];
+    game.rand = () => 0;
+    const e = enemy(game, game.player.x + 50); e.cd = 0; e.dir = -1; game.player.invulnerable = 99; game.player.hp = game.player.maxHp = 1e6;
+    advance(game, 3);
+    assert.ok(!events.some(ev => ev.type === 'enemyHeavy' || ev.heavy), mode);
+  }
+});
+
+test('castle heavy: a rush stopped by a barricade stands still through recovery (no vault)', () => {
+  const { game, player, e } = heavyFoe('shield', 170);
+  player.blood = 200; player.invulnerable = 99; player.x = 380; player.y = FLOOR;
+  game.obstacles = [{ type: 'barricade', x: 440, y: FLOOR, w: 24, h: 40, hp: 50 }];
+  e.x = 550; e.y = FLOOR;
+  while (!(e.heavy && e.recover > 0)) advance(game, .01);
+  const { x, y } = e;
+  advance(game, .5);
+  assert.ok(e.heavy && e.recover > 0, 'still recovering');
+  assert.equal(e.x, x); assert.equal(e.y, y); assert.ok(!e.vault);
+});
+
+test('castle heavy: recovery keeps counting down while hit-stunned', () => {
+  const { game, player, e } = heavyFoe('knight', 50);
+  player.blood = 200; player.invulnerable = 99;
+  e.hp = e.maxHp = 1e6; e.maxPoise = e.poise = 1e6;
+  while (!(e.recover > 0)) advance(game, .01);
+  let t = 0;
+  while (e.heavy && t < 5) { game.damageEnemy(e, 1, 1, false, false, false, 1); game.freeze = 0; advance(game, .05); t += .05; }
+  assert.ok(!e.heavy && t < 2.5, 'recovery ends on time despite repeated hits');
 });

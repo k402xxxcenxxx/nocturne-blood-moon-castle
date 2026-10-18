@@ -623,8 +623,36 @@ function drawBossWarn(ctx, e, time) {
   }
   ctx.restore();
 }
-export function drawEnemy(ctx, e = {}, time = 0) {
+// Castle heavy (#47): non-boss e.warn area. Outline = full hit area, inner fill grows from the enemy outward as the tell runs out; path stays lit through rush / dive travel.
+function drawHeavyWarn(ctx, e, time) {
+  const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0; if (!w || !(tl || strike)) return;
+  if (tl && !tellMax.has(w)) tellMax.set(w, e.tell);
+  const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
+  ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = 3;
+  const b = w.box;
+  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush') {
+    const fw = Math.round(b.w * p); ctx.fillStyle = 'rgba(255,74,60,.14)'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = `rgba(255,74,60,${hot})`; ctx.fillRect(d === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h); ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+  }
+  if (w.kind === 'rush' || w.kind === 'dive') { // path with an arrow tip
+    const l = w.line, x2 = Math.round(w.to ?? l.x2), y2 = Math.round(l.y2), x1 = Math.round(l.x1), y1 = Math.round(l.y1), a = Math.sign(x2 - x1 || d) * 12;
+    if (w.kind === 'dive') { ctx.fillStyle = `rgba(255,74,60,${.35 + .4 * p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x2, y2, w.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 2 * w.r; ctx.globalAlpha = .2 + .25 * p; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 3; }
+    ctx.strokeStyle = '#ffe0d0'; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ffe0d0'; ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - a, y2 - 8); ctx.lineTo(x2 - a, y2 + 8); ctx.fill();
+  }
+  ctx.restore();
+}
+export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
+  const heavy = e.heavy && !boss, windup = heavy && e.tell > 0, slump = heavy && !windup && !(e.strikeT > 0) && e.recover > 0, pw = windup ? Math.min(1, 1 - e.tell / (tellMax.get(e.warn) || e.tell || 1)) : 0;
+  if (heavy) drawHeavyWarn(ctx, e, time);
+  if (heavy && e.strikeT > 0 && e.from) { // streak from the start of the rush / dive to the body
+    ctx.save(); ctx.globalAlpha = .45 * (e.strikeT / (e.strikeMax || .35)) + .15; ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = e.heavyKind === 'dive' ? 16 : 22; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(Math.round(e.from.x), Math.round(e.from.y - e.h / 2)); ctx.lineTo(x, Math.round(y - e.h / 2)); ctx.stroke(); ctx.restore();
+  }
+  if (windup) { ctx.save(); ctx.globalAlpha = .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
+  if (windup && e.type === 'bat') { const ay = Math.round(y + 14 + (calm ? 0 : Math.sin(time * 12) * 3)); ctx.save(); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 10, ay); ctx.lineTo(x + 10, ay); ctx.lineTo(x, ay + 14); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } // down arrow under the bat: it is about to drop
+  if (slump) { ctx.save(); ctx.globalAlpha = calm ? .7 : .55 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 28, e.h / 2 + 5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke(); ctx.restore(); } // gold shimmer: open to punish
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? 70 : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
   if (boss) drawBossWarn(ctx, e, time);
@@ -639,6 +667,8 @@ export function drawEnemy(ctx, e = {}, time = 0) {
     if (e.ward > 0) { const r = Math.min(1, e.ward / 30); ctx.strokeStyle = `rgba(159,216,255,${.35 + .65 * r})`; ctx.lineWidth = 1 + 2 * r; ctx.beginPath(); ctx.arc(x, y - 30, Math.round(40 + 10 * r), 0, 7); ctx.stroke(); }
     ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
+  if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
+  else if (slump) { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
