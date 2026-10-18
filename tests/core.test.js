@@ -2094,6 +2094,7 @@ test('a ground enemy on a 90 step climbs to an adjacent 160 step with the hero o
 test('floor chests keep 60 px clear of platform spans and altars are never under a platform', () => {
   for (let seed = 1; seed <= 200; seed++) for (const stage of [0, 1, 2, 3]) {
     const g = new Game(() => {}, seed); g.start(); g.state = 'playing'; g.loadStage(stage);
+    assert.equal(g.chests.filter(c => c.y === FLOOR).length, 1, 'one floor chest');
     for (const c of g.chests.filter(c => c.y === FLOOR)) for (const p of g.platforms) assert.ok(c.x < p.x - 60 || c.x > p.x + p.w + 60, `chest ${c.x} near platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
     for (const o of g.obstacles.filter(o => o.kind === 'altar')) for (const p of g.platforms) assert.ok(o.x + o.w / 2 < p.x || o.x - o.w / 2 > p.x + p.w, `altar ${o.x} under platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
   }

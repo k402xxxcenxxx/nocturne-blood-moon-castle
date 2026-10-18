@@ -291,7 +291,7 @@ $('modal').addEventListener('click', e => {
     return;
   }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
-  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play('upgrade'); game.chooseRelic(id); } return; }
+  if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play('upgrade'); game.chooseRelic(id); $('relic-tray').innerHTML = relicTray(); } return; }
   switch (button.dataset.command) {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;

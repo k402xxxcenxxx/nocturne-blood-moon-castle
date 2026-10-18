@@ -68,7 +68,7 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 
 ## Stage routes
 
-Stages I to IV widths are 3000 / 3050 / 3100 / 3200 (boss stage 2800). Each is 5 rooms of width `width / 5` ± 30 by seed (the jitter is mean-centred, the last room takes the remainder, so every room is within ±65 of the base); `game.rooms` is `[{ x, w, mirror }]`. Rooms 2 and 4 (indices 1 and 3) are mirrored as a whole by seed: platforms, the optional chest, and enemy spawn positions in them. `room` {stage, index} is emitted when the hero enters a room (the first one on the first frame).
+Stages I to IV widths are 3000 / 3050 / 3100 / 3200 (boss stage 2800). Each is 5 rooms of width `width / 5` ± 30 by seed (the jitter is mean-centred, the last room takes the remainder, so every room is within ±60 of the base); `game.rooms` is `[{ x, w, mirror }]`. Rooms 2 and 4 (indices 1 and 3) are mirrored as a whole by seed: platforms, the optional chest, and enemy spawn positions in them. `room` {stage, index} is emitted when the hero enters a room (the first one on the first frame).
 
 - **Low route**: the floor, continuous from spawn to gate in every room. Barricades and altars (<= 74 px) are within a single jump (apex ~107) and breakable; nothing solid ever blocks the floor.
 - **High routes**: one-way platforms (land from above, jump up through; the hero has no drop input, walk off the edge). `game.platforms` entries are `{ x, y, w, h: 18, theme, kind, moving, move, x0, y0, t, dx, dy }`. Heights are 90 and 160 above the floor: a single jump reaches 90, and a 160 step always has a 90 step within 120 px sideways (or a double jump from the floor: rise <= 175). No platform's lowest point is below FLOOR-85, so the 80 px Cathedral pillar can never touch a hero on one.
