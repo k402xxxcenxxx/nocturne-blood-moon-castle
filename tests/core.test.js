@@ -2122,11 +2122,22 @@ test('stages I-IV each have exactly one elite: the optional chest guard, never r
   });
 });
 
-test('elites have 2.2x health and 1.3x damage over a normal enemy of their type and stage', () => {
-  const game = new Game(() => {}, 5); game.loadStage(2);
-  const e = eliteOf(game), base = game.spawnEnemy(e.type, 100, 2);
-  assert.equal(e.maxHp, Math.round(base.maxHp * 2.2)); assert.equal(e.hp, e.maxHp);
-  assert.ok(Math.abs(e.damage - base.damage * 1.3) < 1e-9);
+test('elites have 2.6x health on stage I, 1.8x for shield bearers, 2.2x otherwise, and 1.3x damage', () => {
+  layouts((game, stage) => {
+    if (stage === 4) return;
+    const e = eliteOf(game), base = game.spawnEnemy(e.type, 100, stage), mult = stage === 0 ? 2.6 : e.type === 'shield' ? 1.8 : 2.2;
+    assert.equal(e.maxHp, Math.round(base.maxHp * mult)); assert.equal(e.hp, e.maxHp);
+    assert.ok(Math.abs(e.damage - base.damage * 1.3) < 1e-9);
+  });
+});
+
+test('the elite stands within 40 px of its optional chest on the same platform, to the chest\'s right', () => {
+  layouts((game, stage) => {
+    if (stage === 4) return;
+    const e = eliteOf(game), c = game.chests.find(o => o.optional);
+    assert.ok(e.plat && e.y === c.y && Math.abs(e.x - c.x) <= 40 && e.x >= c.x, `elite ${e.x} chest ${c.x}`);
+    assert.ok(e.x >= e.plat.x && e.x <= e.plat.x + e.plat.w);
+  });
 });
 
 test('Swift moves 1.5x faster and shortens warnings by 20%, never below 0.3 s', () => {
@@ -2149,6 +2160,7 @@ test('Splitting spawns two 0.4x-health copies beside it on death; copies are pla
     assert.ok(game.obstacles.every(o => Math.abs(c.x - o.x) >= (c.w + o.w) / 2), 'not inside the barricade');
   }
   assert.ok(copies[0].x < e.x && copies[1].x > e.x);
+  advance(game, .9);
   assert.equal(game.state, 'upgrade');
   game.chooseRelic(game.choices[0].id);
   for (const c of copies) game.damageEnemy(c, 999, 1, false, false);
@@ -2192,6 +2204,7 @@ test('killing an elite opens a pick with reason elite, restores 20 HP and full M
   const { game, player, e, events } = withAffix('swift', { hp: 10 });
   player.hp = 50; player.mp = 0; const stage = game.stage;
   game.damageEnemy(e, 99, 1, false, false);
+  advance(game, .9);
   const up = events.findLast(x => x.type === 'upgrade');
   assert.equal(up.reason, 'elite'); assert.equal(up.choices.length, 3);
   assert.equal(events.find(x => x.type === 'eliteKill').affix, 'swift');
@@ -2206,4 +2219,61 @@ test('the Moon Gate opens when the required guards fall, without killing the eli
   game.update(1 / 120);
   assert.equal(game.portalOpen, true);
   assert.ok(eliteOf(game).hp > 0);
+});
+
+test('Splitting puts one copy on each side of the elite even when it stands near one end of its platform (QA #3)', () => {
+  const { game, e } = withAffix('splitting', { hp: 50 });
+  const plat = { x: 790, y: FLOOR - 170, w: 150, h: 18, theme: 'x', kind: 'x', moving: false, dx: 0, dy: 0 };
+  game.platforms = [plat]; Object.assign(e, { x: plat.x + plat.w * .72, y: plat.y, plat });
+  game.damageEnemy(e, 999, 1, false, false);
+  const [left, right] = game.enemies.filter(o => o !== e).sort((a, b) => a.x - b.x);
+  assert.ok(left && right && left.x < e.x && right.x > e.x, `copies at ${left?.x} and ${right?.x}, elite died at ${e.x}`);
+  for (const c of [left, right]) assert.ok(c.x >= plat.x && c.x <= plat.x + plat.w, 'both copies stay on the platform');
+});
+
+test('a hit reports the damage that reached HP, so a fully warded hit shows no damage number (QA #3)', () => {
+  const { game, e, events } = withAffix('warded', { hp: 300 });
+  const hpBefore = e.hp;
+  game.damageEnemy(e, 20, 1, false, false);
+  assert.equal(events.findLast(x => x.type === 'hit').amount, hpBefore - e.hp, 'ward soaked the whole hit');
+  const hpMid = e.hp;
+  game.damageEnemy(e, 25, 1, false, false);
+  assert.equal(events.findLast(x => x.type === 'hit').amount, hpMid - e.hp, 'only the part past the ward is reported');
+});
+
+test('an elite death freezes the world for 0.8 s before the pick; nothing interleaves (QA #3)', () => {
+  const { game, player, e, events } = withAffix('swift', { hp: 10 });
+  const other = enemy(game, 300, { hp: 99 }); other.cd = 0; other.tell = 0;
+  player.hp = 50; player.invulnerable = 0;
+  const picks = events.filter(x => x.type === 'upgrade').length;
+  game.damageEnemy(e, 99, 1, false, false);
+  assert.equal(game.state, 'playing'); assert.equal(events.filter(x => x.type === 'upgrade').length, picks);
+  const ox = other.x, php = player.hp;
+  advance(game, .7);
+  assert.deepEqual([game.state, other.x, player.hp], ['playing', ox, php], 'frozen: no enemy movement or damage');
+  advance(game, .2);
+  assert.equal(game.state, 'upgrade'); assert.equal(game.pickReason, 'elite');
+  assert.equal(events.filter(x => x.type === 'upgrade').length, picks + 1);
+  game.chooseRelic(game.choices[0].id);
+  assert.equal(game.state, 'playing');
+});
+
+test('the elite beat is dropped if the hero dies in it, and a pause holds it', () => {
+  const a = withAffix('swift', { hp: 10 });
+  a.game.damageEnemy(a.e, 99, 1, false, false);
+  a.game.state = 'paused'; advance(a.game, 2); assert.equal(a.game.state, 'paused');
+  a.game.state = 'playing'; advance(a.game, .9); assert.equal(a.game.state, 'upgrade');
+  const b = withAffix('swift', { hp: 10 });
+  b.game.damageEnemy(b.e, 99, 1, false, false);
+  b.game.state = 'dead'; advance(b.game, 2); assert.equal(b.game.state, 'dead');
+  b.game.loadStage(1); b.game.state = 'playing'; advance(b.game, 2); assert.equal(b.game.state, 'playing', 'a new stage clears the beat');
+});
+
+test('statusTick reports the damage that reached HP and the amount the ward absorbed', () => {
+  const { game, e, events } = withAffix('warded', { hp: 300 });
+  game.elemDamage(e, 40, 'burn');
+  const t = events.findLast(x => x.type === 'statusTick');
+  assert.deepEqual([t.amount, t.absorbed, e.hp], [10, 30, 290]);
+  game.damageEnemy(e, 5, 1, false, false); // ward is empty; later hits report absorbed 0
+  assert.equal(events.findLast(x => x.type === 'hit').absorbed, 0);
 });
