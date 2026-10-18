@@ -22,15 +22,15 @@ const ROOM_PLATFORMS = [
 ];
 export const RELICS = [
   { id: 'edge', icon: 'sword', apply: p => p.damage *= 1.25 },
-  { id: 'haste', icon: 'wind', apply: p => { p.attackSpeed *= .82; p.speed *= 1.08; } },
+  { id: 'haste', icon: 'wind', apply: p => { p.attackSpeed = Math.max(.3, p.attackSpeed * .82); p.speed *= 1.08; } },
   { id: 'crit', icon: 'star', apply: p => p.crit = Math.min(.8, p.crit + .18) },
   { id: 'vital', icon: 'heart', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
   { id: 'leech', icon: 'drop', apply: p => p.leech += 5 },
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
   { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; p.plungeRadius = Math.max(p.plungeRadius, Math.min(150, p.plungeRadius + 12)); } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
-  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
-  { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
+  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield = Math.min(.3, p.dashShield + .1); p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
+  { id: 'armor', icon: 'shield', apply: p => { p.armor = Math.max(.25, p.armor * .8); p.hp = Math.min(p.maxHp, p.hp + 20); } },
   // Elemental relics: no stat change; core reads the stack count (see Game.stacks) when a hit lands.
   { id: 'fire', icon: 'star', apply: () => {} },
   { id: 'frost', icon: 'gem', apply: () => {} },
@@ -43,7 +43,7 @@ export const RELICS = [
   { id: 'vortex', icon: 'moon', apply: () => {} },
   // Cursed relics: a benefit and a cost, never in the opening pick, at most one per offer; `max` copies, then no longer offered.
   { id: 'bloodOath', icon: 'drop', cursed: true, max: 2, apply: p => { p.swordMul *= 1.6; p.takenMul *= 1.25; } }, // swordMul scales sword hits (combo, thrust, plunge), not wave/beam shots; takenMul applies after armor
-  { id: 'lunaticMoon', icon: 'moon', cursed: true, max: 1, apply: p => { p.lunatic = true; p.mpRegen = 0; } }, // Eclipse free, 6 s cooldown; hit / kill / perfect-dodge MP still pays
+  { id: 'lunaticMoon', icon: 'moon', cursed: true, max: 1, apply: p => { p.lunatic = true; p.magicCdMax = 6; p.mpRegen = 0; } }, // Eclipse free, 6 s cooldown; hit / kill / perfect-dodge MP still pays
   { id: 'nightwalk', icon: 'wind', cursed: true, max: 2, apply: p => { p.speed *= 1.2; p.dashCooldown = Math.max(.35, p.dashCooldown * .6); p.maxHp = Math.max(40, p.maxHp - 25); p.hp = Math.min(p.hp, p.maxHp); } },
 ];
 // Symmetric synergy pairs; the i18n key is `synergy.<first>-<second>` in either direction. Only text: the relics already do the work.
@@ -62,14 +62,19 @@ const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spaw
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+// Endless Trial: per-floor enemy multipliers compound from floor 1 and stay finite at any depth.
+export const ENDLESS_HP = 1.22, ENDLESS_DAMAGE = 1.13, ENDLESS_BOSS_EVERY = 5, ENDLESS_ELITE_FROM = 6, ENDLESS_ELITE_CHANCE = .2, SCALE_CAP = 1e9, STAT_CAP = 1e12;
+export const floorScale = floor => ({ hp: Math.min(SCALE_CAP, ENDLESS_HP ** (floor - 1)), damage: Math.min(SCALE_CAP, ENDLESS_DAMAGE ** (floor - 1)) });
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source.
 const AFFIXES = ['swift', 'splitting', 'warded'], ELITE_BEAT = .8, ELITE_DAMAGE = 1.3, WARD_AMOUNT = 30, WARD_PERIOD = 6, ELITE_NOTICE = 600;
 const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35, plunge: 45 };
 
 export class Game {
-  constructor(onEvent = () => {}, seed = randomSeed()) {
+  constructor(onEvent = () => {}, seed = randomSeed(), mode = 'normal') {
     this.onEvent = onEvent;
+    this.mode = mode; // 'normal' (five stages) or 'endless' (floors loop through the stages)
+    this.floor = 1; // 1-based; stage stays the 0-4 theme index, (floor - 1) % 5, in endless
     this.seed = seed;
     this.randomState = seed || 1;
     this.state = 'title';
@@ -83,7 +88,7 @@ export class Game {
     this.player = {
       x: 155, y: FLOOR, w: 28, h: 58, vx: 0, vy: 0, dir: 1, grounded: true, jumps: 0,
       hp: 100, maxHp: 100, mp: 100, maxMp: 100, damage: 24, magicDamage: 58, magicCost: 35,
-      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, mpRegen: 8,
+      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, magicCdMax: .65, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
       attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90,
@@ -133,6 +138,7 @@ export class Game {
       return type === 'knight' && this.rand() < .28 ? 'spear' : type;
     };
     for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / spec.count + this.rand() * 65), index);
+    if (this.mode === 'endless' && this.floor >= ENDLESS_ELITE_FROM) for (const e of this.enemies) if (this.rand() < ENDLESS_ELITE_CHANCE) this.makeElite(e, index).bonus = true; // extra elites: no reward pick
     if (boss) {
       this.spawnEnemy('boss', spec.width - 400, index).required = true;
       // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes.
@@ -141,17 +147,22 @@ export class Game {
       for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, index).required = true; }
       const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest
       Object.assign(guard, { y: spot.y, plat: spot.plat });
-      const mult = index === 0 ? 2.6 : guard.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
-      let affix = AFFIXES[Math.floor(this.rand() * AFFIXES.length)]; // the optional chest's guard is this stage's elite
-      if (affix === 'warded' && guard.type === 'shield') affix = AFFIXES[Math.floor(this.rand() * 2)]; // a shield bearer is never Warded: swift or splitting
       Object.assign(this.chests[1], { sealed: true }); // sealed until this guard (linked by chest id) is gone
-      Object.assign(guard, { chest: 1, elite: true, affix, damage: guard.damage * ELITE_DAMAGE, hp: Math.round(guard.hp * mult), maxHp: Math.round(guard.hp * mult) });
-      if (affix === 'swift') guard.speed *= 1.5;
-      if (affix === 'warded') { guard.ward = WARD_AMOUNT; guard.wardT = WARD_PERIOD; }
+      this.makeElite(guard, index).chest = 1; // the optional chest's guard is this stage's elite
     }
     this.totalEnemies = this.enemies.length;
     this.placeHazards(index);
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
+  }
+  // Elite stats and a random affix (a shield bearer is never Warded).
+  makeElite(e, index) {
+    const mult = index === 0 ? 2.6 : e.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
+    let affix = AFFIXES[Math.floor(this.rand() * AFFIXES.length)];
+    if (affix === 'warded' && e.type === 'shield') affix = AFFIXES[Math.floor(this.rand() * 2)];
+    Object.assign(e, { elite: true, affix, damage: e.damage * ELITE_DAMAGE, hp: Math.round(e.hp * mult), maxHp: Math.round(e.hp * mult) });
+    if (affix === 'swift') e.speed *= 1.5;
+    if (affix === 'warded') { e.ward = WARD_AMOUNT; e.wardT = WARD_PERIOD; }
+    return e;
   }
   makePlatform(x, y, w, theme, kind, axis = null) {
     const move = axis ? { axis, amp: ROOM_SWING, speed: ROOM_SWING_SPEED } : null, plat = { x, y, w, h: 18, theme, kind, moving: !!move, move, x0: x, y0: y, t: move ? this.rand() * Math.PI * 2 : 0, dx: 0, dy: 0 };
@@ -244,8 +255,9 @@ export class Game {
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
-    const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
+    const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12) * scale.hp);
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     return this.enemies.at(-1);
   }
   update(dt, input = {}) {
@@ -362,7 +374,8 @@ export class Game {
     const p = this.player;
     if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
+    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap
+    p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {
@@ -384,7 +397,7 @@ export class Game {
     if (thrust) p.thrustWindow = 0; // a thrust neither advances nor resets the combo
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
-    p.attack = p.attackLen = .24; p.attackCd = (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed;
+    p.attack = p.attackLen = .24; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed); // never shorter than the swing animation
     this.hitSet = new Set(); this.flameUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
@@ -468,7 +481,7 @@ export class Game {
     const p = this.player;
     const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
     if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
-    p.mp -= cost; p.magicCd = p.lunatic ? 6 : .65; p.invulnerable = Math.max(p.invulnerable, .28);
+    p.mp -= cost; p.magicCd = p.magicCdMax; p.invulnerable = Math.max(p.invulnerable, .28);
     this.flameUsed = false;
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
@@ -547,7 +560,7 @@ export class Game {
       if (e.affix === 'splitting') this.splitElite(e);
       if (e.elite) {
         this.emit('eliteKill', { x: e.x, y: e.y - e.h * .5, affix: e.affix });
-        if (this.state === 'playing') this.eliteBeat = ELITE_BEAT;
+        if (this.state === 'playing' && !e.bonus) this.eliteBeat = ELITE_BEAT;
       }
     }
   }
@@ -669,7 +682,7 @@ export class Game {
     if (e.hp <= 0) return;
     if (e.elite) {
       if (e.affix === 'warded' && (e.wardT -= dt) <= 0) { e.wardT += WARD_PERIOD; e.ward = WARD_AMOUNT; }
-      if (!e.seen && Math.abs(this.player.x - e.x) < ELITE_NOTICE) { e.seen = true; this.emit('elite', { x: e.x, y: e.y, affix: e.affix }); }
+      if (!e.seen && Math.abs(this.player.x - e.x) < ELITE_NOTICE) { e.seen = true; this.emit('elite', { x: e.x, y: e.y, affix: e.affix, bonus: !!e.bonus }); }
     }
     const speed = e.speed;
     if (e.blessed > 0) e.speed *= 1.15;
@@ -892,7 +905,7 @@ export class Game {
     const p = this.player;
     if (this.state !== 'playing') return;
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
-    const actual = Math.round(amount * p.armor * p.takenMul);
+    const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
     p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;
@@ -901,7 +914,7 @@ export class Game {
   }
   finishStage() {
     this.player.plunge = 0; this.player.move = '';
-    if (this.stage === 4) { this.state = 'won'; this.emit('win'); return; }
+    if (this.stage === 4 && this.mode === 'normal') { this.state = 'won'; this.emit('win'); return; }
     this.rollChoices('stage');
   }
   chooseRelic(id) {
@@ -909,15 +922,16 @@ export class Game {
     const relic = this.choices.find(r => r.id === id);
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
+    for (const k in this.player) if (typeof this.player[k] === 'number' && !(Math.abs(this.player[k]) <= STAT_CAP)) this.player[k] = Number.isNaN(this.player[k]) ? 0 : Math.sign(this.player[k]) * STAT_CAP; // finite guard for endless stacking
     if (this.pickReason === 'elite') { this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20); this.player.mp = this.player.maxMp; this.state = 'playing'; return true; } // like a stage pick's restore, but play resumes in place
     if (this.pickReason === 'chest') { this.state = 'playing'; return true; } // chest pick: no heal, no stage change
     if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
     else {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
       this.player.mp = this.player.maxMp;
-      this.loadStage(this.stage + 1); this.state = 'playing';
+      this.floor++; this.loadStage(this.mode === 'endless' ? (this.floor - 1) % STAGES.length : this.stage + 1); this.state = 'playing';
     }
-    this.emit('stage', { stage: this.stage });
+    this.emit('stage', { stage: this.stage, floor: this.floor, mode: this.mode });
     return true;
   }
 }

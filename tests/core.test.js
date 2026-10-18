@@ -2401,3 +2401,60 @@ test('cursed offers are deterministic per seed', () => {
   const roll = seed => { const g = new Game(() => {}, seed); g.rollChoices('stage'); return g.choices.map(r => r.id).join(); };
   for (let s = 1; s < 20; s++) assert.equal(roll(s), roll(s));
 });
+
+// QA regressions for Endless Trial stacking (#22). Written as rules.
+function stackedEndless(relicId, count, seed = 5) {
+  const events = [], game = new Game(event => events.push(event), seed, 'endless');
+  game.start(); game.chooseRelic(game.choices[0].id);
+  game.state = 'playing'; game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
+  for (let i = 0; i < count; i++) { game.rollChoices('chest'); game.choices = [RELICS.find(r => r.id === relicId)]; game.chooseRelic(relicId); }
+  return { game, player: game.player, events };
+}
+
+test('regression: stacked armor never reduces a landed hit to zero damage', () => {
+  const { game, player } = stackedEndless('armor', 30);
+  const before = player.hp;
+  game.hurt(20, 1);
+  assert.ok(player.hp < before, `hero took no damage at armor ${player.armor}`);
+});
+
+test('regression: repeated dashing cannot keep the hero invulnerable forever after many dash picks', () => {
+  const { game, player } = stackedEndless('dash', 30);
+  let exposed = 0;
+  for (let frame = 0; frame < 20 * 120; frame++) {
+    game.update(1 / 120, { dash: frame % 42 === 0 }); // a dash every 0.35 s, the minimum cooldown
+    if (player.invulnerable <= 0) exposed++;
+  }
+  assert.ok(exposed > 0, `hero was invulnerable on every frame (dash shield ${player.dashShield})`);
+});
+
+test('regression: stacked haste keeps at least one swing animation (0.24 s) between swings', () => {
+  const { game, events } = stackedEndless('haste', 20);
+  let last = -Infinity, time = 0, minGap = Infinity;
+  for (let frame = 0; frame < 4 * 120; frame++) {
+    time = frame / 120;
+    const before = events.length;
+    game.update(1 / 120, { attack: true });
+    if (events.slice(before).some(e => e.type === 'swing')) { minGap = Math.min(minGap, time - last); last = time; }
+  }
+  assert.ok(minGap >= .24 - 1e-9, `swings ${(minGap * 1000).toFixed(1)} ms apart at attackSpeed ${game.player.attackSpeed}`);
+});
+
+test('regression: the elite sighting event says when an elite is a bonus elite (no reward pick)', () => {
+  const { game, events } = stackedEndless('edge', 0, 3);
+  game.floor = 6;
+  const elite = game.spawnEnemy('skeleton', 300, 0);
+  game.makeElite(elite, 0).bonus = true;
+  game.enemies = [elite];
+  game.update(1 / 120, {});
+  const notice = events.find(e => e.type === 'elite');
+  assert.ok(notice, 'no elite sighting event');
+  assert.equal(notice.bonus, true, 'bonus elite sighting must not promise a relic pick');
+});
+
+test('regression: dashing while falling cancels the downward velocity again (bc58cca comment swallowed the clamp)', () => {
+  const { game, player } = stackedEndless('edge', 0);
+  player.dashCd = 0; player.attack = 0; player.grounded = false; player.y = 300; player.vy = 500;
+  game.dash();
+  assert.equal(player.vy, 0);
+});

@@ -2345,6 +2345,12 @@ b[data-i18n] {
 @media (max-height:480px) {
   .room-banner.elite {
     top:31%; /* below the objective line, still above the enemy warning band */
+    left:62%; /* shifted right so it clears a full relic tray at the left */
+    max-width:50%;
+  }
+  .relic-tray {
+    flex-wrap:wrap;
+    max-width:300px; /* wrap long trays so they never reach the shifted elite banner */
   }
 }
 
@@ -2414,4 +2420,19 @@ b[data-i18n] {
     margin-right:4px;
     letter-spacing:1px;
   }
+}
+
+/* Endless Trial entry (title) and its result flag */
+.endless-button { display:flex; width:fit-content; align-self:center; margin-left:auto; margin-right:auto; flex-direction:column; align-items:center; gap:2px; margin-top:10px; min-height:44px; padding:8px 22px; letter-spacing:1px; }
+.endless-button b { font-size:13px; letter-spacing:3px; color:#e8d9b5; }
+.endless-button span, .endless-button em { font-size:11px; font-style:normal; letter-spacing:1px; color:#a89878; }
+.endless-button em:empty { display:none; }
+.endless-button em { color:#d6a756; }
+.endless-button[aria-disabled="true"] { border-style:dashed; opacity:.62; cursor:not-allowed; }
+.endless-button[aria-disabled="true"] b::before { content:"\1F512\FE0E "; font-size:11px; }
+.endless-button:focus-visible { outline:2px solid #d6a756; outline-offset:2px; }
+.new-record { color:#d6a756; letter-spacing:3px; font-size:13px; margin:-4px 0 8px; }
+@media (max-height:480px) {
+  .endless-button { margin-top:4px; min-height:44px; padding:4px 18px; }
+  .endless-button span, .endless-button em { font-size:10px; }
 }
