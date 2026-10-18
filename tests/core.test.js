@@ -2402,7 +2402,7 @@ test('cursed offers are deterministic per seed', () => {
   for (let s = 1; s < 20; s++) assert.equal(roll(s), roll(s));
 });
 
-// QA regressions for Endless Trial stacking (#22). Written as rules; expected to fail until the engineer adds floors or caps.
+// QA regressions for Endless Trial stacking (#22). Written as rules.
 function stackedEndless(relicId, count, seed = 5) {
   const events = [], game = new Game(event => events.push(event), seed, 'endless');
   game.start(); game.chooseRelic(game.choices[0].id);

@@ -143,7 +143,7 @@ Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `el
 
 ## Endless Trial
 
-Approved in #22; explicitly **not balanced**: it exists for combination testing and long-tail replay. Title-screen option, unlocked after the first completed normal run (`records.wins >= 1`). The normal five-stage run is unchanged.
+Approved in #22; explicitly **not balanced**: it exists for combination testing and long-tail replay. Title-screen option, unlocked after the first completed normal run (`records.wins >= 1`). The normal five-stage run is unchanged except for the stacking floors listed under Relics.
 
 - `Game(onEvent, seed, 'endless')` has `mode` (`'normal'` | `'endless'`) and a 1-based `floor`. `stage` stays the 0-4 theme index, `(floor - 1) % 5`, so rooms, art and text are reused. Every 5th floor is the Fallen King's arena; clearing it opens the usual relic pick and continues to the next floor (no `won` state, no `win` event). The opening build pick happens as in a normal run.
 - Scaling: floor multipliers are `1.22^(floor-1)` for enemy health and `1.13^(floor-1)` for damage (x1.0 on floor 1), capped at 1e9 so they stay finite. They multiply the existing per-stage value: health = (base + 12 x stage) x floor multiplier, damage = (8 + 2.5 x stage) x floor multiplier (boss: 900 and 22). The elite multipliers apply on top. Traps and obstacles do not scale.
