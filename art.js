@@ -290,7 +290,10 @@ export function drawChest(ctx, c, time = 0) {
   rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, '#7a5632', x + 1, y + 1, c.w - 2, 8);
   rect(ctx, gold, x + 1, y + 3, c.w - 2, c.optional ? 4 : 2); // optional chests: wide gold lid band
   rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8);
-  if (heal) { rect(ctx, tint, x + c.w / 2 - 1, y + 8, 2, 6); rect(ctx, tint, x + c.w / 2 - 3, y + 10, 6, 2); } else { poly(ctx, tint, [[x + c.w / 2, y + 7], [x + c.w / 2 + 3, y + 11], [x + c.w / 2, y + 15], [x + c.w / 2 - 3, y + 11]]); }
+  const mx = x + c.w / 2, sy = y + 11; // shape symbol on a dark plate: heart = heal, diamond = relic (readable without colour)
+  rect(ctx, '#140f0c', mx - 7, sy - 6, 14, 12);
+  if (heal) { rect(ctx, '#e9fff1', mx - 5, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx + 1, sy - 4, 4, 3); rect(ctx, '#e9fff1', mx - 5, sy - 1, 10, 2); rect(ctx, '#e9fff1', mx - 3, sy + 1, 6, 2); rect(ctx, '#e9fff1', mx - 1, sy + 3, 2, 1); }
+  else { poly(ctx, '#f1ebff', [[mx, sy - 6], [mx + 5, sy], [mx, sy + 6], [mx - 5, sy]]); poly(ctx, tint, [[mx, sy - 3], [mx + 2, sy], [mx, sy + 3], [mx - 2, sy]]); }
 }
 // Platforms are drawn live every frame (never in the scene cache). The top edge is exactly y and spans x..x+w, matching collision.
 function drawPlatform(c, pl, x, y, w, p, time, camera) {

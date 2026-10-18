@@ -185,7 +185,7 @@ function handleEvent(e) {
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
-    case 'room': if (announceTime <= 0) { $('room-banner').textContent = t(`room.${e.stage}.${e.index}`); $('room-banner').classList.add('show'); roomTime = 2.2; } break; // the stage announcement already names room 0
+    case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
@@ -337,6 +337,7 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
+function showRoom(stage, index) { $('room-banner').textContent = t(`room.${stage}.${index}`); $('room-banner').classList.add('show'); roomTime = 2.2; }
 function updateHud() {
   const p = game.player;
   $('hp-text').innerHTML = `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -345,8 +346,10 @@ function updateHud() {
   $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
   $('souls').textContent = game.souls;
   const guards = game.guardStatus();
-  $('enemy-count').textContent = t('hud.guards', { n: guards.n, total: guards.total });
-  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : 'objective.fight');
+  const bossStage = game.stage === 4; // only the king is required there, so no guard counter
+  $('enemy-count').textContent = bossStage ? '' : t('hud.guards', { n: guards.n, total: guards.total });
+  $('enemy-count').hidden = bossStage;
+  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? 'objective.boss' : 'objective.fight');
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
@@ -554,7 +557,7 @@ function tick(now) {
   phaseTime = Math.max(0, phaseTime - dt);
   damageFlash = Math.max(0, damageFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt); silverFlash = Math.max(0, silverFlash - dt);
   comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
-  if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) $('stage-announcement').classList.remove('show'); }
+  if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
   if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
