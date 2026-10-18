@@ -2436,3 +2436,9 @@ b[data-i18n] {
   .endless-button { margin-top:4px; min-height:44px; padding:4px 18px; }
   .endless-button span, .endless-button em { font-size:10px; }
 }
+@media (min-width:761px) and (min-height:601px) {
+  .game-frame {
+    max-width:calc((100dvh - 16px) * 16 / 9); /* keep the 16:9 frame no taller than the window */
+    margin-inline:auto;
+  }
+}
