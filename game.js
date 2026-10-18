@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
@@ -58,6 +58,7 @@ function getInput() {
   }
   return input;
 }
+const lastWard = new WeakMap(); // enemy -> ward value last frame
 function toast(message) { $('toast').textContent = message; toastTime = 2.6; $('toast').classList.add('show'); }
 function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   for (let i = 0; i < count; i++) {
@@ -101,6 +102,9 @@ function handleEvent(e) {
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
       if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
       break;
+    case 'eliteKill': // big purple burst, ring and shake
+      audio.play('kill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
@@ -413,6 +417,9 @@ function drawShot(s) { // sized to the hit radius s.r
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
+    if (fx.type === 'wardBreak') { // expanding ring: blue for a shattered ward, purple for an elite kill
+      ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = fx.color; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.arc(fx.x, fx.y, Math.round(20 + progress * (fx.r || 60)), 0, 7); ctx.stroke(); ctx.restore();
+    }
     if (fx.type === 'magic') {
       ctx.save(); ctx.translate(fx.x, fx.y); ctx.globalAlpha = (1 - progress) * .85;
       const radius = 28 + Math.sin(progress * Math.PI / 2) * 185;
@@ -501,6 +508,10 @@ function render(dt) {
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
+      if (e.elite) { // ward broke since last frame: shatter flash (render-only; compares against the previous frame)
+        if (lastWard.get(e) > 0 && !(e.ward > 0)) { burst(e.x, e.y - 30, '#9fd8ff', 16, 190); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#9fd8ff' }); }
+        lastWard.set(e, e.ward);
+      }
       drawEnemy(ctx, e, worldTime); drawStatus(ctx, e, worldTime, !settings.shake);
       if (e.type === 'boss' && e.travel > 0 && (dustTimer -= dt) <= 0) { dustTimer = .035; burst(e.x - e.dir * 28, e.y - 2, '#9a8c77', 3, 90, -e.dir, 3); } // charge dust kicked up behind the feet
       if (e.type !== 'boss' && e.hp < e.maxHp) {
@@ -521,6 +532,7 @@ function render(dt) {
         ctx.fillStyle = '#13111b'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#e0bd6a'; ctx.stroke(); ctx.lineWidth = 1;
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
+      if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; ctx.strokeText('!', bx, by2); ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
