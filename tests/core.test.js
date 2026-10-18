@@ -2473,6 +2473,17 @@ test('#30 chain lightning: at most one chain per attack, then it rearms', () => 
   assert.equal(events.filter(ev => ev.type === 'reaction' && ev.name === 'chain').length, 2);
 });
 
+test('#30 chain gate: a swing re-arms it, an Eclipse cast mid-swing does not', () => {
+  const { game, player } = elem('shock');
+  player.mp = player.maxMp; player.magicCd = 0;
+  game.chainUsed = true;
+  game.attack();
+  assert.equal(game.chainUsed, false, 'a new swing re-arms the chain');
+  game.chainUsed = true; // the swing chained
+  game.magic();
+  assert.equal(game.chainUsed, true, 'Eclipse must not give the same swing a second chain');
+});
+
 test('#30 shock 1v1: with no chain target the shocked enemy takes half the chain damage, once per attack', () => {
   const { game, player, events } = elem('shock');
   const e = enemy(game, 600);

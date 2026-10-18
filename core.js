@@ -483,7 +483,7 @@ export class Game {
     const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
     if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
     p.mp -= cost; p.magicCd = p.magicCdMax; p.invulnerable = Math.max(p.invulnerable, .28);
-    this.flameUsed = this.chainUsed = false;
+    this.flameUsed = false; // Eclipse never chains, so it must not re-arm the chain of a swing still in progress
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
