@@ -407,21 +407,30 @@ function updateHud() {
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
-function drawSlash(x, y, dir, progress, heavy = false, enemy = false) {
+const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // placeholder trail tints per Vigil weapon
+let auraG = null, vigG = null, vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
+function auraGradient() { if (!auraG) { auraG = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); auraG.addColorStop(0, 'rgba(255,70,70,.45)'); auraG.addColorStop(1, 'rgba(255,70,70,0)'); } return auraG; }
+function vignetteGradient() { if (!vigG || vigW !== viewWidth) { vigW = viewWidth; vigG = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); vigG.addColorStop(0, 'rgba(160,10,30,0)'); vigG.addColorStop(1, 'rgba(160,10,30,.55)'); } return vigG; }
+function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null) {
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
   ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
-  const radius = heavy ? 105 : 82;
+  const radius = weapon === 'heavy' ? 118 : weapon === 'twin' ? 62 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
+  if (weapon === 'twin') { // two short crossed arcs
+    ctx.strokeStyle = tint; ctx.lineWidth = 3;
+    for (const f of [1, -1]) { ctx.save(); ctx.scale(1, f); ctx.beginPath(); ctx.arc(7, -3, radius, -.95, .6); ctx.stroke(); ctx.restore(); }
+    ctx.restore(); return;
+  }
   ctx.beginPath(); ctx.arc(7, -3, radius, -.95, 1.1); ctx.arc(3, -4, radius * .74, 1.1, -.95, true); ctx.closePath();
-  ctx.fillStyle = enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
-  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : '#f6e7be'; ctx.stroke();
+  ctx.fillStyle = tint ? tint + '88' : enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
+  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = weapon === 'heavy' ? 8 : heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : tint || '#f6e7be'; ctx.stroke();
   ctx.beginPath(); ctx.arc(5, -4, radius * .84, -.5, .75); ctx.lineWidth = 2; ctx.strokeStyle = enemy ? '#fc9da4' : '#fffbee'; ctx.stroke();
   ctx.restore();
 }
-function drawThrust(x, y, dir, progress) { // long thin trail covering the 155 px thrust reach
+function drawThrust(x, y, dir, progress, weapon = null) { // long thin trail covering the 155 px thrust reach
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
-  const len = Math.round(155 * Math.min(1, progress * 4 + .3));
+  const spear = weapon === 'spear', len = Math.round((spear ? 190 : 155) * Math.min(1, progress * 4 + .3));
   ctx.globalAlpha = Math.max(0, 1 - progress);
-  ctx.fillStyle = '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
+  ctx.fillStyle = spear ? WEAPON_TINT.spear + '88' : '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
   ctx.fillStyle = '#fffbee'; ctx.fillRect(12, -1, len - 12, 2);
   ctx.restore();
 }
@@ -529,6 +538,7 @@ function drawEffects(dt) {
 }
 function render(dt) {
   const title = game.state === 'title', p = game.player;
+  const frenzyK = p.frenzy && game.mode === 'castle' ? .25 + .75 * clamp((p.blood - BLOOD_HALF) / (BLOOD_MAX - BLOOD_HALF), 0, 1) : 0; // fades as blood burns 200 -> 100
   if (!title) camera += (clamp(p.x - viewWidth * .37, 0, game.worldWidth - viewWidth) - camera) * Math.min(1, dt * 7);
   ctx.save(); ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#0b0d15'; ctx.fillRect(0, 0, viewWidth, 540);
@@ -583,8 +593,9 @@ function render(dt) {
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
       ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
     }
+    if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
-    if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3); }
+    if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
       if (b.ground) { drawGroundWave(b); continue; }
@@ -598,6 +609,7 @@ function render(dt) {
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
     for (let mx = 715 - (Math.floor(camera * .13) % 1440); mx < viewWidth + 200; mx += 1440) { const mr = 150 + 40 * pulse, gr = ctx.createRadialGradient(mx, 150, 10, mx, 150, mr); gr.addColorStop(0, `rgba(255,70,60,${.7 * k})`); gr.addColorStop(1, 'rgba(255,70,60,0)'); ctx.fillStyle = gr; ctx.fillRect(mx - mr, 150 - mr, mr * 2, mr * 2); }
   }
+  if (frenzyK > 0) { ctx.globalAlpha = frenzyK * (settings.shake ? .8 + .2 * Math.sin(worldTime * 9) : .9); ctx.fillStyle = vignetteGradient(); ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = 1; }
   if (damageFlash > 0) { ctx.fillStyle = `rgba(144,27,50,${damageFlash * .65})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (whiteFlash > 0) { ctx.fillStyle = `rgba(255,232,193,${whiteFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (silverFlash > 0) { ctx.fillStyle = `rgba(214,224,255,${silverFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
