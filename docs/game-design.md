@@ -4,10 +4,22 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 ## Core fun and design pillars
 
-> Locking this section is one of the M0 Prototype exit criteria. Below is the current draft.
+### Approved direction (#43)
 
-- **Core fun (draft)**: read the gaps between enemy warnings, chain combos, dashes and Eclipse into a clean run, then pick a relic that changes how the next stage plays.
-- **Pillars (draft)**
+Approved by the user in #43. This is the direction new proposals must serve; **none of these rules are built yet**, and the first step is the vertical slice in #44 (awaiting its own approval). The rest of this document still describes the game as it is now.
+
+- **Core fun**: blood is your only resource: the fuller you are, the stronger you get, and the closer you are to losing control.
+- **Pillars**
+  1. **Blood is the only resource**: blood is gained by attacking, spent on weapon skills, and is also your life; there is no free healing, so offense keeps you alive.
+  2. **Fullness is power and risk**: the meter above 50% is both extra life and a countdown, and a full meter forces a Blood Frenzy that is strongest exactly when you are closest to losing control.
+  3. **The weapon defines the frenzy**: each weapon has its own frenzy with a built-in downside, and weapons change only at rest points, so choosing a weapon chooses which loss of control you carry.
+
+The input-level qualities of the prototype stay requirements under every pillar: every enemy attack has a visible warning (`tell`), and every hit gets hit-stop, a flash, knockback, sound and a number.
+
+### Previous draft (current five-stage prototype)
+
+- **Core fun**: read the gaps between enemy warnings, chain combos, dashes and Eclipse into a clean run, then pick a relic that changes how the next stage plays.
+- **Pillars**
   1. **Read and react**: every enemy attack has a visible warning (`tell`); dodging takes skill, not luck.
   2. **Impact feedback**: every hit gets hit-stop, a flash, knockback, sound and a number.
   3. **Every run differs**: relic combinations and random placement change the decisions in each run.
