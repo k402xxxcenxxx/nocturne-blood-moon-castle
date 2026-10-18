@@ -1241,6 +1241,7 @@ b[data-i18n] {
 .game-frame:fullscreen,.game-frame.fullscreen-fallback {
   border:0;
   width:100vw;
+  max-width:none;
   height:100dvh;
   aspect-ratio:auto;
   background:#090c15;
