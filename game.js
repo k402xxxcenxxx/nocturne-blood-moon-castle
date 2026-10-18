@@ -204,7 +204,7 @@ function handleEvent(e) {
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'unseal': burst(e.x, e.y - 18, '#8f6be0', 18, 140); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
-    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t('hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
+    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
@@ -267,7 +267,7 @@ function synergyLine(id) {
 }
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -340,6 +340,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); openPause(); return; }
+  if (game.state === 'title' && document.activeElement?.closest('button, a, [tabindex]')) return; // a focused title control handles Enter/Space itself
   if (game.state === 'title' && e.code === 'Enter') { e.preventDefault(); startRun(); return; }
   if (keyControls[e.code]) { e.preventDefault(); if (!e.repeat) press(keyControls[e.code], e.code); }
 });

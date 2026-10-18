@@ -22,15 +22,15 @@ const ROOM_PLATFORMS = [
 ];
 export const RELICS = [
   { id: 'edge', icon: 'sword', apply: p => p.damage *= 1.25 },
-  { id: 'haste', icon: 'wind', apply: p => { p.attackSpeed *= .82; p.speed *= 1.08; } },
+  { id: 'haste', icon: 'wind', apply: p => { p.attackSpeed = Math.max(.3, p.attackSpeed * .82); p.speed *= 1.08; } },
   { id: 'crit', icon: 'star', apply: p => p.crit = Math.min(.8, p.crit + .18) },
   { id: 'vital', icon: 'heart', apply: p => { p.maxHp += 30; p.hp = Math.min(p.maxHp, p.hp + 40); } },
   { id: 'leech', icon: 'drop', apply: p => p.leech += 5 },
   { id: 'arcane', icon: 'moon', apply: p => { p.magicDamage *= 1.45; p.magicCost = Math.max(15, p.magicCost - 5); } },
   { id: 'reach', icon: 'sword', apply: p => { p.reach += 28; p.knockback += 70; p.plungeRadius = Math.max(p.plungeRadius, Math.min(150, p.plungeRadius + 12)); } },
   { id: 'mana', icon: 'gem', apply: p => { p.maxMp += 30; p.mp = p.maxMp; p.mpRegen *= 1.5; } },
-  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield += .1; p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
-  { id: 'armor', icon: 'shield', apply: p => { p.armor *= .8; p.hp = Math.min(p.maxHp, p.hp + 20); } },
+  { id: 'dash', icon: 'wind', apply: p => { p.dashCooldown = Math.max(.35, p.dashCooldown * .7); p.dashShield = Math.min(.3, p.dashShield + .1); p.thrustMul = Math.min(2.4, p.thrustMul + .35); p.perfectMp = Math.min(30, p.perfectMp + 8); } },
+  { id: 'armor', icon: 'shield', apply: p => { p.armor = Math.max(.25, p.armor * .8); p.hp = Math.min(p.maxHp, p.hp + 20); } },
   // Elemental relics: no stat change; core reads the stack count (see Game.stacks) when a hit lands.
   { id: 'fire', icon: 'star', apply: () => {} },
   { id: 'frost', icon: 'gem', apply: () => {} },
@@ -374,7 +374,7 @@ export class Game {
     const p = this.player;
     if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, .23 + p.dashShield); p.vy = Math.min(p.vy, 0);
+    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {
@@ -396,7 +396,7 @@ export class Game {
     if (thrust) p.thrustWindow = 0; // a thrust neither advances nor resets the combo
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
-    p.attack = p.attackLen = .24; p.attackCd = (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed;
+    p.attack = p.attackLen = .24; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed); // never shorter than the swing animation
     this.hitSet = new Set(); this.flameUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo' });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
@@ -681,7 +681,7 @@ export class Game {
     if (e.hp <= 0) return;
     if (e.elite) {
       if (e.affix === 'warded' && (e.wardT -= dt) <= 0) { e.wardT += WARD_PERIOD; e.ward = WARD_AMOUNT; }
-      if (!e.seen && Math.abs(this.player.x - e.x) < ELITE_NOTICE) { e.seen = true; this.emit('elite', { x: e.x, y: e.y, affix: e.affix }); }
+      if (!e.seen && Math.abs(this.player.x - e.x) < ELITE_NOTICE) { e.seen = true; this.emit('elite', { x: e.x, y: e.y, affix: e.affix, bonus: !!e.bonus }); }
     }
     const speed = e.speed;
     if (e.blessed > 0) e.speed *= 1.15;
@@ -904,7 +904,7 @@ export class Game {
     const p = this.player;
     if (this.state !== 'playing') return;
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
-    const actual = Math.round(amount * p.armor * p.takenMul);
+    const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
     p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;

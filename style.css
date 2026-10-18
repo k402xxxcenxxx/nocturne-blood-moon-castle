@@ -2345,6 +2345,8 @@ b[data-i18n] {
 @media (max-height:480px) {
   .room-banner.elite {
     top:31%; /* below the objective line, still above the enemy warning band */
+    left:62%; /* shifted right so it clears a full relic tray at the left */
+    max-width:50%;
   }
 }
 
