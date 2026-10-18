@@ -270,14 +270,74 @@ function torch(c, x, y, t) {
   rect(c, '#ffe5a1', x - 2, y, 4, 6);
   rect(c, '#eab36199', x + Math.sin(t * 3 + x) * 5, y - 22 - (t * 12 + x) % 18, 2, 2);
 }
-// Placeholder chest (the artist replaces it): relic = violet glow, heal = green, optional chests get a gold lid band; opened chests sit dim.
+// Chest: relic = violet gem and glow, heal = green cross, optional = gold lid band and corner caps; opened chests sit dim with the lid flipped back.
+const chestOpen = new WeakMap(); // chest -> time it was first seen open, drives the lid flip
 export function drawChest(ctx, c, time = 0) {
-  const x = Math.round(c.x - c.w / 2), y = Math.round(c.y - c.h), tint = c.kind === 'heal' ? '#82c9a3' : '#c5b6f4';
+  const x = Math.round(c.x - c.w / 2), y = Math.round(c.y - c.h), heal = c.kind === 'heal', tint = heal ? '#82c9a3' : '#c5b6f4', gold = c.optional ? '#e0bd6a' : '#8a6a3c';
+  if (c.opened && !chestOpen.has(c)) chestOpen.set(c, time);
+  const t = c.opened ? Math.min(1, (time - chestOpen.get(c)) / .35) : 0; // 0 closed .. 1 fully open
   shadow(ctx, c.x, c.y, c.w + 8);
-  if (!c.opened) { ctx.globalAlpha = .35 + .15 * Math.sin(time * 4); ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(c.x, c.y - c.h / 2, 26, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
-  rect(ctx, '#2b1f17', x, y + 8, c.w, c.h - 8); rect(ctx, '#6b4a2b', x + 2, y + 10, c.w - 4, c.h - 12);
-  if (c.opened) { rect(ctx, '#1b1410', x + 2, y + 8, c.w - 4, 5); rect(ctx, '#4d3820', x, y - 2, c.w, 5); return; }
-  rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, c.optional ? '#d6b46a' : '#8a6a3c', x + 1, y + 1, c.w - 2, 8); rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8); rect(ctx, tint, x + c.w / 2 - 1, y + 9, 2, 3);
+  if (!c.opened) { ctx.globalAlpha = .3 + .15 * Math.sin(time * 4); ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(c.x, c.y - c.h / 2, 26, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+  else if (t < 1) { ctx.globalAlpha = .5 * (1 - t); ctx.fillStyle = tint; ctx.fillRect(x + 4, y - 30 * t, c.w - 8, 30 * t); ctx.globalAlpha = 1; }
+  rect(ctx, '#2b1f17', x, y + 8, c.w, c.h - 8); rect(ctx, c.opened ? '#4f3720' : '#6b4a2b', x + 2, y + 10, c.w - 4, c.h - 12);
+  if (c.optional) { rect(ctx, gold, x, y + 8, 4, c.h - 8); rect(ctx, gold, x + c.w - 4, y + 8, 4, c.h - 8); }
+  if (c.opened) {
+    rect(ctx, '#1b1410', x + 2, y + 8, c.w - 4, 5); rect(ctx, tint + (t < 1 ? 'ff' : '55'), x + 6, y + 8, c.w - 12, 2);
+    const lh = Math.round(10 * (1 - t) + 3 * t); // lid squashes toward the back edge as it flips
+    rect(ctx, '#2b1f17', x, y + 8 - lh - 1, c.w, lh + 1); rect(ctx, c.optional ? '#a98b4c' : '#5a3f24', x + 1, y + 8 - lh, c.w - 2, Math.max(1, lh - 1));
+    return;
+  }
+  rect(ctx, '#2b1f17', x, y, c.w, 10); rect(ctx, '#7a5632', x + 1, y + 1, c.w - 2, 8);
+  rect(ctx, gold, x + 1, y + 3, c.w - 2, c.optional ? 4 : 2); // optional chests: wide gold lid band
+  rect(ctx, '#d6b46a', x + c.w / 2 - 3, y + 7, 6, 8);
+  if (heal) { rect(ctx, tint, x + c.w / 2 - 1, y + 8, 2, 6); rect(ctx, tint, x + c.w / 2 - 3, y + 10, 6, 2); } else { poly(ctx, tint, [[x + c.w / 2, y + 7], [x + c.w / 2 + 3, y + 11], [x + c.w / 2, y + 15], [x + c.w / 2 - 3, y + 11]]); }
+}
+// Platforms are drawn live every frame (never in the scene cache). The top edge is exactly y and spans x..x+w, matching collision.
+function drawPlatform(c, pl, x, y, w, p, time, camera) {
+  if (pl.moving && pl.move) { // amber track + end stops show the whole motion path
+    const a = pl.move.amp, h = pl.move.axis === 'x';
+    if (h) { const tx = Math.round(pl.x0 - camera - a), len = Math.round(w + a * 2); rect(c, '#c9a24a55', tx, y + 8, len, 2); rect(c, '#c9a24a', tx, y + 5, 3, 8); rect(c, '#c9a24a', tx + len - 3, y + 5, 3, 8); }
+    else { const cx = x + (w >> 1), ty = Math.round(pl.y0 - a); rect(c, '#c9a24a55', cx - 1, ty, 2, a * 2 + 18); rect(c, '#c9a24a', cx - 5, ty, 10, 3); rect(c, '#c9a24a', cx - 5, ty + a * 2 + 15, 10, 3); }
+  }
+  const k = pl.kind;
+  rect(c, '#05061155', x + 3, y + 18, w, 5);
+  if (k === 'bridge') { // broken planks with gaps, rope rails
+    let i = 0;
+    for (let px = 0; px < w; px += 15, i++) {
+      const pw = Math.min(13, w - px), gap = i % 4 === 2 && pw > 8; // a notch breaks one plank
+      rect(c, '#2a1d14', x + px, y, pw, 18); rect(c, i % 2 ? '#7a5a38' : '#6b4d30', x + px, y, pw, 5);
+      rect(c, '#a98355', x + px, y, pw, 1);
+      if (gap) rect(c, '#0b0d15', x + px + 4, y + 1, 5, 17);
+    }
+    rect(c, '#a99060', x, y + 6, w, 2); rect(c, '#53402a', x, y + 8, w, 2);
+    rect(c, '#a99060', x, y - 9, 2, 9); rect(c, '#a99060', x + w - 2, y - 9, 2, 9);
+    line(c, '#a9906088', x, y - 8, x + w, y - 2, 1);
+    line(c, '#a9906066', x + 4, y + 18, x + 7, y + 30, 1); line(c, '#a9906066', x + w - 5, y + 18, x + w - 8, y + 28, 1);
+  } else if (k === 'shelf') { // wooden shelf with book spines
+    rect(c, '#2a1b12', x, y, w, 18); rect(c, '#7a4f2d', x, y, w, 4); rect(c, '#b28556', x, y, w, 1); rect(c, '#4a2f1b', x, y + 4, w, 3); rect(c, '#1a1210', x, y + 14, w, 4);
+    const cols = ['#6b2f3a', '#355a55', '#7d6a35', '#3d3b6b', '#7a4a2a'];
+    for (let bx = 3, i = 0; bx < w - 5; bx += 6 + (i % 3), i++) { const bh = 6 + (i * 5) % 5; rect(c, cols[Math.abs(i + (pl.x0 | 0)) % 5], x + bx, y + 7, 5, bh > 7 ? 7 : bh); rect(c, '#d9c18f66', x + bx + 1, y + 8, 1, 4); }
+  } else if (k === 'gear') { // iron slab with teeth, cog spins when it moves
+    rect(c, '#1b1d24', x, y, w, 18); rect(c, '#6e7482', x, y, w, 3); rect(c, '#a4abb8', x, y, w, 1); rect(c, '#3d424e', x, y + 3, w, 11);
+    for (let tx = 1; tx < w - 3; tx += 8) rect(c, '#555b69', x + tx, y + 14, 5, 4);
+    for (let rx = 10; rx < w - 6; rx += 26) { rect(c, '#1b1d24', x + rx, y + 6, 3, 3); rect(c, '#8c93a1', x + rx, y + 6, 1, 1); }
+    if (pl.moving) {
+      const cx = x + (w >> 1), cy = y + 9, a = time * 3 * (pl.move && pl.move.axis === 'y' ? -1 : 1);
+      c.save(); c.translate(cx, cy); c.rotate(a);
+      for (let i = 0; i < 8; i++) { c.rotate(Math.PI / 4); rect(c, '#c9a24a', -2, -9, 4, 4); }
+      c.restore(); circle(c, '#c9a24a', cx, cy, 6); circle(c, '#2a2418', cx, cy, 3); rect(c, '#e6c877', cx - 1, cy - 1, 2, 2);
+    }
+  } else if (k === 'ledge') { // cathedral ledge with gothic trim
+    rect(c, '#2a2432', x, y, w, 18); rect(c, p.light, x, y, w, 3); rect(c, '#4d4358', x, y + 3, w, 6); rect(c, '#1c1722', x, y + 14, w, 4);
+    for (let ax = 4; ax + 10 <= w - 2; ax += 14) { poly(c, '#17121c', [[x + ax, y + 14], [x + ax, y + 11], [x + ax + 5, y + 6], [x + ax + 10, y + 11], [x + ax + 10, y + 14]]); rect(c, p.accent, x + ax + 4, y + 8, 2, 2); }
+    poly(c, '#4d4358', [[x, y + 18], [x + 10, y + 18], [x + 5, y + 28]]); poly(c, '#4d4358', [[x + w - 10, y + 18], [x + w, y + 18], [x + w - 5, y + 28]]);
+  } else { // stone slab
+    rect(c, '#403b3b', x, y, w, 18); rect(c, p.light, x, y, w, 3); rect(c, p.trim, x, y + 3, w, 7); rect(c, '#27252e', x, y + 12, w, 6);
+    rect(c, '#c8b28c44', x + 1, y + 4, w - 2, 1);
+    for (let bx = 35; bx < w; bx += 38) rect(c, '#292731', x + bx, y + 3, 2, 9);
+    poly(c, '#4f4640', [[x + 8, y + 18], [x + 28, y + 18], [x + 14, y + 32], [x + 8, y + 32]]);
+    poly(c, '#4f4640', [[x + w - 28, y + 18], [x + w - 8, y + 18], [x + w - 8, y + 32], [x + w - 14, y + 32]]);
+  }
 }
 export function drawScene(ctx, { camera = 0, width = 960, height = 540, time = 0, stage = 0, platforms = [], worldWidth = 4000 } = {}) {
   stage = Math.max(0, Math.min(4, Math.floor(stage) || 0));
@@ -294,16 +354,9 @@ export function drawScene(ctx, { camera = 0, width = 960, height = 540, time = 0
   for (let x = -wallOffset + 49; x < width; x += 360) if (x > -30) torch(ctx, x, 298, time);
   for (let x = -(Math.floor(camera) % 480); x < width; x += 480) ctx.drawImage(scene.ground, x, FLOOR);
   for (const platform of platforms) {
-    const x = Math.floor((platform.x || 0) - camera), y = platform.y ?? FLOOR, w = platform.w || platform.width || 90;
+    const x = Math.round((platform.x || 0) - camera), y = Math.round(platform.y ?? FLOOR), w = Math.round(platform.w || platform.width || 90);
     if (y >= FLOOR || x + w < -20 || x > width + 20) continue;
-    rect(ctx, '#090d18bb', x + 4, y + 12, w, 15);
-    rect(ctx, '#403b3b', x, y, w, 15); rect(ctx, p.light, x, y, w, 3); rect(ctx, p.trim, x, y + 3, w, 7); rect(ctx, '#27252e', x, y + 12, w, 4);
-    rect(ctx, '#c8b28c44', x + 1, y + 4, w - 2, 1);
-    if (platform.moving) rect(ctx, '#c9a24a', x, y + 12, w, 2); // placeholder: amber rail marks a moving platform
-    for (let bx = 35; bx < w; bx += 38) rect(ctx, '#292731', x + bx, y + 3, 2, 9);
-    poly(ctx, '#4f4640', [[x + 8, y + 16], [x + 28, y + 16], [x + 14, y + 32], [x + 8, y + 32]]);
-    poly(ctx, '#4f4640', [[x + w - 28, y + 16], [x + w - 8, y + 16], [x + w - 8, y + 32], [x + w - 14, y + 32]]);
-    line(ctx, '#97836366', x + 8, y + 17, x + 24, y + 17, 2);
+    drawPlatform(ctx, platform, x, y, w, p, time, camera);
   }
   // Sparse rain and embers are animated without allocating particle objects.
   if (stage === 0 || stage === 2) {
