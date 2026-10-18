@@ -3,11 +3,22 @@ const BEAM_REACH = 560, GROUND_WAVE_REACH = 340; // px; kept inside the narrowes
 const VOLLEY_RANGE = 420; // drawn line length; the bolt tip (r 9) stops at its end
 // Display text for stages and relics lives in i18n.js, keyed by stage index and relic id.
 export const STAGES = [
-  { count: 7, width: 2260 },
-  { count: 9, width: 2500 },
-  { count: 11, width: 2740 },
-  { count: 13, width: 3000 },
+  { count: 7, width: 3000 },
+  { count: 9, width: 3050 },
+  { count: 11, width: 3100 },
+  { count: 13, width: 3200 },
   { count: 9, width: 2800 },
+];
+// Stage routes: 5 authored rooms per non-boss stage (the floor is the always-connected low route, platforms are one-way high routes).
+// Each platform is [dx from room start, rise above FLOOR, width, kind?, moving axis?]. Rises 90 and 160 are single-jump steps (apex ~107, double jump ~190);
+// never shallower than 85 (the Cathedral pillar is 80 tall). A moving platform's rise is its centre: it swings +-ROOM_SWING, so its lowest point is still 90.
+const THEMES = ['gate', 'archive', 'belfry', 'cathedral'], PLATFORM_KINDS = ['stone', 'shelf', 'gear', 'ledge'];
+const ROOM_SWING = 60, ROOM_SWING_SPEED = 1; // rad/s: peak platform speed 60 px/s
+const ROOM_PLATFORMS = [
+  [[], [[110, 90, 140, 'bridge'], [215, 160, 120], [320, 90, 140, 'bridge']], [[150, 90, 130], [330, 160, 160]], [[90, 90, 150], [260, 160, 150], [420, 90, 100]], [[160, 90, 170]]],
+  [[[260, 90, 160]], [[80, 90, 150], [250, 160, 150], [420, 90, 110]], [[100, 90, 140], [270, 160, 140], [430, 90, 110]], [[60, 90, 130], [210, 160, 130], [360, 90, 130]], [[150, 90, 150], [330, 160, 130]]],
+  [[[260, 90, 150]], [[90, 90, 120, 'gear', 'x'], [310, 90, 110], [430, 160, 110]], [[80, 90, 120], [260, 160, 150], [440, 90, 100]], [[90, 90, 130], [250, 160, 130], [400, 150, 120, 'gear', 'y']], [[150, 90, 150]]],
+  [[[250, 90, 150]], [[100, 90, 140], [290, 160, 140]], [[80, 90, 130], [260, 160, 150], [440, 90, 100]], [[130, 90, 150], [330, 160, 140]], [[170, 90, 140]]],
 ];
 export const RELICS = [
   { id: 'edge', icon: 'sword', apply: p => p.damage *= 1.25 },
@@ -45,6 +56,7 @@ const OBSTACLES = { barricade: { w: 40, h: 62 }, altar: { w: 46, h: 74 } };
 const PILLAR_LINK = 600; // a pillar stands within this horizontal distance of its altar
 const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spawn and the Moon Gate
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
+const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source.
@@ -95,7 +107,7 @@ export class Game {
   activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
     this.stage = index;
-    const spec = STAGES[index];
+    const spec = STAGES[index], boss = index === 4;
     this.worldWidth = spec.width;
     this.portalX = spec.width - 145;
     this.portalOpen = false;
@@ -103,28 +115,61 @@ export class Game {
     this.projectiles = [];
     this.shots = []; // player-owned projectiles; never touched by enemy-projectile code or Eclipse clearing
     this.pickups = [];
-    this.platforms = Array.from({ length: 5 }, (_, i) => ({ x: 360 + i * 360 + this.rand() * 65, y: FLOOR - 85 - (i % 2) * 54, w: 148 + this.rand() * 70, h: 18 }));
+    this.platforms = []; this.rooms = []; this.chests = []; this.roomIndex = -1;
     this.enemies = [];
     this.traps = []; this.obstacles = [];
-    for (let i = 0; i < spec.count; i++) {
+    const spot = boss ? null : this.buildRooms(index);
+    const regular = boss ? spec.count : spec.count - 2; // the last two are the required guards at the gate
+    const rollType = i => {
       const roll = this.rand();
       const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? (this.rand() < .3 ? 'priest' : 'mage') : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
-      this.spawnEnemy(type === 'knight' && this.rand() < .28 ? 'spear' : type, 540 + i * (spec.width - 900) / spec.count + this.rand() * 65, index);
-    }
-    if (index === 4) {
-      this.spawnEnemy('boss', spec.width - 400, index);
-      // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes (rand above is still drawn, keeping the seed stream).
-      this.platforms = [{ x: 60, y: FLOOR - 110, w: 190, h: 18 }, { x: spec.width - 250, y: FLOOR - 110, w: 190, h: 18 }];
+      return type === 'knight' && this.rand() < .28 ? 'spear' : type;
+    };
+    for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / spec.count + this.rand() * 65), index);
+    if (boss) {
+      this.spawnEnemy('boss', spec.width - 400, index).required = true;
+      // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes.
+      this.platforms = [this.makePlatform(60, FLOOR - 110, 190, 'cathedral', 'ledge'), this.makePlatform(spec.width - 250, FLOOR - 110, 190, 'cathedral', 'ledge')];
+    } else {
+      for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, index).required = true; }
+      const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest
+      Object.assign(guard, { y: spot.y, plat: spot.plat });
     }
     this.totalEnemies = this.enemies.length;
     this.placeHazards(index);
-    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
+    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
+  makePlatform(x, y, w, theme, kind, axis = null) {
+    const move = axis ? { axis, amp: ROOM_SWING, speed: ROOM_SWING_SPEED } : null, plat = { x, y, w, h: 18, theme, kind, moving: !!move, move, x0: x, y0: y, t: move ? this.rand() * Math.PI * 2 : 0, dx: 0, dy: 0 };
+    if (move) { const s = Math.sin(plat.t) * move.amp; if (axis === 'x') plat.x += s; else plat.y += s; }
+    return plat;
+  }
+  // Rooms, their platforms and chests for stages 0-3. Rooms 2 and 4 (indices 1 and 3) are mirrored as a whole by seed. Returns the optional chest's guard spot.
+  buildRooms(index) {
+    const base = STAGES[index].width / 5, jitter = Array.from({ length: 5 }, () => (this.rand() * 2 - 1) * 30), mean = jitter.reduce((a, b) => a + b, 0) / 5;
+    const widths = jitter.slice(0, 4).map(j => Math.round(base + j - mean)); // the last room takes the remainder, so every room stays within base +- 60
+    widths.push(STAGES[index].width - widths.reduce((a, b) => a + b, 0));
+    let x = 0;
+    this.rooms = widths.map((w, i) => { const room = { x, w, mirror: (i === 1 || i === 3) && this.rand() < .5 }; x += w; return room; });
+    ROOM_PLATFORMS[index].forEach((list, i) => {
+      const room = this.rooms[i];
+      for (const [dx, rise, w, kind, axis] of list) this.platforms.push(this.makePlatform(room.x + (room.mirror ? room.w - dx - w : dx), FLOOR - rise, w, THEMES[index], kind || PLATFORM_KINDS[index], axis));
+    });
+    const main = this.rooms[1 + Math.floor(this.rand() * 3)], side = this.rooms[1 + Math.floor(this.rand() * 3)];
+    let cx = Math.round(main.x + main.w * (.3 + this.rand() * .4));
+    const clear = x => this.platforms.every(p => x < p.x - 60 || x > p.x + p.w + 60); // the floor chest never sits under or beside a platform span
+    for (let d = 0; !clear(cx) && d <= main.w; d += 5) for (const s of [d, -d]) if (clear(Math.round(main.x + main.w * .5) + s)) { cx = Math.round(main.x + main.w * .5) + s; d = main.w; break; }
+    this.chests.push({ id: 0, x: cx, y: FLOOR, ...CHEST_SIZE, kind: 'relic', optional: false, opened: false });
+    const top = this.platforms.filter(p => !p.moving && p.x >= side.x && p.x < side.x + side.w).sort((a, b) => a.y - b.y)[0];
+    this.chests.push({ id: 1, x: Math.round(top.x + top.w * .25), y: top.y, ...CHEST_SIZE, kind: this.rand() < .5 ? 'relic' : 'heal', optional: true, opened: false });
+    return { x: top.x + top.w * .72, y: top.y, plat: top };
+  }
+  mirrorX(x) { const r = this.rooms.find(r => r.mirror && x >= r.x && x < r.x + r.w); return r ? 2 * r.x + r.w - x : x; }
   // Traps, barricades and altars (none on the boss stage; traps only on stages 0, 2, 3). Drawn after enemies so existing seeds keep their layout.
   placeHazards(index) {
     if (index === 4) return;
-    const taken = [], lo = 150 + SPAWN_CLEAR, hi = this.portalX - SPAWN_CLEAR;
-    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
+    const taken = this.chests.filter(c => c.y === FLOOR).map(c => ({ x: c.x, w: 50 })), lo = 150 + SPAWN_CLEAR, hi = this.portalX - SPAWN_CLEAR;
+    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && (w !== OBSTACLES.altar.w || this.platforms.every(p => x + w / 2 < p.x || x - w / 2 > p.x + p.w)) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
     const place = (w, near = null) => { // random tries between enemies, then anywhere, then a left-to-right scan; `near` limits |x - near| to PILLAR_LINK
       const a = near === null ? -Infinity : near - PILLAR_LINK, b = near === null ? Infinity : near + PILLAR_LINK, from = Math.max(lo + w / 2, a), to = Math.min(hi - w / 2, b);
       for (const pad of [20, -999]) for (let i = 0; i < 40; i++) { const x = Math.round(from + this.rand() * (to - from)); if (free(x, w, pad, a, b)) { taken.push({ x, w }); return x; } }
@@ -185,7 +230,8 @@ export class Game {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    return this.enemies.at(-1);
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -194,6 +240,7 @@ export class Game {
     this.elapsed += dt;
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
+    this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -214,18 +261,19 @@ export class Game {
     else if (p.dash > 0) p.vx = p.dir * 730;
     else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
     else p.vx = direction * p.speed * (p.attack > 0 ? .65 : 1);
+    if (p.on && p.grounded && this.platforms.includes(p.on)) { p.x += p.on.dx || 0; p.y = p.on.y; } // a moving platform carries its rider
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
     for (const o of this.obstacles) if (p.y > o.y - o.h + 1 && p.y - p.h < o.y && Math.abs(p.x - o.x) < (p.w + o.w) / 2) p.x = o.x + (oldX < o.x ? -1 : 1) * (p.w + o.w) / 2; // solid sides
     const oldY = p.y;
     p.vy += 1550 * dt;
     p.y += p.vy * dt;
-    p.grounded = false;
+    p.grounded = false; p.on = null;
     if (p.vy >= 0) {
-      let floor = FLOOR;
-      for (const plat of this.platforms) if (oldY <= plat.y + 1 && p.y >= plat.y && p.x + p.w / 2 > plat.x && p.x - p.w / 2 < plat.x + plat.w) floor = Math.min(floor, plat.y);
-      for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && p.y >= o.y - o.h && Math.abs(p.x - o.x) < (p.w + o.w) / 2) floor = Math.min(floor, o.y - o.h); // stand on top
-      if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.jumps = 0; }
+      let floor = FLOOR, on = null;
+      for (const plat of this.platforms) if (oldY <= plat.y + 1 && p.y >= plat.y && p.x + p.w / 2 > plat.x && p.x - p.w / 2 < plat.x + plat.w && plat.y < floor) { floor = plat.y; on = plat; }
+      for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && p.y >= o.y - o.h && Math.abs(p.x - o.x) < (p.w + o.w) / 2 && o.y - o.h < floor) { floor = o.y - o.h; on = null; } // stand on top
+      if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.on = on; p.jumps = 0; }
     }
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
@@ -249,8 +297,39 @@ export class Game {
       if (d < 25) { p.hp = Math.min(p.maxHp, p.hp + 14); item.dead = true; this.emit('heal', { x: p.x, y: p.y - 70, amount: 14 }); }
     }
     this.pickups = this.pickups.filter(i => !i.dead);
-    if (!this.portalOpen && this.enemies.every(e => e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
+    this.updateChests();
+    if (this.state !== 'playing') return;
+    const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
+    if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
+    if (!this.portalOpen && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
+  }
+  // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.
+  updatePlatforms(dt) {
+    for (const pl of this.platforms) {
+      if (!pl.move) continue;
+      pl.t += dt * pl.move.speed;
+      const s = Math.sin(pl.t) * pl.move.amp, x = pl.move.axis === 'x' ? pl.x0 + s : pl.x, y = pl.move.axis === 'y' ? pl.y0 + s : pl.y;
+      pl.dx = x - pl.x; pl.dy = y - pl.y; pl.x = x; pl.y = y;
+    }
+  }
+  // A grounded hero beside an unopened chest opens it: a relic chest offers a 3-relic pick (no heal, play resumes in place), a heal chest restores HP and MP.
+  updateChests() {
+    const p = this.player;
+    if (!p.grounded) return;
+    for (const c of this.chests) if (!c.opened && Math.abs(p.x - c.x) < CHEST_REACH && Math.abs(p.y - c.y) < 2) {
+      c.opened = true;
+      this.emit('chest', { x: c.x, y: c.y, kind: c.kind, optional: c.optional });
+      if (c.kind === 'relic') { this.rollChoices('chest'); return; }
+      const amount = Math.max(25, Math.round(p.maxHp * .3));
+      p.hp = Math.min(p.maxHp, p.hp + amount); p.mp = p.maxMp;
+      this.emit('heal', { x: p.x, y: p.y - 70, amount });
+    }
+  }
+  // Required guards killed / total (the Moon Gate opens at n === total; the boss alone on stage 5).
+  guardStatus() {
+    const guards = this.enemies.filter(e => e.required);
+    return { n: guards.filter(e => e.hp <= 0).length, total: guards.length };
   }
   jump() {
     const p = this.player;
@@ -299,7 +378,7 @@ export class Game {
     this.emit('shot', { kind, x, y, dir, speed, life });
   }
   updateShots(dt) {
-    const p = this.player;
+    const p = this.player, targets = this.enemies.concat(this.obstacles);
     for (const s of this.shots) {
       if (s.kind === 'wave' && !s.back && s.maxLife - s.life >= .52) { s.back = true; s.hit = new Set(); } // turn around: the returning pass hits again
       if (s.back) {
@@ -309,7 +388,7 @@ export class Game {
       } else s.x += s.vx * dt;
       s.life -= dt;
       if (s.life <= 0) continue;
-      for (const e of this.enemies.concat(this.obstacles)) {
+      for (const e of targets) {
         if (e.hp <= 0 || s.hit.has(e) || Math.abs(e.x - s.x) > e.w / 2 + s.r || s.y + s.r < e.y - e.h || s.y - s.r > e.y) continue;
         s.hit.add(e);
         if (e.kind) { this.damageObstacle(e, Math.round(p.damage * s.mul)); continue; }
@@ -398,9 +477,10 @@ export class Game {
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
       if (!shot) { // a projectile hitting the shield pushes nobody
-        p.x = clamp(p.x + e.dir * 40, 25, this.worldWidth - 30);
+        const fromHero = p.x, fromBearer = e.x;
+        p.x = clamp(p.x + e.dir * 40, 25, this.worldWidth - 30); this.keepBeside(p, fromHero);
         // Shield shove: the bearer follows the pushback so blocking never opens distance.
-        e.x = clamp(e.x + e.dir * Math.min(40, Math.max(0, Math.abs(p.x - e.x) - 30)), 30, this.worldWidth - 40);
+        e.x = clamp(e.x + e.dir * Math.min(40, Math.max(0, Math.abs(p.x - e.x) - 30)), 30, this.worldWidth - 40); this.keepBeside(e, fromBearer);
         this.freeze = Math.max(this.freeze, .035);
       }
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
@@ -418,6 +498,14 @@ export class Game {
     this.settle(e);
     if (!blocked) this.elements(e, amount, heavy, eclipse, shot);
   }
+  // After a forced sideways move (shield shove), put a body back on the side of every solid obstacle it started on.
+  keepBeside(b, fromX) {
+    for (const o of this.obstacles) {
+      if (b.y <= o.y - o.h + 1 || b.y - b.h >= o.y) continue;
+      const half = (b.w + o.w) / 2;
+      if (Math.abs(b.x - o.x) < half || (fromX - o.x) * (b.x - o.x) < 0) b.x = o.x + (fromX < o.x ? -1 : 1) * half;
+    }
+  }
   // Boss phase change and death handling, shared by sword hits and damage-over-time / reaction damage.
   settle(e) {
     if (e.hp > 0 && e.type === 'boss') {
@@ -433,6 +521,7 @@ export class Game {
         p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
       }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
+      if (e.required) this.emit('guards', this.guardStatus());
     }
   }
   stacks(id) { return this.relics.filter(r => r === id).length; }
@@ -540,22 +629,55 @@ export class Game {
     const prevX = e.x;
     this.moveEnemy(e, dt);
     e.speed = speed;
+    // Hero above and a step up is in reach: hold at the platform edge instead of walking off, until the jump cooldown allows the jump.
+    // Only while a reachable step exists and the cooldown runs, so it can never wait forever.
+    const pl = e.plat, hp = this.player;
+    if (pl && e.vy === 0 && e.jumpCd > 0 && hp.grounded && e.y - hp.y > 50 && e.stun <= 0 && e.frozen <= 0 && (e.x < pl.x || e.x > pl.x + pl.w) && this.stepUpFor(e)) e.x = clamp(e.x, pl.x, pl.x + pl.w);
     this.collideEnemy(e, prevX, dt);
+    if (e.type !== 'bat' && e.type !== 'boss' && !e.vault) this.groundEnemy(e, dt);
+  }
+  // Ground enemy vertical life: gravity, standing on platforms, riding moving ones, a jump up toward a hero above (only onto a platform within a single jump)
+  // and a drop through toward a hero below. A hero 90 px above the enemy's platform chain is reached step by step; an enemy directly under a 160 step just waits.
+  stepUpFor(e) { // a platform one jump up, within 50 px sideways, and not above the hero; the one nearest the hero
+    const p = this.player; let best = null, bestGap = 1e9;
+    for (const pl of this.platforms) {
+      const rise = e.y - pl.y, side = Math.max(pl.x - e.x, e.x - (pl.x + pl.w), 0);
+      if (rise >= 40 && rise <= 95 && side <= 50 && pl.y >= p.y - 10 && Math.abs(pl.x + pl.w / 2 - p.x) < bestGap) { best = pl; bestGap = Math.abs(pl.x + pl.w / 2 - p.x); }
+    }
+    return best;
+  }
+  groundEnemy(e, dt) {
+    const p = this.player, near = Math.abs(p.x - e.x) < 560, calm = e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0);
+    e.jumpCd = Math.max(0, e.jumpCd - dt); e.dropT = Math.max(0, e.dropT - dt);
+    if (e.plat && e.vy === 0) { if (this.platforms.includes(e.plat)) { e.x = clamp(e.x + (e.plat.dx || 0), 30, this.worldWidth - 40); e.y = e.plat.y; } else e.plat = null; }
+    if (calm && near && e.vy === 0) {
+      if (e.plat && p.y - e.y > 60) { e.dropT = .4; e.plat = null; e.vy = 1; } // hero clearly below: step off through the platform
+      else if (p.grounded && e.y - p.y > 50 && e.jumpCd <= 0) {
+        const best = this.stepUpFor(e);
+        if (best) { e.vy = -575; e.jumpCd = 1.6; e.plat = null; e.jumpVx = e.x < best.x + 8 ? 140 : e.x > best.x + best.w - 8 ? -140 : 0; }
+      }
+    }
+    const oldY = e.y;
+    e.x = clamp(e.x + e.jumpVx * dt, 30, this.worldWidth - 40);
+    e.vy += 1550 * dt; e.y += e.vy * dt;
+    let floor = FLOOR, on = null;
+    if (e.vy >= 0 && e.dropT <= 0) for (const pl of this.platforms) if (oldY <= pl.y + 1 && e.y >= pl.y && e.x + e.w / 2 > pl.x && e.x - e.w / 2 < pl.x + pl.w && pl.y < floor) { floor = pl.y; on = pl; }
+    if (e.y >= floor) { e.y = floor; e.vy = 0; e.plat = on; e.jumpVx = 0; }
   }
   // Obstacles are solid for ground enemies (bats fly over). A blocked walker hops over (vault); the boss and stunned or frozen enemies just stop. Returns true if blocked.
   collideEnemy(e, prevX, dt) {
     if (e.type === 'bat' || (!this.obstacles.length && !e.vault)) return false;
     if (e.vault) {
       const oldY = e.y;
-      if (e.stun <= 0 && e.frozen <= 0) e.x = clamp(e.x + e.dir * 180 * dt, 30, this.worldWidth - 40);
+      if (e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) e.x = clamp(e.x + e.dir * 180 * dt, 30, this.worldWidth - 40);
       e.vy += 1550 * dt; e.y += e.vy * dt;
       let floor = FLOOR;
       for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && e.y >= o.y - o.h && Math.abs(e.x - o.x) < (e.w + o.w) / 2) floor = Math.min(floor, o.y - o.h);
       if (e.y >= floor) { e.y = floor; e.vy = 0; e.vault = floor !== FLOOR; } // stays in vault state on top of an obstacle so it falls off the far edge
     }
-    let blocked = false;
-    for (const o of this.obstacles) if (e.y > o.y - o.h + 1 && Math.abs(e.x - o.x) < (e.w + o.w) / 2) { e.x = o.x + (prevX < o.x ? -1 : 1) * (e.w + o.w) / 2; blocked = true; }
-    if (blocked && !e.vault && e.type !== 'boss' && e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) { e.vault = true; e.vy = -520; }
+    let blocked = false, ahead = false; // vault only over an obstacle in the facing direction; otherwise just stop
+    for (const o of this.obstacles) if (e.y > o.y - o.h + 1 && Math.abs(e.x - o.x) < (e.w + o.w) / 2) { e.x = o.x + (prevX < o.x ? -1 : 1) * (e.w + o.w) / 2; blocked = true; if ((o.x - prevX) * e.dir > 0) ahead = true; }
+    if (ahead && !e.vault && e.type !== 'boss' && e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) { e.vault = true; e.vy = -520; }
     return blocked;
   }
   moveEnemy(e, dt) {
@@ -737,6 +859,7 @@ export class Game {
     const relic = this.choices.find(r => r.id === id);
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
+    if (this.pickReason === 'chest') { this.state = 'playing'; return true; } // chest pick: no heal, no stage change
     if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
     else {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);

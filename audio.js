@@ -131,7 +131,7 @@ export class AudioSystem {
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
       roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
-      shatter: 14, bloodFlame: 14,
+      shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40],
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
@@ -360,6 +360,37 @@ export class AudioSystem {
         });
         tone('noise', 900, 0.6, 0.05, 2200, 0.05);
         break;
+      case 'chestOpen': { // intensity 1 = plain chest, ~1.25 = optional (richer: extra high partial and longer tail)
+        const d = 0.98 + Math.random() * 0.04, rich = amount > 1.1;
+        tone('noise', 3500, 0.05, 0.05, 1200); // latch click
+        if (rich) tone('sine', 1760 * d, 0.5, 0.05, undefined, 0.2);
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+          tone('triangle', f * d, rich ? 0.5 : 0.35, 0.07, f * d * 0.999, 0.04 + i * 0.065);
+          tone('sine', f * 2 * d, 0.2, 0.02, undefined, 0.04 + i * 0.065);
+        });
+        break;
+      }
+      case 'chestHeal': { // warm soft swell: slow-attack low-mid sines, no sparkle
+        const d = 0.98 + Math.random() * 0.04, rich = amount > 1.1;
+        [220, 277.18, 329.63].forEach((f, i) => {
+          tone('sine', f * d, rich ? 0.9 : 0.7, 0.09, undefined, i * 0.05);
+          tone('triangle', f * 2 * d, 0.5, 0.025, undefined, 0.08 + i * 0.05);
+        });
+        tone('noise', 1200, 0.35, 0.03, 2400, 0.03);
+        break;
+      }
+      case 'guardDown': { // progress sting; last guard (intensity 1.4) adds a lifted fifth and a low gate-unlock thud
+        const d = 0.98 + Math.random() * 0.04, last = amount > 1.2;
+        tone('sine', 98 * d, 0.2, 0.2, 55);
+        tone('triangle', 392 * d, 0.2, 0.07, 380 * d, 0.03);
+        tone('sine', 784 * d, 0.16, 0.03, undefined, 0.03);
+        if (last) {
+          tone('triangle', 587.33, 0.4, 0.08, undefined, 0.12);
+          tone('sine', 1174.7, 0.3, 0.03, undefined, 0.12);
+          tone('sine', 55, 0.5, 0.3, 30, 0.12);
+        }
+        break;
+      }
       case 'hurt':
         tone('sawtooth', 140, 0.25, 0.15, 48);
         tone('noise', 1800, 0.2, 0.3, 180);

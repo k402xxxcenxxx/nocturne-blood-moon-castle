@@ -873,6 +873,7 @@ test('plunge: falls through an enemy and hits it once, then the shockwave skips 
   const side = enemy(game, 400 + 80);
   const far = enemy(game, 400 + 120);
   const high = enemy(game, 400 - 60, { y: FLOOR - 120 });
+  game.platforms = [{ x: 300, y: FLOOR - 120, w: 80, h: 18 }]; // ground enemies fall unless something holds them up
   airborne(game);
   game.attack();
   advance(game, 1);
@@ -1763,7 +1764,7 @@ test('obstacles are not enemies: the Moon Gate rule and enemy logic ignore them'
   const { game, player } = arena();
   game.spawnObstacle('barricade', 700, 0);
   game.spawnObstacle('altar', 800, 3);
-  const e = enemy(game, 300, { hp: 1 });
+  const e = enemy(game, 300, { hp: 1 }); e.required = true;
   game.update(1 / 120);
   assert.equal(game.portalOpen, false);
   e.hp = 0; game.update(1 / 120);
@@ -1833,4 +1834,268 @@ test('rollChoices honours a pool and BUILD_POOL ids are real relics', () => {
   assert.equal(game.choices.length, 2);
   assert.notEqual(game.choices[0].id, game.choices[1].id);
   assert.ok(BUILD_POOL.every(id => RELICS.some(r => r.id === id)));
+});
+
+// ---- Stage routes (#20): rooms, high routes, moving platforms, chests, required guards ----
+const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
+const lowest = p => p.move?.axis === 'y' ? p.y0 + p.move.amp : p.y0; // lowest top surface a platform reaches
+const span = p => p.move?.axis === 'x' ? [p.x0 - p.move.amp, p.x0 + p.w + p.move.amp] : [p.x0, p.x0 + p.w];
+const gapBetween = (a, b) => Math.max(0, Math.max(a[0], b[0]) - Math.min(a[1], b[1]));
+function layouts(fn) {
+  for (const seed of SEEDS) { const game = new Game(() => {}, seed); for (let stage = 0; stage < 5; stage++) { game.loadStage(stage); fn(game, stage, seed); } }
+}
+
+test('stages 1-4 are five rooms that tile the world; the boss stage keeps its arena and two ledges', () => {
+  layouts((game, stage) => {
+    if (stage === 4) { assert.equal(game.rooms.length, 0); assert.equal(game.platforms.length, 2); assert.ok(game.platforms.every(p => p.y === FLOOR - 110)); assert.equal(game.chests.length, 0); return; }
+    assert.equal(game.rooms.length, 5);
+    assert.equal(game.worldWidth, STAGES[stage].width);
+    let x = 0;
+    for (const r of game.rooms) { assert.equal(r.x, x); assert.ok(Math.abs(r.w - game.worldWidth / 5) <= 65 && r.w >= 500 && r.w <= 705); x += r.w; }
+    assert.equal(x, game.worldWidth);
+    assert.ok(game.platforms.every(p => p.theme === ['gate', 'archive', 'belfry', 'cathedral'][stage] && typeof p.kind === 'string'));
+  });
+  assert.ok(STAGES.slice(0, 4).every(s => s.width >= 3000 && s.width <= 3500));
+});
+
+test('the floor is the low route: nothing solid sits at floor level but barricades and altars the hero can jump', () => {
+  layouts((game, stage) => {
+    assert.ok(game.platforms.every(p => p.y < FLOOR), 'platforms are one-way and above the floor');
+    assert.ok(game.obstacles.every(o => o.h < 100), 'every obstacle is within a single jump');
+  });
+  // A bot that only holds right and keeps jumping gets from the spawn to the Moon Gate on every stage.
+  for (const seed of [3, 9, 17]) for (let stage = 0; stage < 4; stage++) {
+    const game = new Game(() => {}, seed); game.loadStage(stage); game.state = 'playing'; game.enemies = []; game.chests.forEach(c => { c.opened = true; });
+    for (let t = 0; t < 90 && game.player.x < game.portalX - 60; t += 1 / 120) { game.player.invulnerable = 9; game.update(1 / 120, { right: true, jump: game.player.grounded }); }
+    assert.ok(game.player.x >= game.portalX - 60, `seed ${seed} stage ${stage} reached x=${game.player.x}`);
+  }
+});
+
+test('every platform is reachable with a normal jump and none is lower than FLOOR-85', () => {
+  layouts(game => {
+    for (const p of game.platforms.filter(p => game.rooms.length)) {
+      assert.ok(lowest(p) <= FLOOR - 85, 'lowest point stays clear of the 80 px pillar');
+      const rise = FLOOR - lowest(p);
+      if (rise <= 100) continue; // a single jump from the floor
+      assert.ok(rise <= 175, 'a double jump from the floor');
+      assert.ok(game.platforms.some(q => q !== p && !q.moving && FLOOR - q.y0 < rise && lowest(p) < q.y0 && q.y0 - lowest(p) <= 100 && gapBetween(span(p), span(q)) <= 120), 'and a lower step within a single jump');
+    }
+  });
+});
+
+test('traps are never under a platform where their box could reach a hero standing on it', () => {
+  layouts(game => {
+    for (const p of game.platforms) for (const tr of game.traps) assert.ok(lowest(p) <= tr.y - tr.h, 'a hero standing on any platform is above every trap box');
+    for (const c of game.chests.filter(c => c.y === FLOOR)) for (const o of [...game.traps, ...game.obstacles]) assert.ok(Math.abs(c.x - o.x) >= (50 + o.w) / 2, 'no hazard on the floor chest');
+  });
+});
+
+test('Belfry has one or two moving platforms that carry the hero', () => {
+  const game = new Game(() => {}, 5); game.loadStage(2); game.state = 'playing'; game.enemies = [];
+  const moving = game.platforms.filter(p => p.moving);
+  assert.ok(moving.length >= 1 && moving.length <= 2);
+  for (const stage of [0, 1, 3]) { game.loadStage(stage); assert.equal(game.platforms.filter(p => p.moving).length, 0); }
+  game.loadStage(2); game.enemies = []; game.chests = [];
+  const pl = game.platforms.find(p => p.moving && p.move.axis === 'y') || game.platforms.find(p => p.moving);
+  Object.assign(game.player, { x: pl.x + pl.w / 2, y: pl.y, vy: 0, grounded: true, on: pl, invulnerable: 99 });
+  for (let i = 0; i < 360; i++) { game.update(1 / 120); assert.equal(game.player.y, pl.y, 'rider stays on the surface'); assert.ok(game.player.grounded); }
+  assert.ok(Math.abs(game.player.x - (pl.x + pl.w / 2)) < 1e-6, 'rider keeps its place on the platform');
+  assert.ok(pl.x !== pl.x0 || pl.y !== pl.y0, 'it moved');
+});
+
+test('moving platform deltas are reproducible and bounded by the amplitude', () => {
+  const a = new Game(() => {}, 11), b = new Game(() => {}, 11);
+  a.loadStage(2); b.loadStage(2); a.state = b.state = 'playing';
+  for (let i = 0; i < 300; i++) { a.update(1 / 60); b.update(1 / 60); }
+  assert.deepEqual(a.platforms.map(p => [p.x, p.y]), b.platforms.map(p => [p.x, p.y]));
+  for (const p of a.platforms.filter(p => p.moving)) assert.ok(Math.abs(p.x - p.x0) <= p.move.amp + 1e-9 && Math.abs(p.y - p.y0) <= p.move.amp + 1e-9);
+});
+
+test('the same seed builds the same stage', () => {
+  const sig = seed => { const g = new Game(() => {}, seed); const out = []; for (let s = 0; s < 5; s++) { g.loadStage(s); out.push(JSON.stringify([g.rooms, g.platforms.map(p => [p.x, p.y, p.w, p.kind]), g.chests, g.enemies.map(e => [e.type, e.x, e.y, e.required]), g.traps.map(t => t.x), g.obstacles.map(o => o.x)])); } return out; };
+  assert.deepEqual(sig(7), sig(7));
+  assert.notDeepEqual(sig(7), sig(8));
+});
+
+test('rooms 2 and 4 can be mirrored by seed and the floor route is unaffected', () => {
+  let mirrored = 0, plain = 0;
+  for (const seed of SEEDS) {
+    const g = new Game(() => {}, seed); g.loadStage(1);
+    for (const i of [1, 3]) {
+      const room = g.rooms[i];
+      if (room.mirror) mirrored++; else plain++;
+      const inRoom = g.platforms.filter(p => p.x0 >= room.x && p.x0 < room.x + room.w);
+      assert.ok(inRoom.length > 0 && inRoom.every(p => p.x0 >= room.x && p.x0 + p.w <= room.x + room.w), 'mirrored platforms stay inside their room');
+    }
+    assert.equal(g.rooms[0].mirror || g.rooms[2].mirror || g.rooms[4].mirror, false);
+  }
+  assert.ok(mirrored > 0 && plain > 0);
+});
+
+test('each non-boss stage has one relic chest on the floor and one optional chest on a high route with a tougher guard', () => {
+  layouts((game, stage) => {
+    if (stage === 4) return;
+    assert.equal(game.chests.length, 2);
+    const [main, side] = game.chests;
+    assert.deepEqual([main.kind, main.y, main.optional], ['relic', FLOOR, false]);
+    assert.equal(side.optional, true); assert.ok(['relic', 'heal'].includes(side.kind));
+    const plat = game.platforms.find(p => p.y === side.y && side.x >= p.x && side.x <= p.x + p.w);
+    assert.ok(plat && side.y <= FLOOR - 160, 'on a high platform');
+    const guard = game.enemies.find(e => e.plat === plat);
+    assert.ok(guard && !guard.required && guard.y === plat.y);
+    assert.ok(stage === 0 ? guard.type === 'skeleton' : ['knight', 'shield'].includes(guard.type));
+  });
+});
+
+test('a relic chest opens a 3-relic pick with reason chest, no restore, and play resumes in place', () => {
+  const { game, player, events } = arena();
+  game.chests = [{ id: 0, x: 600, y: FLOOR, w: 34, h: 28, kind: 'relic', optional: false, opened: false }];
+  player.x = 700; player.hp = 40; player.mp = 10; game.stage = 1;
+  advance(game, .1);
+  assert.equal(game.state, 'playing');
+  player.x = 620; // next to the chest
+  game.update(1 / 120);
+  assert.equal(game.state, 'upgrade');
+  const up = events.filter(e => e.type === 'upgrade').at(-1);
+  assert.equal(up.reason, 'chest'); assert.equal(up.choices.length, 3);
+  assert.deepEqual(events.find(e => e.type === 'chest'), { type: 'chest', x: 600, y: FLOOR, kind: 'relic', optional: false });
+  assert.equal(game.chests[0].opened, true);
+  assert.equal(game.chooseRelic(up.choices[0].id), true);
+  assert.equal(game.state, 'playing'); assert.equal(game.stage, 1, 'not a stage load');
+  assert.equal(player.x, 620);
+  assert.equal(player.mp < 20, true, 'no MP refill'); assert.ok(player.hp <= 40 + (up.choices[0].id === 'vital' ? 40 : up.choices[0].id === 'armor' ? 20 : 0));
+  assert.equal(events.filter(e => e.type === 'stage').length, 0);
+  advance(game, 1); assert.equal(events.filter(e => e.type === 'chest').length, 1, 'opens once');
+});
+
+test('a heal chest restores max(25, 30% max HP) and fills MP; it needs a grounded hero on its own surface', () => {
+  const { game, player, events } = arena();
+  game.chests = [{ id: 0, x: 600, y: FLOOR - 90, w: 34, h: 28, kind: 'heal', optional: true, opened: false }];
+  player.x = 600; player.hp = 10; player.mp = 0;
+  game.update(1 / 120);
+  assert.equal(game.chests[0].opened, false, 'standing under a raised chest does nothing');
+  game.platforms = [{ x: 560, y: FLOOR - 90, w: 100, h: 18 }];
+  Object.assign(player, { y: FLOOR - 90, vy: 0 });
+  game.update(1 / 120);
+  assert.equal(player.hp, 40); assert.equal(player.mp, player.maxMp); assert.equal(game.state, 'playing');
+  assert.equal(events.find(e => e.type === 'heal').amount, 30);
+  const g2 = arena(); g2.player.maxHp = 60; g2.player.hp = 1; g2.game.chests = [{ id: 0, x: 200, y: FLOOR, w: 34, h: 28, kind: 'heal', optional: false, opened: false }];
+  g2.player.x = 200; g2.game.update(1 / 120);
+  assert.equal(g2.player.hp, 26, 'minimum 25');
+});
+
+test('the Moon Gate opens when the required guards die, even with other enemies alive; the boss stage needs the boss', () => {
+  const events = [];
+  const game = new Game(e => events.push(e), 31); game.state = 'playing';
+  const guards = game.enemies.filter(e => e.required), others = game.enemies.filter(e => !e.required);
+  assert.equal(guards.length, 2); assert.ok(others.length >= 4);
+  assert.ok(guards.every(g => g.type !== 'bat' && g.x > game.portalX - 450 && g.x < game.portalX), 'near the gate');
+  assert.deepEqual(game.guardStatus(), { n: 0, total: 2 });
+  game.damageEnemy(guards[0], 9999, 1, false, false);
+  assert.deepEqual(events.filter(e => e.type === 'guards').at(-1), { type: 'guards', n: 1, total: 2 });
+  advance(game, .1); assert.equal(game.portalOpen, false);
+  game.damageEnemy(guards[1], 9999, 1, false, false);
+  advance(game, .1);
+  assert.equal(game.portalOpen, true); assert.ok(others.every(o => o.hp > 0));
+  game.player.x = game.portalX; game.update(1 / 60);
+  assert.equal(game.state, 'upgrade');
+  game.loadStage(4); game.state = 'playing';
+  assert.deepEqual(game.enemies.filter(e => e.required).map(e => e.type), ['boss']);
+  for (const e of game.enemies) if (e.type !== 'boss') e.hp = 0;
+  advance(game, .1); assert.equal(game.portalOpen, false);
+  game.enemies.find(e => e.type === 'boss').hp = 0; advance(game, .1);
+  assert.equal(game.portalOpen, true);
+});
+
+test('a room event fires when the hero enters a new room', () => {
+  const { game, player, events } = arena();
+  game.rooms = [{ x: 0, w: 600 }, { x: 600, w: 600 }]; game.roomIndex = -1; game.stage = 2;
+  player.x = 100; game.update(1 / 120);
+  player.x = 700; game.update(1 / 120); game.update(1 / 120);
+  assert.deepEqual(events.filter(e => e.type === 'room'), [{ type: 'room', stage: 2, index: 0 }, { type: 'room', stage: 2, index: 1 }]);
+});
+
+test('a ground enemy jumps onto a platform toward a hero above and drops through toward a hero below', () => {
+  const { game, player } = arena();
+  game.platforms = [{ x: 500, y: FLOOR - 90, w: 200, h: 18 }];
+  const e = enemy(game, 560, { hp: 9999 });
+  Object.assign(player, { x: 640, y: FLOOR - 90, grounded: true, invulnerable: 99 });
+  let up = false; for (let t = 0; t < 6; t += 1 / 120) { game.update(1 / 120); if (e.y === FLOOR - 90 && e.plat) up = true; }
+  assert.ok(up, 'the enemy climbed onto the platform');
+  Object.assign(player, { x: 560, y: FLOOR, vy: 0, grounded: true, on: null });
+  for (let t = 0; t < 4; t += 1 / 120) { game.update(1 / 120); player.x = 560; player.y = FLOOR; player.vy = 0; }
+  assert.equal(e.y, FLOOR); assert.equal(e.plat, null, 'dropped through to the floor');
+});
+
+test('enemies never end up stuck in the air or off the world over many seeded stages', () => {
+  for (const seed of [2, 4, 6, 8, 10]) for (let stage = 0; stage < 4; stage++) {
+    const game = new Game(() => {}, seed); game.loadStage(stage); game.state = 'playing';
+    game.chests.forEach(c => { c.opened = true; });
+    for (const top of game.platforms.filter(p => !p.moving)) { // park the hero on each platform in turn, then on the floor
+      Object.assign(game.player, { x: top.x + top.w / 2, y: top.y, vy: 0, grounded: true, on: top, invulnerable: 99 });
+      for (let t = 0; t < 1.5; t += 1 / 60) { game.player.x = top.x + top.w / 2; game.player.y = top.y; game.player.vy = 0; game.update(1 / 60); }
+    }
+    Object.assign(game.player, { x: game.rooms[2].x + 100, y: FLOOR, vy: 0, on: null });
+    for (let t = 0; t < 8; t += 1 / 60) { game.player.x = game.rooms[2].x + 100; game.player.y = FLOOR; game.player.vy = 0; game.update(1 / 60); }
+    for (const e of game.enemies.filter(e => e.type !== 'bat' && e.hp > 0)) {
+      assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y) && e.x > 0 && e.x < game.worldWidth, 'finite and inside the world');
+      assert.ok(e.y === FLOOR || e.plat || e.vault, `seed ${seed} stage ${stage} ${e.type} floats at ${e.y}`);
+    }
+  }
+});
+
+test('a shield shove cannot push the hero or the bearer through a barricade', () => {
+  const { game, player } = arena();
+  game.spawnObstacle('barricade', 560, 0);
+  const s = enemy(game, 600, { type: 'shield' }); s.dir = -1;
+  player.x = 585; s.x = 585 + 40;
+  game.damageEnemy(s, 10, 1, false, false, true, 0);
+  assert.ok(player.x >= 560 + (28 + 40) / 2 - 1e-9, `hero at ${player.x} must stay on the right of the barricade`);
+  const b = enemy(game, 700, { type: 'shield' }); b.dir = 1; player.x = 690; game.spawnObstacle('barricade', 720, 0);
+  game.damageEnemy(b, 10, -1, false, false, true, 0);
+  assert.ok(b.x <= 720 - (27 + 40) / 2 + 1e-9 || b.x > 720, 'bearer is not inside the barricade');
+});
+
+test('a blocked enemy facing away from the obstacle stops instead of vaulting; a vault is not carried through a warning', () => {
+  const { game, player } = arena();
+  game.spawnObstacle('barricade', 600, 0);
+  const e = enemy(game, 560, { hp: 500 });
+  e.dir = -1; player.x = 100; player.invulnerable = 99;
+  e.x = 585; // overlapping the near face while facing away from it
+  game.collideEnemy(e, 560, 1 / 120);
+  assert.equal(e.vault, false);
+  const v = enemy(game, 530, { hp: 500 }); v.dir = 1; v.vault = true; v.vy = -520; v.tell = .3;
+  const x0 = v.x; game.collideEnemy(v, x0, 1 / 120);
+  assert.equal(v.x, x0, 'no forward vault motion while winding up');
+});
+
+test('an altar always keeps at least one pillar', () => {
+  layouts((game, stage) => { if (stage === 3) for (const a of game.obstacles.filter(o => o.kind === 'altar')) assert.ok(a.traps.length >= 1); });
+});
+
+// QA #20: docs/game-design.md says an enemy on a 90 step can still reach an adjacent 160 step with the hero on it. Today it walks off the
+// 90 step's edge during its 1.6 s jump cooldown, falls, and never climbs. Expected to fail until the enemy waits or stops at the edge.
+test('a ground enemy on a 90 step climbs to an adjacent 160 step with the hero on it, even while its jump cooldown runs', () => {
+  const { game, player } = arena();
+  const low = { x: 500, y: FLOOR - 90, w: 140, h: 18, theme: 'gate', kind: 'stone', moving: false, move: null };
+  const high = { x: 640, y: FLOOR - 160, w: 140, h: 18, theme: 'gate', kind: 'stone', moving: false, move: null };
+  game.platforms = [low, high];
+  const e = enemy(game, 600, { hp: 9999, y: FLOOR - 90 });
+  e.plat = low; e.jumpCd = 1;
+  let reached = false;
+  for (let t = 0; t < 6 && !reached; t += 1 / 120) {
+    Object.assign(player, { x: 720, y: FLOOR - 160, vy: 0, grounded: true, on: high, invulnerable: 99 });
+    game.update(1 / 120);
+    reached = e.plat === high;
+  }
+  assert.ok(reached, `the enemy should reach the 160 step; it stands at x ${e.x.toFixed(0)}, y ${e.y.toFixed(0)}`);
+});
+
+test('floor chests keep 60 px clear of platform spans and altars are never under a platform', () => {
+  for (let seed = 1; seed <= 200; seed++) for (const stage of [0, 1, 2, 3]) {
+    const g = new Game(() => {}, seed); g.start(); g.state = 'playing'; g.loadStage(stage);
+    assert.equal(g.chests.filter(c => c.y === FLOOR).length, 1, 'one floor chest');
+    for (const c of g.chests.filter(c => c.y === FLOOR)) for (const p of g.platforms) assert.ok(c.x < p.x - 60 || c.x > p.x + p.w + 60, `chest ${c.x} near platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
+    for (const o of g.obstacles.filter(o => o.kind === 'altar')) for (const p of g.platforms) assert.ok(o.x + o.w / 2 < p.x || o.x - o.w / 2 > p.x + p.w, `altar ${o.x} under platform ${p.x}-${p.x + p.w}, stage ${stage} seed ${seed}`);
+  }
 });

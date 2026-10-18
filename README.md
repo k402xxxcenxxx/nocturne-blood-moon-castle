@@ -7,7 +7,7 @@ The interface is available in English and Traditional Chinese (繁體中文). Th
 ## Features
 
 - Five stages per run: The Forsaken Gate → The Forbidden Archive → The Timeless Belfry → The Crimson Cathedral → The Bloodmoon Throne.
-- Each run randomizes enemy placement, platforms and relic offers; 18 stackable relics, including four attack forms (returning crescent, piercing beam, ground waves after a plunge, Eclipse vortex) and four elemental ones (burn, frost, shock, bleed) with Shatter, Blood Flame and Chain Lightning reactions, offered three at a time. Every run opens with a build pick, and relics that combine with ones you own show up more often. Dying resets the run.
+- Each run randomizes enemy placement, room layouts (some rooms are mirrored), chests and relic offers; 18 stackable relics, including four attack forms (returning crescent, piercing beam, ground waves after a plunge, Eclipse vortex) and four elemental ones (burn, frost, shock, bleed) with Shatter, Blood Flame and Chain Lightning reactions, offered three at a time. Every run opens with a build pick, and relics that combine with ones you own show up more often. Dying resets the run.
 - Three-hit combo, double jump, invulnerable dash and the Eclipse area spell; skeletons, bats, armored knights, shield bearers and spearmen (from stage two), mages, blood priests (who bless nearby enemies) and the Fallen King, the three-phase final boss. Heavy third combo hits and Eclipse wear down an enemy's poise; break it ("BREAK") to stun the enemy and cancel its attack.
 - Stage hazards: spikes, grinding gears and blood pillars flash red for 0.7 s before they strike (a dash passes through them); wooden barricades block the way until you break them or jump over (enemies hop over too); in the Crimson Cathedral, breaking an altar shuts off its blood pillars.
 - Enemy stats and attack rate rise each stage; the Fallen King fights with slashes, slams (ground waves from phase two), charges, five-bolt volleys and a blood-moon ritual; the raised ledges at the arena edges (double jump) escape most of it, but not the slam.
@@ -18,7 +18,7 @@ The interface is available in English and Traditional Chinese (繁體中文). Th
 
 ## How to play
 
-On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the Night**, pick your opening relic (a build-defining attack form or element, no healing), then clear every enemy in a stage, then walk into the Moon Gate on the far right. After each of the first four stages you pick one relic and recover 20 HP and all MP; clearing stage five wins the run.
+On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the Night**, pick your opening relic (a build-defining attack form or element, no healing), then fight through the five rooms of each stage (take the floor, or climb the platforms for chests and shortcuts), defeat the two guards at the end, and walk into the Moon Gate on the far right. Optional enemies can be skipped. Chests open when you stand next to them: a relic chest offers a bonus relic pick, a heal chest restores health and mana. After each of the first four stages you pick one relic and recover 20 HP and all MP; clearing stage five wins the run.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |

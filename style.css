@@ -901,6 +901,44 @@ kbd {
   letter-spacing:3px;
   color:#b7b1ae;
 }
+.room-banner {
+  position:absolute;
+  top:17%;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:5;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .5s;
+  white-space:nowrap;
+  color:#d9c79b;
+  font:italic 13px var(--serif);
+  letter-spacing:5px;
+  text-shadow:0 2px 8px #000, 0 0 3px #000;
+}
+.room-banner::before,
+.room-banner::after {
+  content:"◆";
+  font-size:7px;
+  vertical-align:middle;
+  margin:0 10px;
+  color:#b74b66;
+}
+.room-banner.show {
+  opacity:.92;
+}
+@media (prefers-reduced-motion:reduce) {
+  .room-banner {
+    transition:none;
+  }
+}
+@media (max-height:480px) {
+  .room-banner {
+    top:21%;
+    font-size:11px;
+    letter-spacing:3px;
+  }
+}
 .combo-display {
   position:absolute;
   right:45px;
