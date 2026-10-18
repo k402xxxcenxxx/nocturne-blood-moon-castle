@@ -927,6 +927,18 @@ kbd {
 .room-banner.show {
   opacity:.92;
 }
+.room-banner.elite {
+  color:#e2d2ff;
+  letter-spacing:2px;
+  white-space:normal;
+  text-align:center;
+  width:max-content;
+  max-width:min(520px,70%);
+}
+.room-banner.elite::before,
+.room-banner.elite::after {
+  color:#9d6cf0;
+}
 @media (prefers-reduced-motion:reduce) {
   .room-banner {
     transition:none;
@@ -2320,5 +2332,10 @@ b[data-i18n] {
   }
   .relic-card p {
     line-height:1.45;
+  }
+}
+@media (max-height:480px) {
+  .room-banner.elite {
+    top:31%; /* below the objective line, still above the enemy warning band */
   }
 }

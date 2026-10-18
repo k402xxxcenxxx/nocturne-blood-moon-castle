@@ -67,6 +67,8 @@ function burst(x, y, color, count = 12, power = 150, dir = 0, size = 0) {
   }
   if (particles.length > 300) particles.splice(0, particles.length - 300);
 }
+const WARD_COLOR = '#9fd0ff';
+const bannerQueue = []; // top banners (room names, elite sightings) wait for the stage announcement and each other
 function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, size: e.size, color }); }
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
 function recordResult(win) { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; save('nocturne-records', records); updateBest(); }
@@ -96,7 +98,9 @@ function handleEvent(e) {
       burst(e.x, e.y, e.crit ? '#ffe8a6' : '#e2bb80', e.heavy ? 22 : 12, e.heavy ? 240 : 180);
       burst(e.x, e.y, '#bf6078', 6, 100);
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .16, max: .16, dir: e.dir });
-      flashNumber(e, e.crit ? '#fff0a9' : '#f0ddaa'); hitCount++; comboTime = 2.1;
+      if (e.absorbed > 0) numbers.push({ x: e.x + 18, y: e.y - 20, text: String(e.absorbed), life: .85, size: 12, color: WARD_COLOR });
+      if (!(e.amount <= 0 && e.absorbed > 0)) flashNumber(e, e.crit ? '#fff0a9' : '#f0ddaa'); // ward ate everything: no "0"
+      hitCount++; comboTime = 2.1;
       break;
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
@@ -174,9 +178,12 @@ function handleEvent(e) {
     case 'statusTick': { // merge rapid ticks from one source near one spot into a single small number
       if (e.source === 'burn' || e.source === 'bleed') audio.play('tick', e.source === 'burn' ? 1 : .8); // reactions have their own sound
       const col = { burn: '#ff9a3a', bleed: '#d8445a', shatter: '#bfe8ff', bloodFlame: '#ff8a5c', chain: '#ffe97a', frost: '#9fd8ff', shock: '#ffe97a' }[e.source] || '#c9c2d8';
-      const n = numbers.find(o => o.tick === e.source && o.life > .45 && Math.abs(o.x - e.x) < 26 && Math.abs(o.y - e.y) < 40);
-      if (n) { n.sum += e.amount; n.text = String(n.sum); n.life = .7; }
-      else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + Math.random() * 10 - 5, y: e.y - 4, text: String(e.amount), sum: e.amount, tick: e.source, life: .7, size: 11, color: col, soft: true });
+      for (const [key, amount, color, dx] of [[e.source, e.amount, col, 0], [`${e.source}:ward`, e.absorbed, WARD_COLOR, 14]]) {
+        if (!(amount > 0)) continue; // zero damage to HP shows only the ward number
+        const n = numbers.find(o => o.tick === key && o.life > .45 && Math.abs(o.x - e.x - dx) < 26 && Math.abs(o.y - e.y) < 40);
+        if (n) { n.sum += amount; n.text = String(n.sum); n.life = .7; }
+        else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + dx + Math.random() * 10 - 5, y: e.y - 4 - dx, text: String(amount), sum: amount, tick: key, life: .7, size: 11, color, soft: true });
+      }
       break;
     }
     case 'obstacleHit': audio.play(e.kind === 'altar' ? 'stoneHit' : 'woodHit', .6 + Math.min(e.amount || 0, 40) / 100); burst(e.x, e.y, e.kind === 'altar' ? '#a93959' : '#a8814f', 6, 110); break;
@@ -192,7 +199,7 @@ function handleEvent(e) {
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
-    case 'elite': audio.play('eliteDrone', 1); toast(t('hint.elite', { affix: t(`affix.${e.affix}`) })); break;
+    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t('hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
@@ -201,7 +208,7 @@ function handleEvent(e) {
 }
 function startRun() {
   closeModal(false); clearInput(); audio.unlock(); audio.resume();
-  game = new Game(handleEvent); resetHud(); particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent); resetHud(); bannerQueue.length = 0; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; records.runs++; save('nocturne-records', records);
   game.start();
 }
@@ -270,7 +277,7 @@ function resetHud() {
 function showTitle() {
   closeModal(false); game = new Game(handleEvent); resetHud();
   $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
-  particles = []; effects = []; trails = []; numbers = [];
+  bannerQueue.length = 0; particles = []; effects = []; trails = []; numbers = [];
   audio.suspend(); audio.setIntensity(1);
 }
 
@@ -343,7 +350,12 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
-function showRoom(stage, index) { $('room-banner').textContent = t(`room.${stage}.${index}`); $('room-banner').classList.add('show'); roomTime = 2.2; }
+function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2 }); }
+function pumpBanner() {
+  if (announceTime > 0 || roomTime > 0 || !bannerQueue.length) return;
+  const b = bannerQueue.shift(), el = $('room-banner');
+  el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
+}
 function updateHud() {
   const p = game.player;
   $('hp-text').innerHTML = `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -573,6 +585,7 @@ function tick(now) {
   comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
   if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
   if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
+  pumpBanner();
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
