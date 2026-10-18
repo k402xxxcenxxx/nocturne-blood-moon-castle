@@ -61,6 +61,11 @@ const PILLAR_LINK = 600; // a pillar stands within this horizontal distance of i
 const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spawn and the Moon Gate
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
+// Castle Descent (mode 'castle', #44): one blood meter replaces HP and MP.
+export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9];
+export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 128 } };
+const SLICE_EXCLUDED = ['vital', 'leech', 'mana', 'arcane', 'lunaticMoon', 'nightwalk']; // relics that only touch HP, MP or magic cost
+export const SLICE_POOL = RELICS.filter(r => !SLICE_EXCLUDED.includes(r.id)).map(r => r.id);
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 // Endless Trial: per-floor enemy multipliers compound from floor 1 and stay finite at any depth.
 export const ENDLESS_HP = 1.22, ENDLESS_DAMAGE = 1.13, ENDLESS_BOSS_EVERY = 5, ENDLESS_ELITE_FROM = 6, ENDLESS_ELITE_CHANCE = .2, SCALE_CAP = 1e9, STAT_CAP = 1e12;
@@ -70,10 +75,19 @@ export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 const AFFIXES = ['swift', 'splitting', 'warded'], ELITE_BEAT = .8, ELITE_DAMAGE = 1.3, WARD_AMOUNT = 30, WARD_PERIOD = 6, ELITE_NOTICE = 600;
 const POISE_DAMAGE = { combo: [0, 17, 17, 62], eclipse: 55, thrust: 35, plunge: 45 };
 
+const basePlayer = () => ({
+      x: 155, y: FLOOR, w: 28, h: 58, vx: 0, vy: 0, dir: 1, grounded: true, jumps: 0,
+      hp: 100, maxHp: 100, mp: 100, maxMp: 100, damage: 24, magicDamage: 58, magicCost: 35,
+      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, magicCdMax: .65, mpRegen: 8,
+      knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
+      dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
+      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90, blood: BLOOD_HALF, frenzy: false, weapon: null, debt: 0,
+});
+
 export class Game {
   constructor(onEvent = () => {}, seed = randomSeed(), mode = 'normal') {
     this.onEvent = onEvent;
-    this.mode = mode; // 'normal' (five stages) or 'endless' (floors loop through the stages)
+    this.mode = mode; // 'normal' (five stages), 'endless' (floors loop through the stages) or 'castle' (blood loop, floors 1-9 of the Gate)
     this.floor = 1; // 1-based; stage stays the 0-4 theme index, (floor - 1) % 5, in endless
     this.seed = seed;
     this.randomState = seed || 1;
@@ -85,19 +99,12 @@ export class Game {
     this.kills = 0;
     this.souls = 0;
     this.relics = [];
-    this.player = {
-      x: 155, y: FLOOR, w: 28, h: 58, vx: 0, vy: 0, dir: 1, grounded: true, jumps: 0,
-      hp: 100, maxHp: 100, mp: 100, maxMp: 100, damage: 24, magicDamage: 58, magicCost: 35,
-      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, magicCdMax: .65, mpRegen: 8,
-      knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
-      dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
-      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90,
-    };
+    this.player = basePlayer();
     this.loadStage(0);
   }
   rand() { let t = this.randomState += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
   emit(type, data = {}) { this.onEvent({ type, ...data }); }
-  start() { this.rollChoices('start', BUILD_POOL); } // the run opens with a build pick; stage 1 begins after it
+  start() { if (this.mode === 'castle') this.enterRest(); else this.rollChoices('start', BUILD_POOL); } // the run opens with a build pick; stage 1 begins after it
   // Offer 3 distinct relics (weighted sampling without replacement); reason is 'start' or 'stage'.
   rollChoices(reason, pool) {
     this.state = 'upgrade'; this.pickReason = reason;
@@ -119,7 +126,10 @@ export class Game {
   activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
     this.stage = index;
-    const spec = STAGES[index], boss = index === 4;
+    const spec = STAGES[index], boss = index === 4, castle = this.mode === 'castle';
+    const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
+    const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
+    const total = plan ? plan.length : spec.count;
     this.worldWidth = spec.width;
     this.portalX = spec.width - 145;
     this.portalOpen = false;
@@ -131,29 +141,85 @@ export class Game {
     this.enemies = []; this.eliteBeat = 0;
     this.traps = []; this.obstacles = [];
     const spot = boss ? null : this.buildRooms(index);
-    const regular = boss ? spec.count : spec.count - 2; // the last two are the required guards at the gate
+    const regular = boss ? spec.count : total - 2; // the last two are the required guards at the gate
     const rollType = i => {
+      if (plan) return plan[i];
       const roll = this.rand();
       const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? (this.rand() < .3 ? 'priest' : 'mage') : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
       return type === 'knight' && this.rand() < .28 ? 'spear' : type;
     };
-    for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / spec.count + this.rand() * 65), index);
+    for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / total + this.rand() * 65), tier);
     if (this.mode === 'endless' && this.floor >= ENDLESS_ELITE_FROM) for (const e of this.enemies) if (this.rand() < ENDLESS_ELITE_CHANCE) this.makeElite(e, index).bonus = true; // extra elites: no reward pick
     if (boss) {
       this.spawnEnemy('boss', spec.width - 400, index).required = true;
       // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes.
       this.platforms = [this.makePlatform(60, FLOOR - 110, 190, 'cathedral', 'ledge'), this.makePlatform(spec.width - 250, FLOOR - 110, 190, 'cathedral', 'ledge')];
     } else {
-      for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, index).required = true; }
+      for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, tier).required = true; }
+      if (castle) { // no chests; floors 8-9 add one bonus elite (no reward pick)
+        this.chests = [];
+        if (this.floor >= 8) Object.assign(this.makeElite(this.spawnEnemy('knight', spot.x, tier), tier), { bonus: true, y: spot.y, plat: spot.plat });
+      } else {
       const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest
       Object.assign(guard, { y: spot.y, plat: spot.plat });
       Object.assign(this.chests[1], { sealed: true }); // sealed until this guard (linked by chest id) is gone
       this.makeElite(guard, index).chest = 1; // the optional chest's guard is this stage's elite
+      }
     }
     this.totalEnemies = this.enemies.length;
     this.placeHazards(index);
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
+  // Castle floor table (#44): floors 1-3 are fixed mixes (7 enemies), 4-7 roll 9, 8-9 roll 11 and add knights; every 4th slot is a bat.
+  castlePlan() {
+    const f = this.floor, fill = (n, t) => Array(n).fill(t);
+    if (f <= 3) {
+      const list = (f === 2 ? fill(3, 'shield') : f === 3 ? fill(3, 'spear') : []); list.push(...fill(7 - list.length, 'skeleton'));
+      for (let i = list.length; --i > 0;) { const j = Math.floor(this.rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+      return list;
+    }
+    const pool = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'];
+    return Array.from({ length: f >= 8 ? 11 : 9 }, (_, i) => i % 4 === 1 ? 'bat' : pool[Math.floor(this.rand() * pool.length)]);
+  }
+  loadFloor(n) { this.floor = n; this.loadStage(0); this.emit('stage', { stage: 0, floor: n, mode: this.mode }); }
+  // Weapon base stats replace damage, attack cooldown and reach (frenzy effects are step 2). Chosen at the Vigil, before any relic.
+  setWeapon(id) {
+    const w = WEAPONS[id], p = this.player;
+    if (!w) return false;
+    Object.assign(p, { weapon: id, damage: w.damage, attackSpeed: w.cd, reach: w.reach });
+    return true;
+  }
+  // The Vigil (rest point): blood back to 100, no relics, no frenzy; also where death returns. Pick a weapon, then descend().
+  enterRest() {
+    this.endFrenzy();
+    this.relics = []; Object.assign(this.player, basePlayer());
+    this.state = 'rest';
+    this.emit('rest', { weapons: Object.keys(WEAPONS) });
+  }
+  descend() {
+    if (this.state !== 'rest' || !this.player.weapon) return false;
+    this.state = 'playing'; this.loadFloor(1);
+    return true;
+  }
+  nextFloor() {
+    if (this.floor >= 9) { this.state = 'sliceEnd'; this.emit('sliceEnd'); return; } // placeholder: floor 10 and the Warden come in step 3
+    this.state = 'playing'; this.loadFloor(this.floor + 1);
+  }
+  // Blood gain from a hit, kill or perfect dodge; halved (min 1) during frenzy. Skill and damage-over-time hits set noBlood.
+  gainBlood(amount) {
+    const p = this.player;
+    if (this.mode !== 'castle' || this.noBlood || this.state !== 'playing') return;
+    p.blood = Math.min(BLOOD_MAX, p.blood + (p.frenzy ? Math.max(1, amount >> 1) : amount));
+    if (!p.frenzy && p.blood >= BLOOD_MAX) { p.frenzy = true; this.emit('frenzy', { weapon: p.weapon, x: p.x, y: p.y }); }
+  }
+  endFrenzy() {
+    const p = this.player;
+    if (!p.frenzy) return;
+    p.frenzy = false; p.debt = 0;
+    this.emit('frenzyEnd', { weapon: p.weapon, debt: 0 });
+  }
+  // Frenzy ends once blood is back at the life half (burn, damage or the skill).
+  checkFrenzy() { const p = this.player; if (p.frenzy && p.blood <= BLOOD_HALF) this.endFrenzy(); }
   // Elite stats and a random affix (a shield bearer is never Warded).
   makeElite(e, index) {
     const mult = index === 0 ? 2.6 : e.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
@@ -271,6 +337,7 @@ export class Game {
     }
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
+    if (p.frenzy) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
@@ -429,6 +496,7 @@ export class Game {
         const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
         const blocked = e.type === 'shield' && e.guardBreak <= 0 && s.vx * e.dir < 0; // frontal only (decided by travel direction, robust at low frame rates); a returning crescent can hit a back
         this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, Math.sign(s.vx) || s.dir, crit, false, blocked, SHOT_POISE, false, 1, s.frosted.has(e) ? 'repeat' : true);
+        this.gainBlood(1);
         s.frosted.add(e); // a throw lands at most one frost hit per enemy, on either pass
       }
     }
@@ -450,6 +518,7 @@ export class Game {
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       p.mp = Math.min(p.maxMp, p.mp + 2);
+      this.gainBlood(blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3);
     }
   }
   // Plunge hits: sword-style damage, never blocked (it comes from above); the fall and the landing shockwave share this.hitSet.
@@ -458,6 +527,7 @@ export class Game {
     this.hitSet.add(e);
     this.damageEnemy(e, Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
     p.mp = Math.min(p.maxMp, p.mp + 2);
+    this.gainBlood(3);
   }
   plungeHit(oldY) {
     const p = this.player;
@@ -480,9 +550,10 @@ export class Game {
   }
   magic() {
     const p = this.player;
-    const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
-    if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
-    p.mp -= cost; p.magicCd = p.magicCdMax; p.invulnerable = Math.max(p.invulnerable, .28);
+    const cost = p.lunatic ? 0 : p.magicCost, castle = this.mode === 'castle'; // Lunatic Moon: free Eclipse, so noMana never fires
+    if ((castle ? p.blood < SKILL_MIN : p.mp < cost) || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
+    if (castle) { p.blood -= SKILL_COST; this.checkFrenzy(); } else p.mp -= cost;
+    p.magicCd = p.magicCdMax; p.invulnerable = Math.max(p.invulnerable, .28);
     this.flameUsed = false; // Eclipse never chains, so it must not re-arm the chain of a swing still in progress
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
@@ -494,10 +565,12 @@ export class Game {
         if (e.y > o.y - o.h + 1 && Math.abs(from - o.x) >= half && (Math.abs(e.x - o.x) < half || (from - o.x) * (e.x - o.x) < 0)) e.x = o.x + Math.sign(from - o.x) * half;
       }
     }
+    const noBlood = this.noBlood; this.noBlood = true; // Eclipse hits and kills give no blood
     for (const e of caught) {
       this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
+    this.noBlood = noBlood;
     for (const o of this.obstacles.slice()) if (Math.hypot(o.x - p.x, o.y - p.y) < radius) this.damageObstacle(o, Math.round(p.magicDamage * (1 + .35 * vortex)));
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
@@ -552,9 +625,10 @@ export class Game {
       e.hp = 0;
       const p = this.player;
       if (this.state === 'playing') { // no credit, leech, MP or drops once the hero is dead or the run ended
-        if (this.rand() < .25) this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
+        if (this.rand() < .25 && this.mode !== 'castle') this.pickups.push({ x: e.x, y: Math.min(FLOOR - 20, e.y - 20), age: 0 });
         this.kills++; this.souls += e.type === 'boss' ? 100 : e.type === 'knight' ? 15 : 10;
         p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
+        this.gainBlood(8);
       }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss' });
       if (e.required) this.emit('guards', this.guardStatus());
@@ -589,7 +663,7 @@ export class Game {
     const through = this.absorb(e, amount);
     e.hp -= through;
     this.emit('statusTick', { source, x: e.x, y: e.y - e.h * .55, amount: through, absorbed: amount - through });
-    this.settle(e);
+    const noBlood = this.noBlood; this.noBlood = true; this.settle(e); this.noBlood = noBlood;
   }
   // Statuses and reactions for one landed, unblocked sword/Eclipse hit. Reactions read the pre-hit state, then the hit applies its statuses.
   elements(e, amount, heavy, eclipse, shot = false) {
@@ -905,7 +979,7 @@ export class Game {
   perfectDodge() {
     const p = this.player;
     if (p.perfect <= 0 || p.perfectUsed || p.otherInv > 0) return; // only if the dash itself stopped the hit
-    p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); p.thrustWindow = Math.max(p.thrustWindow, .9);
+    p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); this.gainBlood(5); p.thrustWindow = Math.max(p.thrustWindow, .9);
     this.freeze = Math.max(this.freeze, .05);
     this.emit('perfectDash', { x: p.x, y: p.y - 30 });
   }
@@ -914,16 +988,19 @@ export class Game {
     if (this.state !== 'playing') return;
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
     const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
-    p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
+    const castle = this.mode === 'castle';
+    if (castle) p.blood = Math.max(0, p.blood - actual); else p.hp = Math.max(0, p.hp - actual);
+    p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;
     this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual });
-    if (p.hp === 0) { this.state = 'dead'; p.plunge = 0; p.move = ''; this.emit('death'); }
+    if (castle ? p.blood === 0 : p.hp === 0) { this.state = 'dead'; p.plunge = 0; p.move = ''; this.endFrenzy(); this.emit('death'); } else this.checkFrenzy();
   }
   finishStage() {
     this.player.plunge = 0; this.player.move = '';
     if (this.stage === 4 && this.mode === 'normal') { this.state = 'won'; this.emit('win'); return; }
-    this.rollChoices('stage');
+    if (this.mode === 'castle' && !CASTLE_PICKS.includes(this.floor)) this.nextFloor();
+    else this.rollChoices('stage', this.mode === 'castle' ? SLICE_POOL : undefined);
   }
   chooseRelic(id) {
     if (this.state !== 'upgrade') return false;
@@ -931,6 +1008,7 @@ export class Game {
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
     for (const k in this.player) if (typeof this.player[k] === 'number' && !(Math.abs(this.player[k]) <= STAT_CAP)) this.player[k] = Number.isNaN(this.player[k]) ? 0 : Math.sign(this.player[k]) * STAT_CAP; // finite guard for endless stacking
+    if (this.mode === 'castle') { this.nextFloor(); return true; } // castle picks restore nothing; they only come after floors 3, 6 and 9
     if (this.pickReason === 'elite') { this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20); this.player.mp = this.player.maxMp; this.state = 'playing'; return true; } // like a stage pick's restore, but play resumes in place
     if (this.pickReason === 'chest') { this.state = 'playing'; return true; } // chest pick: no heal, no stage change
     if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
