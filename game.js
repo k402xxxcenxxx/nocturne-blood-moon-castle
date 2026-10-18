@@ -15,7 +15,7 @@ const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('
 const records = { runs: 0, wins: 0, best: 0, ...readSaved('nocturne-records', {}) };
 let game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
 let phaseTime = 0, dustTimer = 0, shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
-let announceTime = 0, toastTime = 0, trailTimer = 0, returnState = null, modalKind = '', modalReturn = null, previousFocus = null;
+let announceTime = 0, roomTime = 0, toastTime = 0, trailTimer = 0, returnState = null, modalKind = '', modalReturn = null, previousFocus = null;
 const held = new Map(), buffered = new Map();
 const keyControls = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyJ: 'attack', KeyZ: 'attack', KeyK: 'dash', ShiftLeft: 'dash', ShiftRight: 'dash', KeyX: 'dash', KeyL: 'magic', KeyC: 'magic' };
 const impulseControls = new Set(['jump', 'dash', 'magic']);
@@ -185,7 +185,7 @@ function handleEvent(e) {
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t('toast.noMana')); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
-    case 'room': toast(t(`room.${e.stage}.${e.index}`)); break; // placeholder until the room banner exists
+    case 'room': if (announceTime <= 0) { $('room-banner').textContent = t(`room.${e.stage}.${e.index}`); $('room-banner').classList.add('show'); roomTime = 2.2; } break; // the stage announcement already names room 0
     case 'chest': audio.play(e.kind === 'heal' ? 'ui' : 'portal', .8); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'guards': flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
@@ -247,7 +247,7 @@ function synergyLine(id) {
   return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
 }
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -511,6 +511,12 @@ function render(dt) {
         const ry = Math.round(e.y - e.h - 6), rw = e.type === 'boss' ? 26 : 16; ctx.fillStyle = '#ffd36e';
         for (let i = 0; i < 4; i++) { const a = worldTime * 6 + i * Math.PI / 2; ctx.fillRect(Math.round(e.x + Math.cos(a) * rw) - 2, Math.round(ry + Math.sin(a) * 4) - 2, 4, 4); }
       }
+      if (e.required && e.hp > 0) { // gate-guard crest: small gold shield with a crimson gem, left of the head so it never overlaps the "!"
+        const cx = Math.round(e.x - (e.type === 'boss' ? 22 : 13)), cy = Math.round(e.y - e.h - 12);
+        ctx.beginPath(); ctx.moveTo(cx - 5, cy - 5); ctx.lineTo(cx + 5, cy - 5); ctx.lineTo(cx + 5, cy + 1); ctx.lineTo(cx, cy + 7); ctx.lineTo(cx - 5, cy + 1); ctx.closePath();
+        ctx.fillStyle = '#13111b'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#e0bd6a'; ctx.stroke(); ctx.lineWidth = 1;
+        ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
+      }
       if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; ctx.strokeText('!', bx, by2); ctx.fillStyle = e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText('!', bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
@@ -549,6 +555,7 @@ function tick(now) {
   damageFlash = Math.max(0, damageFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt); silverFlash = Math.max(0, silverFlash - dt);
   comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
   if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) $('stage-announcement').classList.remove('show'); }
+  if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
