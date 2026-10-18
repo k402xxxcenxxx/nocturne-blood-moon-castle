@@ -18,7 +18,7 @@ The interface is available in English and Traditional Chinese (繁體中文). Th
 
 ## How to play
 
-On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the Night**, pick your opening relic (a build-defining attack form or element, no healing), then fight through the five rooms of each stage (take the floor, or climb the platforms for chests and shortcuts), defeat the two guards at the end, and walk into the Moon Gate on the far right. Optional enemies can be skipped. Chests open when you stand next to them: a relic chest offers a bonus relic pick, a heal chest restores health and mana. After each of the first four stages you pick one relic and recover 20 HP and all MP; clearing stage five wins the run.
+On a phone, hold it sideways, tap fullscreen in the top right, then **Enter the Night**, pick your opening relic (a build-defining attack form or element, no healing), then fight through the five rooms of each stage (take the floor, or climb the platforms for chests and shortcuts), defeat the two guards at the end, and walk into the Moon Gate on the far right. Optional enemies can be skipped, but each of the first four stages has one elite guarding the high-route chest (Swift, Splitting or Warded): beat it for an extra relic pick, a small heal and full mana. Chests open when you stand next to them: a relic chest offers a bonus relic pick, a heal chest restores health and mana. After each of the first four stages you pick one relic and recover 20 HP and all MP; clearing stage five wins the run.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
