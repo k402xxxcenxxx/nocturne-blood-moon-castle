@@ -374,7 +374,8 @@ export class Game {
     const p = this.player;
     if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap p.vy = Math.min(p.vy, 0);
+    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap
+    p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
   }
   attack() {

@@ -2348,6 +2348,10 @@ b[data-i18n] {
     left:62%; /* shifted right so it clears a full relic tray at the left */
     max-width:50%;
   }
+  .relic-tray {
+    flex-wrap:wrap;
+    max-width:300px; /* wrap long trays so they never reach the shifted elite banner */
+  }
 }
 
 .relic-card[data-cursed] {

@@ -2451,3 +2451,10 @@ test('regression: the elite sighting event says when an elite is a bonus elite (
   assert.ok(notice, 'no elite sighting event');
   assert.equal(notice.bonus, true, 'bonus elite sighting must not promise a relic pick');
 });
+
+test('regression: dashing while falling cancels the downward velocity again (bc58cca comment swallowed the clamp)', () => {
+  const { game, player } = stackedEndless('edge', 0);
+  player.dashCd = 0; player.attack = 0; player.grounded = false; player.y = 300; player.vy = 500;
+  game.dash();
+  assert.equal(player.vy, 0);
+});
