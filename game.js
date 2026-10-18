@@ -27,7 +27,7 @@ function applySettings() {
   save('nocturne-settings', settings);
 }
 function updateBest() { $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
-function relicTray() { return game.relics.map(id => `<span class="relic-icon" title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}</span>`).join(''); }
+function relicTray() { return game.relics.map(id => { const r = RELICS.find(x => x.id === id); return `<span class="relic-icon"${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}</span>`; }).join(''); }
 function applyLanguage() {
   setLanguage(settings.lang); document.documentElement.lang = language();
   document.title = t('meta.title'); document.querySelector('meta[name="description"]').content = t('meta.description');
@@ -239,7 +239,7 @@ function pauseRelics() {
   const ids = Object.keys(counts);
   if (!ids.length) return `<p class="pause-relics-none">${t('pause.relicsNone')}</p>`;
   const syn = game.activeSynergies().map(s => `<li title="${t(s.key)}"><b>${t(`relic.${s.a}.name`)} + ${t(`relic.${s.b}.name`)}</b> ${t(s.key)}</li>`).join('');
-  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''} title="${t(`relic.${id}.text`)}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
+  return `<ul class="pause-relics">${ids.map(id => `<li${ELEMENTS.includes(id) ? ` data-element="${id}"` : ''}${RELICS.find(r => r.id === id).cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.text`)}${RELICS.find(r => r.id === id).cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(RELICS.find(r => r.id === id).icon)}<span>${t(`relic.${id}.name`)}</span>${counts[id] > 1 ? `<b>×${counts[id]}</b>` : ''}</li>`).join('')}</ul>${syn ? `<ul class="pause-synergies" aria-label="${t('pause.synergies')}">${syn}</ul>` : ''}`;
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
