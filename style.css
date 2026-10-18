@@ -780,6 +780,35 @@ kbd {
   align-self:flex-start;
   margin-top:-15px;
 }
+.vitals.castle .mana {
+  display:none;
+}
+.vitals.castle .health {
+  position:relative;
+}
+.vitals.castle .health>div {
+  background:linear-gradient(90deg,#9f394d var(--split,100%),#ff6a7c var(--split,100%));
+}
+.vitals.castle .health::after {
+  content:"";
+  position:absolute;
+  left:50%;
+  top:-2px;
+  bottom:-2px;
+  width:2px;
+  background:#e8dcc0;
+  opacity:.85;
+}
+.vitals.frenzy .health {
+  animation:frenzy-pulse .7s ease-in-out infinite alternate;
+}
+@keyframes frenzy-pulse {
+  from { box-shadow:0 0 2px #ff3a4d; }
+  to { box-shadow:0 0 12px #ff3a4d; border-color:#ff8a8a; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .vitals.frenzy .health { animation:none; box-shadow:0 0 8px #ff3a4d; border-color:#ff8a8a; }
+}
 .magic-button.unavailable {
   opacity:.35;
 }

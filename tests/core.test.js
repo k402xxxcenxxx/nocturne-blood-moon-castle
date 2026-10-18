@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES, BUILD_POOL } from '../core.js';
+import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2525,4 +2525,176 @@ test('#30 QA regression: a killing blow on a lone shocked enemy credits one kill
   assert.equal(e.hp, 0);
   assert.equal(game.kills - kills, 1, 'one kill, not two');
   assert.equal(events.filter(ev => ev.type === 'kill').length, 1);
+});
+
+// ---- Castle Descent (#44 step 1) ----
+function castle(seed = 42, floor = 1) {
+  const events = [];
+  const game = new Game(event => events.push(event), seed, 'castle');
+  game.start();
+  assert.equal(game.state, 'rest');
+  game.setWeapon('spear');
+  game.descend();
+  if (floor > 1) game.loadFloor(floor);
+  if (floor === 0) return { game };
+  game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = [];
+  game.player.invulnerable = 0;
+  return { game, player: game.player, events };
+}
+
+test('castle: the Vigil asks for a weapon, base stats replace the hero stats, then floor 1 starts', () => {
+  const game = new Game(() => {}, 7, 'castle');
+  game.start();
+  assert.equal(game.state, 'rest');
+  assert.equal(game.descend(), false, 'no weapon, no descent');
+  assert.equal(game.setWeapon('nope'), false);
+  game.setWeapon('twin');
+  assert.equal(game.player.reach, 88);
+  assert.equal(game.descend(), true);
+  assert.equal(game.state, 'playing');
+  assert.equal(game.player.blood, 100);
+  assert.equal(game.floor, 1);
+});
+
+test('castle: floors follow the table, with no chests and tier-based scaling', () => {
+  const { game } = castle(42, 0);
+  assert.equal(game.enemies.length, 7);
+  assert.ok(game.enemies.every(e => e.type === 'skeleton') && game.chests.length === 0);
+  game.loadFloor(2);
+  assert.equal(game.enemies.filter(e => e.type === 'shield').length, 3);
+  game.loadFloor(3);
+  assert.equal(game.enemies.filter(e => e.type === 'spear').length, 3);
+  const tier0 = game.enemies.find(e => e.type === 'skeleton').maxHp;
+  game.loadFloor(5);
+  assert.equal(game.enemies.length, 9);
+  assert.ok(game.enemies.filter(e => e.required).length === 2);
+  game.loadFloor(9);
+  assert.equal(game.enemies.length, 12, '11 plus the bonus elite');
+  assert.ok(game.enemies.some(e => e.elite && e.bonus));
+  assert.ok(game.enemies.find(e => e.type === 'skeleton' && !e.elite).maxHp > tier0, 'floor 9 uses tier 4');
+});
+
+test('castle: sword hits and kills give blood, the skill gives none and costs 18 above 40', () => {
+  const { game, player } = castle();
+  const target = enemy(game, player.x + 50, { hp: 500 });
+  game.attack(); // combo hit 1: +3
+  assert.equal(player.blood, 103);
+  target.hp = 1; target.x = player.x + 50; game.hitSet = new Set(); game.hitTargets();
+  assert.equal(player.blood, 103 + 3 + 8, 'hit plus kill');
+  player.blood = 100; player.magicCd = 0;
+  enemy(game, player.x + 60, { hp: 5 });
+  game.magic();
+  assert.equal(player.blood, 82, 'skill costs 18 and its hits and kills give nothing');
+  player.blood = 39; player.magicCd = 0;
+  game.magic();
+  assert.equal(player.blood, 39, 'below 40 the skill cannot be cast');
+});
+
+test('castle: noMana fires when the skill is refused for low blood', () => {
+  const { game, player, events } = castle();
+  player.blood = 39;
+  game.magic();
+  assert.ok(events.some(e => e.type === 'noMana'));
+});
+
+test('castle: no healing from drops, and damage comes off blood', () => {
+  const { game, player } = castle();
+  for (let i = 0; i < 40; i++) game.settle(Object.assign(enemy(game, player.x + 50, { hp: 1 }), { hp: 0 })); // a normal run drops a heal on about 1 in 4
+  assert.equal(game.pickups.length, 0);
+  player.blood = 100;
+  game.hurt(10, 1);
+  assert.equal(player.blood, 90);
+  assert.equal(player.hp, 100, 'hp is unused');
+});
+
+test('castle: blood reaching 200 starts a frenzy that burns to 100 and then ends', () => {
+  const { game, player, events } = castle();
+  player.blood = 198;
+  game.gainBlood(3);
+  assert.equal(player.blood, BLOOD_MAX);
+  assert.equal(player.frenzy, true);
+  assert.equal(events.filter(e => e.type === 'frenzy').length, 1);
+  advance(game, 4);
+  assert.ok(player.blood < 160 && player.blood > 140, 'about 12 per second');
+  assert.equal(player.frenzy, true);
+  advance(game, 5);
+  assert.equal(player.frenzy, false);
+  assert.equal(player.blood, 100);
+  assert.equal(events.filter(e => e.type === 'frenzyEnd').length, 1);
+});
+
+test('castle: frenzy gains are halved (minimum 1) and damage can end it', () => {
+  const { game, player } = castle();
+  player.blood = 150; player.frenzy = true;
+  game.gainBlood(8); assert.equal(player.blood, 154);
+  game.gainBlood(1); assert.equal(player.blood, 155);
+  game.hurt(60, 1);
+  assert.equal(player.frenzy, false, 'blood fell to 100 or below');
+});
+
+test('castle: burn does not advance while paused or choosing a relic', () => {
+  const { game, player } = castle();
+  player.blood = 200; player.frenzy = true;
+  game.state = 'paused'; advance(game, 2);
+  game.state = 'upgrade'; advance(game, 2);
+  assert.equal(player.blood, 200);
+});
+
+test('castle: frenzy carries across a floor change', () => {
+  const { game, player } = castle();
+  player.blood = 180; player.frenzy = true;
+  game.loadFloor(2);
+  assert.equal(player.frenzy, true);
+  assert.equal(player.blood, 180);
+});
+
+test('castle: relic picks come after floors 3, 6 and 9 only, from the slice pool, and restore nothing', () => {
+  assert.ok(!SLICE_POOL.includes('vital') && !SLICE_POOL.includes('arcane') && SLICE_POOL.includes('edge'));
+  const { game, player } = castle(42, 2);
+  game.finishStage();
+  assert.equal(game.state, 'playing');
+  assert.equal(game.floor, 3, 'floor 2 goes straight on');
+  player.blood = 120;
+  game.finishStage();
+  assert.equal(game.state, 'upgrade');
+  assert.ok(game.choices.every(r => SLICE_POOL.includes(r.id)));
+  game.chooseRelic(game.choices[0].id);
+  assert.equal(game.floor, 4);
+  assert.equal(game.state, 'playing');
+  assert.equal(player.blood, 120);
+});
+
+test('castle: after floor 9 the run ends at the slice-end placeholder', () => {
+  const { game, events } = castle(42, 9);
+  game.finishStage();
+  assert.equal(game.state, 'upgrade');
+  game.chooseRelic(game.choices[0].id);
+  assert.equal(game.state, 'sliceEnd');
+  assert.ok(events.some(e => e.type === 'sliceEnd'));
+});
+
+test('castle: dying returns to the Vigil at 100 blood with no relics, then floor 1 again', () => {
+  const { game, player, events } = castle(42, 5);
+  game.relics.push('edge'); player.damage *= 1.25;
+  player.blood = 150; player.frenzy = true;
+  game.hurt(500, 1);
+  assert.equal(game.state, 'dead');
+  assert.equal(player.frenzy, false);
+  assert.ok(events.some(e => e.type === 'death'));
+  game.enterRest();
+  assert.equal(game.state, 'rest');
+  assert.equal(player.blood, 100);
+  assert.deepEqual(game.relics, []);
+  game.setWeapon('heavy');
+  game.descend();
+  assert.equal(game.floor, 1);
+  assert.equal(player.damage, 30, 'relic damage is gone');
+});
+
+test('castle: normal mode is untouched by blood rules', () => {
+  const { game, player } = arena();
+  game.gainBlood(50);
+  assert.equal(player.blood, 100);
+  game.hurt(10, 1);
+  assert.equal(player.hp, 90);
 });

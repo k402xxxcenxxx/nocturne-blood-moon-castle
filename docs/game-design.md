@@ -4,10 +4,22 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 ## Core fun and design pillars
 
-> Locking this section is one of the M0 Prototype exit criteria. Below is the current draft.
+### Approved direction (#43)
 
-- **Core fun (draft)**: read the gaps between enemy warnings, chain combos, dashes and Eclipse into a clean run, then pick a relic that changes how the next stage plays.
-- **Pillars (draft)**
+Approved by the user in #43. This is the direction new proposals must serve. Its vertical slice (#44, approved) is being built in steps: step 1, the blood loop, is the Castle Descent mode below; weapon frenzy effects and debt (step 2) and the Gate Warden, blood pools, save, second rest point and castle records (step 3) are still planned. The normal run and Endless Trial described in the rest of this document are unchanged.
+
+- **Core fun**: blood is your only resource: the fuller you are, the stronger you get, and the closer you are to losing control.
+- **Pillars**
+  1. **Blood is the only resource**: blood is gained by attacking, spent on weapon skills, and is also your life; there is no free healing, so offense keeps you alive.
+  2. **Fullness is power and risk**: the meter above 50% is both extra life and a countdown, and a full meter forces a Blood Frenzy that is strongest exactly when you are closest to losing control.
+  3. **The weapon defines the frenzy**: each weapon has its own frenzy with a built-in downside, and weapons change only at rest points, so choosing a weapon chooses which loss of control you carry.
+
+The input-level qualities of the prototype stay requirements under every pillar: every enemy attack has a visible warning (`tell`), and every hit gets hit-stop, a flash, knockback, sound and a number.
+
+### Previous draft (current five-stage prototype)
+
+- **Core fun**: read the gaps between enemy warnings, chain combos, dashes and Eclipse into a clean run, then pick a relic that changes how the next stage plays.
+- **Pillars**
   1. **Read and react**: every enemy attack has a visible warning (`tell`); dodging takes skill, not luck.
   2. **Impact feedback**: every hit gets hit-stop, a flash, knockback, sound and a number.
   3. **Every run differs**: relic combinations and random placement change the decisions in each run.
@@ -151,6 +163,38 @@ Approved in #22; explicitly **not balanced**: it exists for combination testing 
 - After each floor: the three-choice relic pick (+20 HP, full MP). Relics stack with no run-length cap; existing caps (crit 0.8, magic cost 15, cursed `max`, plunge radius and so on) stay. After every pick, any player stat that is NaN or beyond 1e12 is clamped, so deep stacks never produce `Infinity` or `NaN`.
 - Death ends the trial and leaves `best`, `wins` and `runs` alone. `bestFloor` is saved with the other records.
 - HUD shows "Floor N"; the result screen shows the floor reached and the best floor.
+
+## Castle Descent (slice step 1)
+
+Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). Constants are exported from `core.js`. Not balanced: every number is a playtest starting point.
+
+- **The Vigil** (state `rest`, `rest` {weapons} event): the run starts here. It resets the player to base stats, blood to 100, no relics, no frenzy. Pick a weapon with `setWeapon(id)`, then `descend()` loads floor 1. No opening build pick.
+- **Weapons** (`WEAPONS`, base stats only; frenzy effects are step 2): they replace `damage`, `attackSpeed` (attack cooldown multiplier) and `reach`.
+
+| id | Damage | Cooldown | Reach |
+| --- | --- | --- | --- |
+| `heavy` | 30 | ×1.25 | 112 |
+| `twin` | 17 | ×0.75 | 88 |
+| `spear` | 22 | ×1.0 | 128 |
+
+- **Blood** (`player.blood`, 0 to `BLOOD_MAX` 200, life half `BLOOD_HALF` 100) replaces HP and MP. Gains (only while `playing`): sword hit (combo 1-2, thrust, plunge fall or shockwave) +3 per enemy, combo hit 3 +5, blocked shield-bearer hit +1, player projectile hit +1, kill +8, perfect dodge +5. Barricades, altars, Eclipse hits and kills, and damage-over-time, bonus-hit and reaction damage (including kills they cause) give 0. Damage taken comes off blood (armor, `takenMul`, the 0.8 s invulnerability as usual); at 0 the hero dies. No free healing: no heal drops, no chests, picks restore nothing.
+- **Weapon skill**: Eclipse with its normal effect, costs `SKILL_COST` 18 blood and needs at least `SKILL_MIN` 40 (below that it emits `noMana`, shown as a blood toast). Allowed during frenzy.
+- **Blood Frenzy**: starts when blood reaches 200 (`frenzy` {weapon, x, y}). Blood burns `FRENZY_BURN` 12/s (about 8.3 s with no gains); gains are halved (rounded down, minimum 1). It ends when blood is at 100 or less, from burn, damage or the skill (`frenzyEnd` {weapon, debt: 0}); the burn never takes blood below 100. Burn stops during pause, picks and hit-stop. Frenzy carries across floors; death and the Vigil end it.
+- **Floors** (`castlePlan()`, `loadFloor(n)`): floors 1-9 reuse the Forsaken Gate rooms and art (stage 0) with no chests and 2 required guards (a rolled bat becomes a skeleton). Enemy scaling tier = min(4, floor((floor - 1) / 2)): floors 1-2: 0, 3-4: 1, 5-6: 2, 7-8: 3, 9: 4. HUD reads "Floor N / 10".
+
+| Floor | Enemies |
+| --- | --- |
+| 1 | 7 skeletons |
+| 2 | 3 shield bearers, 4 skeletons (shuffled) |
+| 3 | 3 spearmen, 4 skeletons (shuffled) |
+| 4-7 | 9, every 4th slot (index 1, 5) a bat, others rolled from skeleton, shield bearer, spearman |
+| 8-9 | 11, same pattern, knight added to the roll; plus one bonus elite knight (`bonus: true`, no pick) at the optional-chest spot |
+
+- **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
+- **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).
+- **Slice end**: clearing floor 9 (after its pick) sets state `sliceEnd` and emits `sliceEnd`; a placeholder for floor 10 and the Gate Warden (step 3). Castle runs write no records yet.
+
+Differences from #44: the slice ends after floor 9, not at the Warden on floor 10 (step 3); frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
 
 ## Playtest verdicts
 

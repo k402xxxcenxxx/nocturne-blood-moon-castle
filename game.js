@@ -1,4 +1,4 @@
-import { Game, RELICS, FLOOR, clamp } from './core.js';
+import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN } from './core.js';
 import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -27,7 +27,7 @@ function applySettings() {
   save('nocturne-settings', settings);
 }
 const endlessUnlocked = () => records.wins >= 1;
-const stageLabel = (stage, floor = game.floor) => game.mode === 'endless' ? t('hud.floor', { n: floor }) : `${roman[stage]} — V`;
+const stageLabel = (stage, floor = game.floor) => game.mode === 'castle' ? t('hud.floorOf', { n: floor, total: 10 }) : game.mode === 'endless' ? t('hud.floor', { n: floor }) : `${roman[stage]} — V`;
 function updateBest() {
   const eb = $('endless-button'), on = endlessUnlocked(); eb.setAttribute('aria-disabled', String(!on)); eb.querySelector('span').textContent = t(on ? 'title.endlessHint' : 'title.endlessLocked'); eb.querySelector('em').textContent = on && records.bestFloor ? t('title.endlessBest', { n: records.bestFloor }) : ''; $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
 function relicTray() { return game.relics.map(id => { const r = RELICS.find(x => x.id === id); return `<span class="relic-icon"${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}</span>`; }).join(''); }
@@ -74,7 +74,7 @@ const WARD_COLOR = '#9fd0ff';
 const bannerQueue = []; // top banners (room names, elite sightings) wait for the stage announcement and each other
 function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random() * 12 - 6, y: e.y - 6, text: String(e.amount), life: .85, crit: e.crit, size: e.size, color }); }
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
-function recordResult(win) { if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
+function recordResult(win) { if (game.mode === 'castle') return; if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
   switch (e.type) {
     case 'stage': {
@@ -89,7 +89,7 @@ function handleEvent(e) {
       [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === e.stage ? 'current' : i < e.stage ? 'done' : ''; });
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
       $('relic-tray').innerHTML = relicTray();
-      if (e.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, e.floor); else records.best = Math.max(records.best, e.stage + 1);
+      if (e.mode === 'castle') { /* castle records come in step 3 */ } else if (e.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, e.floor); else records.best = Math.max(records.best, e.stage + 1);
       save('nocturne-records', records); updateBest();
       audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
@@ -199,7 +199,11 @@ function handleEvent(e) {
     case 'trapWarn': if (Math.abs(e.x - game.player.x) < 600) audio.play('trapWarn'); break;
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
-    case 'noMana': toast(t('toast.noMana')); break;
+    case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
+    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
+    case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
+    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = ''; openVigil(); break;
+    case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
@@ -208,13 +212,13 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
-    case 'win': clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
+    case 'death': audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
 let startBestFloor = 0;
 function startRun(mode = 'normal') {
-  closeModal(false); clearInput(); audio.unlock(); audio.resume();
+  closeModal(false); clearInput(); audio.setHeartbeat(false); audio.unlock(); audio.resume();
   game = new Game(handleEvent, undefined, mode); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; startBestFloor = records.bestFloor; if (mode === 'normal') records.runs++; // an endless trial never touches normal-run progress
   save('nocturne-records', records);
@@ -222,7 +226,7 @@ function startRun(mode = 'normal') {
   frame.scrollIntoView({ block: 'nearest' }); // the masthead pushes the frame's bottom off short desktop windows
 }
 // Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
-function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && modalKind === 'upgrade')); }
+function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && ['upgrade', 'vigil'].includes(modalKind))); }
 function openModal(html, kind, pause = true) {
   if ($('modal').hidden) previousFocus = document.activeElement;
   if (pause && game.state === 'playing') { returnState = 'playing'; game.state = 'paused'; audio.suspend(); }
@@ -233,6 +237,7 @@ function closeModal(resume = true) {
   if (resume && modalReturn) {
     const target = modalReturn; modalReturn = null;
     if (target === 'upgrade') openUpgrade(game.choices);
+    else if (target === 'vigil') openVigil();
     else openResult(target === 'won');
     return;
   }
@@ -251,17 +256,18 @@ function pauseRelics() {
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
-  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t(game.mode === 'endless' ? 'pause.infoEndless' : 'pause.info', { stage: roman[game.stage], n: game.floor, name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
+  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t(game.mode === 'endless' ? 'pause.infoEndless' : game.mode === 'castle' ? 'pause.infoCastle' : 'pause.info', { stage: roman[game.stage], n: game.floor, name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
 }
 function openSettings() {
-  if (['upgrade', 'dead', 'won'].includes(modalKind)) modalReturn = modalKind;
+  if (['upgrade', 'dead', 'won', 'vigil'].includes(modalKind)) modalReturn = modalKind;
   const list = ['sound', 'music', 'haptics', 'shake'];
   const languages = Object.entries(LANGUAGES).map(([code, name]) => `<button class="language-option" data-language="${code}" lang="${code}" aria-pressed="${settings.lang === code}">${name}</button>`).join('');
   openModal(`<div class="modal-eyebrow">${t('decor.settings')}</div><h2 id="modal-title">${t('settings.title')}</h2><div class="settings-list"><div class="setting"><div><strong>${t('settings.language')}</strong><small>${t('settings.languageDesc')}</small></div><div class="language-options" role="group" aria-label="${t('settings.language')}">${languages}</div></div>${list.map(id => `<div class="setting"><div><strong>${t(`settings.${id}`)}</strong><small>${t(`settings.${id}Desc`)}</small></div><button class="toggle" data-setting="${id}" aria-label="${t(`settings.${id}`)}" aria-pressed="${settings[id]}"></button></div>`).join('')}</div><p class="modal-footnote">${t('vibrate' in navigator ? 'settings.vibrateYes' : 'settings.vibrateNo')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('settings.back')}</button></div>`, 'settings');
 }
 function openHelp() {
-  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', 'magic'], ['gem', 'relics'] ];
-  openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t('help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
+  const castle = game.mode === 'castle' && game.state !== 'title';
+  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'] ];
+  openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`)}</p></div>`).join('')}</div><p class="modal-footnote">${t(castle ? 'help.castleFootnote' : 'help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function synergyLine(id) {
   const partners = game.synergyPartners(id);
@@ -271,9 +277,12 @@ let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick foll
 function openUpgrade(choices) {
   openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
+function openVigil() { // rest point: one weapon card each, choosing one starts floor 1
+  openModal(`<div class="modal-eyebrow">${t('rest.title')}</div><h2 id="modal-title">${t('rest.choose')}</h2><div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
+}
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? 'castle.toVigil' : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -287,11 +296,12 @@ function showTitle() {
   closeModal(false); game = new Game(handleEvent); resetHud();
   $('title-screen').hidden = false; syncGear(); $('touch-controls').hidden = true; $('objective').hidden = true;
   bannerQueue.length = 0; particles = []; effects = []; trails = []; numbers = [];
-  audio.suspend(); audio.setIntensity(1);
+  audio.setHeartbeat(false); audio.suspend(); audio.setIntensity(1);
 }
 
 $('start-button').addEventListener('click', () => startRun());
 $('endless-button').addEventListener('click', () => { if (endlessUnlocked()) startRun('endless'); });
+$('castle-button').addEventListener('click', () => startRun('castle'));
 $('help-button').addEventListener('click', openHelp);
 $('settings-button').addEventListener('click', openSettings);
 $('pause-button').addEventListener('click', () => { if (game.state === 'title') openHelp(); else if (game.state === 'paused') closeModal(); else openPause(); });
@@ -314,12 +324,13 @@ $('modal').addEventListener('click', e => {
     return;
   }
   if (button.dataset.setting) { const key = button.dataset.setting; settings[key] = !settings[key]; button.setAttribute('aria-pressed', settings[key]); applySettings(); return; }
+  if (button.dataset.weapon) { if (game.state === 'rest' && game.setWeapon(button.dataset.weapon)) { closeModal(false); game.descend(); } return; }
   if (button.dataset.relic) { const id = button.dataset.relic; if (game.state === 'upgrade' && game.choices.some(r => r.id === id)) { closeModal(false); audio.resume(); audio.play(RELICS.find(r => r.id === id)?.cursed ? 'cursedPick' : 'upgrade'); game.chooseRelic(id); $('relic-tray').innerHTML = relicTray(); } return; }
   switch (button.dataset.command) {
     case 'resume': closeModal(); break;
     case 'settings': openSettings(); break;
     case 'help': openHelp(); break;
-    case 'restart': startRun(game.mode); break;
+    case 'restart': if (game.mode === 'castle' && game.state === 'dead') { closeModal(false); game.enterRest(); } else startRun(game.mode); break; // castle death returns to the Vigil
     case 'title': showTitle(); break;
     case 'restart-confirm': openModal(`<div class="modal-eyebrow">${t('decor.confirm')}</div><h2 id="modal-title">${t('confirm.title')}</h2><p>${t('confirm.text')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('pause.resume')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, 'confirm'); break;
   }
@@ -332,7 +343,7 @@ document.querySelectorAll('[data-control]').forEach(button => {
 window.addEventListener('keydown', e => {
   if (!$('modal').hidden) {
     if (e.repeat && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); return; } // a held Enter must not activate the focused modal button
-    if (e.code === 'Escape' && !['upgrade', 'dead', 'won'].includes(modalKind)) { e.preventDefault(); closeModal(); }
+    if (e.code === 'Escape' && !['upgrade', 'dead', 'won', 'vigil'].includes(modalKind)) { e.preventDefault(); closeModal(); }
     if (e.code === 'Tab') {
       const buttons = [...$('modal-panel').querySelectorAll('button')];
       if (e.shiftKey && document.activeElement === buttons[0]) { e.preventDefault(); buttons.at(-1)?.focus(); }
@@ -372,10 +383,16 @@ function pumpBanner() {
 }
 function updateHud() {
   const p = game.player;
-  $('hp-text').innerHTML = `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
-  $('hp-bar').style.width = `${p.hp / p.maxHp * 100}%`;
+  const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
+  $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy);
+  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); $('mp-text').textContent = ''; }
+  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; }
+  const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');
+  if (magicLabel.textContent !== want) magicLabel.textContent = want;
+  $('hp-text').innerHTML = castle ? `${Math.ceil(p.blood)} <em>/ ${BLOOD_MAX}</em>` : `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
+  $('hp-bar').style.width = `${castle ? p.blood / BLOOD_MAX * 100 : p.hp / p.maxHp * 100}%`;
   $('mp-bar').style.width = `${p.mp / p.maxMp * 100}%`;
-  $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
+  if (!castle) $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
   $('souls').textContent = game.souls;
   const guards = game.guardStatus();
   const bossStage = game.stage === 4; // only the king is required there, so no guard counter
@@ -385,26 +402,35 @@ function updateHud() {
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
   if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
-  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', !p.lunatic && p.mp < p.magicCost);
+  document.querySelector('[data-control="magic"]').classList.toggle('unavailable', castle ? p.blood < SKILL_MIN : !p.lunatic && p.mp < p.magicCost);
   for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
-function drawSlash(x, y, dir, progress, heavy = false, enemy = false) {
+const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // placeholder trail tints per Vigil weapon
+let auraG = null, vigG = null, vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
+function auraGradient() { if (!auraG) { auraG = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); auraG.addColorStop(0, 'rgba(255,70,70,.45)'); auraG.addColorStop(1, 'rgba(255,70,70,0)'); } return auraG; }
+function vignetteGradient() { if (!vigG || vigW !== viewWidth) { vigW = viewWidth; vigG = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); vigG.addColorStop(0, 'rgba(160,10,30,0)'); vigG.addColorStop(1, 'rgba(160,10,30,.55)'); } return vigG; }
+function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null) {
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
   ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
-  const radius = heavy ? 105 : 82;
+  const radius = weapon === 'heavy' ? 118 : weapon === 'twin' ? 62 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
+  if (weapon === 'twin') { // two short crossed arcs
+    ctx.strokeStyle = tint; ctx.lineWidth = 3;
+    for (const f of [1, -1]) { ctx.save(); ctx.scale(1, f); ctx.beginPath(); ctx.arc(7, -3, radius, -.95, .6); ctx.stroke(); ctx.restore(); }
+    ctx.restore(); return;
+  }
   ctx.beginPath(); ctx.arc(7, -3, radius, -.95, 1.1); ctx.arc(3, -4, radius * .74, 1.1, -.95, true); ctx.closePath();
-  ctx.fillStyle = enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
-  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : '#f6e7be'; ctx.stroke();
+  ctx.fillStyle = tint ? tint + '88' : enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
+  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = weapon === 'heavy' ? 8 : heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : tint || '#f6e7be'; ctx.stroke();
   ctx.beginPath(); ctx.arc(5, -4, radius * .84, -.5, .75); ctx.lineWidth = 2; ctx.strokeStyle = enemy ? '#fc9da4' : '#fffbee'; ctx.stroke();
   ctx.restore();
 }
-function drawThrust(x, y, dir, progress) { // long thin trail covering the 155 px thrust reach
+function drawThrust(x, y, dir, progress, weapon = null) { // long thin trail covering the 155 px thrust reach
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
-  const len = Math.round(155 * Math.min(1, progress * 4 + .3));
+  const spear = weapon === 'spear', len = Math.round((spear ? 190 : 155) * Math.min(1, progress * 4 + .3));
   ctx.globalAlpha = Math.max(0, 1 - progress);
-  ctx.fillStyle = '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
+  ctx.fillStyle = spear ? WEAPON_TINT.spear + '88' : '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
   ctx.fillStyle = '#fffbee'; ctx.fillRect(12, -1, len - 12, 2);
   ctx.restore();
 }
@@ -512,6 +538,7 @@ function drawEffects(dt) {
 }
 function render(dt) {
   const title = game.state === 'title', p = game.player;
+  const frenzyK = p.frenzy && game.mode === 'castle' ? .25 + .75 * clamp((p.blood - BLOOD_HALF) / (BLOOD_MAX - BLOOD_HALF), 0, 1) : 0; // fades as blood burns 200 -> 100
   if (!title) camera += (clamp(p.x - viewWidth * .37, 0, game.worldWidth - viewWidth) - camera) * Math.min(1, dt * 7);
   ctx.save(); ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#0b0d15'; ctx.fillRect(0, 0, viewWidth, 540);
@@ -566,8 +593,9 @@ function render(dt) {
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
       ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
     }
+    if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
-    if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3); }
+    if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
       if (b.ground) { drawGroundWave(b); continue; }
@@ -581,16 +609,24 @@ function render(dt) {
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
     for (let mx = 715 - (Math.floor(camera * .13) % 1440); mx < viewWidth + 200; mx += 1440) { const mr = 150 + 40 * pulse, gr = ctx.createRadialGradient(mx, 150, 10, mx, 150, mr); gr.addColorStop(0, `rgba(255,70,60,${.7 * k})`); gr.addColorStop(1, 'rgba(255,70,60,0)'); ctx.fillStyle = gr; ctx.fillRect(mx - mr, 150 - mr, mr * 2, mr * 2); }
   }
+  if (frenzyK > 0) { ctx.globalAlpha = frenzyK * (settings.shake ? .8 + .2 * Math.sin(worldTime * 9) : .9); ctx.fillStyle = vignetteGradient(); ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = 1; }
   if (damageFlash > 0) { ctx.fillStyle = `rgba(144,27,50,${damageFlash * .65})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (whiteFlash > 0) { ctx.fillStyle = `rgba(255,232,193,${whiteFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (silverFlash > 0) { ctx.fillStyle = `rgba(214,224,255,${silverFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   ctx.restore();
 }
 let hudTimer = 0;
+let prevBlood = null; // castle blood meter feedback: no core event, so compare per frame
+function watchBlood() {
+  const p = game.player, live = game.mode === 'castle' && game.state === 'playing';
+  if (live && prevBlood !== null && p.blood > prevBlood + .5) audio.play(prevBlood < BLOOD_HALF && p.blood >= BLOOD_HALF ? 'bloodHalf' : 'bloodGain', .3 + p.blood / BLOOD_MAX * 1.2);
+  prevBlood = live ? p.blood : null;
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   const input = getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
+  watchBlood();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
