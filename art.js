@@ -591,6 +591,90 @@ export function drawPortal(ctx, x = 0, y = FLOOR, time = 0, open = false) {
   ledge(ctx, -44, -1, 88, p); ctx.restore();
 }
 
+// Code-drawn hazards. Geometry is exactly the core hit area (x centre, y base, w x h); the ACTIVE drawing fills that box edge to edge.
+const TRAP_STAGE = { spikes: 0, gears: 2, pillar: 3 };
+export function drawTrap(ctx, tr, time = 0) {
+  const p = palettes[TRAP_STAGE[tr.kind] ?? 0], x = Math.round(tr.x - tr.w / 2), w = tr.w, h = tr.h, y = FLOOR, st = tr.state, pr = tr.progress || 0;
+  const off = st === 'off', act = st === 'active', warn = st === 'warn';
+  ctx.save();
+  rect(ctx, off ? '#25242b' : p.mortar, x - 2, y - 5, w + 4, 5); rect(ctx, off ? '#3a3940' : p.trim, x - 2, y - 5, w + 4, 1); // base plate (kept inside the stage palette)
+  if (warn) { // red tint + outline growing over the whole hit area, so the danger zone reads before it bites
+    ctx.globalAlpha = .1 + .3 * pr * (.75 + .25 * Math.sin(time * 30)); ctx.fillStyle = '#e0484e'; ctx.fillRect(x, y - h, w, h);
+    ctx.globalAlpha = .45 + .4 * pr; ctx.strokeStyle = '#ff8a7a'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.strokeRect(x + .5, y - h + .5, w - 1, h - 1); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  const k = act ? 1 : warn ? Math.min(.45, .08 + .4 * pr) : 0; // how far the hazard has risen
+  if (tr.kind === 'spikes') {
+    const n = Math.max(2, Math.round(w / 12)), sw = w / n, top = off ? 7 : 3 + (h - 3) * k;
+    for (let i = 0; i < n; i++) {
+      const sx = x + i * sw, tip = off && i % 3 === 1 ? 3 : top; // disabled: snapped stubs
+      rect(ctx, off ? '#2a2a31' : p.mortar, sx, y - 5 - 3, sw, 3);
+      poly(ctx, off ? '#4a4a52' : '#aeb4c2', [[sx, y - 5], [sx + sw / 2, y - 5 - Math.min(tip, h - 5)], [sx + sw, y - 5]]);
+      if (!off) poly(ctx, act ? '#e9eefc' : '#cfd6e6', [[sx + sw / 2, y - 5 - Math.min(tip, h - 5)], [sx + sw * .6, y - 5], [sx + sw / 2, y - 5]]);
+      if (act) rect(ctx, '#c4283a', sx + sw / 2 - 1, y - 5 - 6, 2, 3);
+    }
+    if (act) rect(ctx, '#e9eefc', x, y - h, 1, 1); // marks the exact box top-left
+  } else if (tr.kind === 'gears') {
+    ctx.beginPath(); ctx.rect(x, y - h, w, h - 5); ctx.clip(); // wheels live inside the hit box only
+    const n = Math.max(2, Math.round(w / 40)), sp = w / n, R = Math.round(h * .6), rise = off ? .22 : act ? 1 : k;
+    for (let i = 0; i < n; i++) {
+      const cx = x + sp * (i + .5), ang = off ? i : time * (i % 2 ? -5 : 5) * (act ? 1 : .4 + pr);
+      const wy = Math.round(act ? y - h + R : y - 5 + R - (h - 5) * rise); // risen wheels have their top exactly at the box top
+      ctx.save(); ctx.translate(Math.round(cx), wy); ctx.rotate(ang);
+      for (let t = 0; t < 10; t++) { ctx.save(); ctx.rotate(t * Math.PI / 5); rect(ctx, off ? '#4a4a52' : '#8a8f99', -3, -R, 6, 7); ctx.restore(); }
+      circle(ctx, off ? '#33333b' : '#5c616c', 0, 0, R - 4); circle(ctx, off ? '#25242b' : p.mortar, 0, 0, R - 11);
+      for (let t = 0; t < 4; t++) { ctx.save(); ctx.rotate(t * Math.PI / 2); rect(ctx, off ? '#3a3940' : p.trim, -1, -R + 6, 3, R - 12); ctx.restore(); }
+      circle(ctx, off ? '#44444c' : p.light, 0, 0, 3);
+      ctx.restore();
+    }
+    if (off) { ctx.globalAlpha = .5; rect(ctx, '#0d0c12', x, y - h, w, h); }
+  } else { // pillar: a blood geyser
+    const rh = act ? h : h * (warn ? .08 + .22 * pr : 0), cx = x + w / 2;
+    if (!off) {
+      ctx.strokeStyle = warn ? `rgba(255,106,122,${.4 + .5 * pr})` : '#5a2a3a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(cx, y - 4, w / 2 - 2, 4, 0, 0, 7); ctx.stroke(); // floor rune
+      if (!act && !warn) for (let i = 0; i < 3; i++) rect(ctx, '#7a2236', cx - 12 + i * 10, y - 7, 2, 2); // idle: faint seepage
+    } else { ctx.strokeStyle = '#2c2128'; ctx.beginPath(); ctx.moveTo(x + 6, y - 4); ctx.lineTo(cx, y - 7); ctx.lineTo(x + w - 8, y - 3); ctx.stroke(); rect(ctx, '#3a2a30', cx - 4, y - 8, 8, 3); } // dried, cracked
+    if (rh > 1) {
+      const g = ctx.createLinearGradient(0, y - rh, 0, y); g.addColorStop(0, act ? '#d8506a' : '#7a2236'); g.addColorStop(1, '#6b1a2c'); ctx.fillStyle = g; ctx.globalAlpha = act ? 1 : .7;
+      ctx.fillRect(x, y - rh, w, rh - 4); ctx.fillStyle = '#ff6a7a'; ctx.fillRect(Math.round(cx - w * .22), y - rh, Math.round(w * .44), rh - 4);
+      ctx.fillStyle = '#ffd0d6'; ctx.fillRect(Math.round(cx - 2), y - rh, 4, rh - 4);
+      ctx.globalAlpha = 1; ctx.fillStyle = '#ff9aa6'; for (let i = 0; i < 3; i++) { const ph = (time * 1.6 + i * .33) % 1; ctx.fillRect(Math.round(x + w * (.2 + .3 * i)), Math.round(y - rh + ph * (rh - 8)), 2, 4); } // droplets running down
+    }
+  }
+  ctx.restore();
+}
+
+export function drawObstacle(ctx, o, time = 0, stage = 0, traps = null) {
+  const p = palettes[stage] || palettes[0], x = Math.round(o.x - o.w / 2), y = o.y, w = o.w, h = o.h, hit = o.flash > 0, r = o.hp / o.maxHp;
+  ctx.save();
+  if (o.kind === 'altar') {
+    if (traps) for (const id of o.traps) { // faint blood line along the floor to each trap still linked; it is gone once the trap is disabled or the altar breaks
+      const tr = traps[id]; if (!tr || tr.disabled) continue;
+      const ex = Math.round(tr.x), fy = y - 2, dir = ex < o.x ? -1 : 1, sx = Math.round(o.x + dir * (w / 2));
+      ctx.globalAlpha = .28 + .1 * Math.sin(time * 4); ctx.strokeStyle = '#c9627f'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, fy); ctx.lineTo(ex, fy); ctx.stroke();
+      ctx.globalAlpha = .9; const ph = (time * .6) % 1; rect(ctx, '#ff8a9a', sx + (ex - sx) * ph, fy - 1, 3, 3); ctx.globalAlpha = 1;
+    }
+    const bodyC = hit ? '#e8dcc8' : '#5e4a55', dark = '#2a1d26', lit = hit ? '#fff' : '#a38a86', pulse = .55 + .25 * Math.sin(time * 4);
+    rect(ctx, dark, x - 2, y - 10, w + 4, 10); rect(ctx, lit, x - 2, y - 10, w + 4, 1); // plinth
+    rect(ctx, bodyC, x + 5, y - h + 14, w - 10, h - 24); rect(ctx, dark, x + 5, y - h + 14, 3, h - 24); rect(ctx, lit, x + w - 8, y - h + 14, 2, h - 24);
+    rect(ctx, bodyC, x - 2, y - h + 6, w + 4, 10); rect(ctx, lit, x - 2, y - h + 6, w + 4, 1); // slab top
+    rect(ctx, dark, x + 8, y - h, w - 16, 7); rect(ctx, '#6b1a2c', x + 10, y - h + 1, w - 20, 5); // blood basin
+    if (r > .25) { const gl = ctx.createRadialGradient(x + w / 2, y - h + 3, 1, x + w / 2, y - h + 3, 26); ctx.globalAlpha = pulse * (r > .6 ? 1 : .6); gl.addColorStop(0, '#ff6a8a'); gl.addColorStop(1, 'rgba(201,98,127,0)'); ctx.fillStyle = gl; ctx.fillRect(x - 6, y - h - 22, w + 12, 50); ctx.globalAlpha = 1; rect(ctx, '#e8708c', x + 11, y - h + 2, w - 22, 2); }
+    rect(ctx, '#c9627f', x + w / 2 - 3, y - h + 28, 6, 8); rect(ctx, '#ffb0c0', x + w / 2 - 1, y - h + 30, 2, 4); // sigil
+    if (r < .66) { ctx.strokeStyle = '#0c0a10'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 14, y - h + 14); ctx.lineTo(x + 20, y - h + 30); ctx.lineTo(x + 15, y - h + 44); ctx.stroke(); }
+    if (r < .33) { ctx.beginPath(); ctx.moveTo(x + w - 12, y - h + 16); ctx.lineTo(x + w - 20, y - h + 36); ctx.lineTo(x + w - 14, y - h + 56); ctx.stroke(); rect(ctx, p.mortar, x + w - 14, y - h, 10, 6); rect(ctx, '#0c0a10', x + w - 4, y - h + 6, 2, 2); } // chipped corner
+  } else { // barricade: planks bound by iron; cracks and gaps from hp ratio
+    const wood = hit ? '#f0dcb4' : '#7a5a38', gap = r < .34;
+    for (let i = 0; i < 4; i++) { const px = x + i * (w / 4); if (gap && i === 2) { rect(ctx, '#2a1f14', px + 1, y - h + 12, w / 4 - 2, 12); rect(ctx, wood, px + 1, y - 8, w / 4 - 2, 8); rect(ctx, wood, px + 1, y - h + 4, w / 4 - 2, 8); continue; } rect(ctx, wood, px + 1, y - h + (i % 2 ? 3 : 0), w / 4 - 2, h - (i % 2 ? 3 : 0)); rect(ctx, hit ? '#fff' : '#a8814f', px + 1, y - h + (i % 2 ? 3 : 0), 1, h); }
+    for (const by of [10, 31, 52]) { rect(ctx, '#2d2d34', x - 1, y - h + by, w + 2, 4); rect(ctx, p.trim, x - 1, y - h + by, w + 2, 1); }
+    rect(ctx, '#a8b0bd', x + 3, y - h + 11, 2, 2); rect(ctx, '#a8b0bd', x + w - 5, y - h + 32, 2, 2);
+    ctx.strokeStyle = '#1f150d'; ctx.lineWidth = 2;
+    if (r < .67) { ctx.beginPath(); ctx.moveTo(x + 12, y - h + 2); ctx.lineTo(x + 17, y - h + 16); ctx.lineTo(x + 13, y - h + 28); ctx.stroke(); }
+    if (r < .34) { ctx.beginPath(); ctx.moveTo(x + w - 10, y - h + 24); ctx.lineTo(x + w - 18, y - h + 40); ctx.lineTo(x + w - 12, y - h + 58); ctx.stroke(); rect(ctx, wood, x - 4, y - 4, 5, 3); rect(ctx, wood, x + w - 2, y - 6, 6, 3); } // splinters spill out
+  }
+  if (r < 1) { ctx.globalAlpha = 1; rect(ctx, '#13111b', x, y - h - 8, w, 4); rect(ctx, '#b75a66', x + 1, y - h - 7, (w - 2) * r, 2); }
+  ctx.restore();
+}
+
 // Elemental status overlays: plain fillRects only (no shadows/gradients/allocations) so crowds stay cheap. `calm` = steady instead of flickering.
 export function drawStatus(ctx, e, time = 0, calm = false) {
   const burn = e.burn > 0, chill = e.chill > 0 || e.frozen > 0, frozen = e.frozen > 0, shock = e.shock > 0, bleed = e.bleed > 0;

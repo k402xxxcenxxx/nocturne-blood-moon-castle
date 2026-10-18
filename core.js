@@ -38,6 +38,13 @@ export const BUILD_POOL = ['wave', 'pierce', 'plunge', 'vortex', 'fire', 'frost'
 const SYNERGY_WEIGHT = .8;
 const STATUS_TIMERS = ['chill', 'frozen', 'freezeImmune', 'shock'];
 const SHOT_POISE = 8;
+// Stage hazards. Traps cycle idle -> warn (TRAP_WARN s) -> active; obstacles are breakable solids (x = centre, y = base, h up, like enemies).
+const TRAP_WARN = .7;
+const TRAP_KINDS = { 0: 'spikes', 2: 'gears', 3: 'pillar' }, TRAP_HEIGHT = { spikes: 34, gears: 44, pillar: 80 };
+const OBSTACLES = { barricade: { w: 40, h: 62 }, altar: { w: 46, h: 74 } };
+const PILLAR_LINK = 600; // a pillar stands within this horizontal distance of its altar
+const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spawn and the Moon Gate
+const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export function randomSeed() { return (Math.random() * 0xffffffff) >>> 0; }
 // Poise damage per source.
@@ -98,6 +105,7 @@ export class Game {
     this.pickups = [];
     this.platforms = Array.from({ length: 5 }, (_, i) => ({ x: 360 + i * 360 + this.rand() * 65, y: FLOOR - 85 - (i % 2) * 54, w: 148 + this.rand() * 70, h: 18 }));
     this.enemies = [];
+    this.traps = []; this.obstacles = [];
     for (let i = 0; i < spec.count; i++) {
       const roll = this.rand();
       const type = i % 4 === 1 ? 'bat' : index >= 2 && roll < .23 ? (this.rand() < .3 ? 'priest' : 'mage') : index >= 1 && roll < .58 ? (roll > .44 ? 'shield' : 'knight') : 'skeleton';
@@ -109,13 +117,75 @@ export class Game {
       this.platforms = [{ x: 60, y: FLOOR - 110, w: 190, h: 18 }, { x: spec.width - 250, y: FLOOR - 110, w: 190, h: 18 }];
     }
     this.totalEnemies = this.enemies.length;
+    this.placeHazards(index);
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
+  }
+  // Traps, barricades and altars (none on the boss stage; traps only on stages 0, 2, 3). Drawn after enemies so existing seeds keep their layout.
+  placeHazards(index) {
+    if (index === 4) return;
+    const taken = [], lo = 150 + SPAWN_CLEAR, hi = this.portalX - SPAWN_CLEAR;
+    const free = (x, w, pad, a, b) => x - w / 2 >= Math.max(lo, a) && x + w / 2 <= Math.min(hi, b) && taken.every(t => Math.abs(x - t.x) >= (w + t.w) / 2 + OBSTACLE_GAP) && this.enemies.every(e => e.type === 'bat' || Math.abs(x - e.x) >= w / 2 + pad);
+    const place = (w, near = null) => { // random tries between enemies, then anywhere, then a left-to-right scan; `near` limits |x - near| to PILLAR_LINK
+      const a = near === null ? -Infinity : near - PILLAR_LINK, b = near === null ? Infinity : near + PILLAR_LINK, from = Math.max(lo + w / 2, a), to = Math.min(hi - w / 2, b);
+      for (const pad of [20, -999]) for (let i = 0; i < 40; i++) { const x = Math.round(from + this.rand() * (to - from)); if (free(x, w, pad, a, b)) { taken.push({ x, w }); return x; } }
+      for (let x = Math.ceil(from); x <= to; x += 5) if (free(x, w, -999, a, b)) { taken.push({ x, w }); return x; }
+      return null;
+    };
+    const kind = TRAP_KINDS[index], altars = index === 3 ? 1 + Math.floor(this.rand() * 2) : 0;
+    const pillars = kind ? (altars === 1 ? 2 : 2 + Math.floor(this.rand() * 2)) : 0;
+    const altarObjs = []; // altars first so each pillar can be placed within PILLAR_LINK of the altar that disables it
+    for (let i = 0; i < altars; i++) { const x = place(OBSTACLES.altar.w); if (x !== null) altarObjs.push(this.spawnObstacle('altar', x, index)); }
+    for (let i = 0; i < pillars; i++) {
+      const altar = altarObjs.length ? altarObjs[i % altarObjs.length] : null;
+      const w = Math.round(60 + this.rand() * 30), period = 3.4 + this.rand() * 1.1, active = kind === 'pillar' ? 1.8 + this.rand() * .35 : 1.1 + this.rand() * 1.05, x = place(w, altar && altar.x);
+      if (x === null) continue;
+      const trap = this.spawnTrap(kind, x, w, period, active, this.rand() * period, index);
+      if (altar) { trap.altar = altar.id; altar.traps.push(trap.id); }
+    }
+    const barricades = 1 + Math.floor(this.rand() * 2);
+    for (let i = 0; i < barricades; i++) { const x = place(OBSTACLES.barricade.w); if (x !== null) this.spawnObstacle('barricade', x, index); }
+  }
+  spawnTrap(kind, x, w, period, active, t = 0, stage = 0) {
+    const trap = { id: this.traps.length, kind, x, y: FLOOR, w, h: TRAP_HEIGHT[kind], period, active, t, damage: 10 * 1.13 ** stage, altar: null, disabled: false, state: 'idle', warn: false, progress: 0 };
+    this.traps.push(trap); this.trapPhase(trap);
+    return trap;
+  }
+  // Recompute state / warn / progress (0..1 through the warning, or through the active window) from the cycle clock t.
+  trapPhase(tr) {
+    tr.state = tr.disabled ? 'off' : tr.t < tr.active ? 'active' : tr.t >= tr.period - TRAP_WARN ? 'warn' : 'idle';
+    tr.warn = tr.state === 'warn';
+    tr.progress = tr.warn ? (tr.t - (tr.period - TRAP_WARN)) / TRAP_WARN : tr.state === 'active' ? tr.t / tr.active : 0;
+  }
+  updateTraps(dt) {
+    const p = this.player;
+    for (const tr of this.traps) {
+      if (tr.disabled) continue;
+      const before = tr.state;
+      tr.t = (tr.t + dt) % tr.period; this.trapPhase(tr);
+      if (tr.state !== before && (tr.state === 'warn' || tr.state === 'active')) this.emit(tr.state === 'warn' ? 'trapWarn' : 'trapActive', { id: tr.id, kind: tr.kind, x: tr.x, y: tr.y, w: tr.w, h: tr.h });
+      if (tr.state === 'active' && Math.abs(p.x - tr.x) < (p.w + tr.w) / 2 && p.y > tr.y - tr.h && p.y - p.h < tr.y) this.hurt(tr.damage, Math.sign(p.x - tr.x) || 1, true);
+    }
+  }
+  spawnObstacle(kind, x, stage = 0) {
+    const hp = kind === 'altar' ? 64 : 38 + 12 * stage;
+    const o = { id: (this.obstacleId = (this.obstacleId || 0) + 1), kind, x, y: FLOOR, ...OBSTACLES[kind], hp, maxHp: hp, flash: 0, ...(kind === 'altar' ? { traps: [] } : {}) };
+    this.obstacles.push(o);
+    return o;
+  }
+  // Damage from sword, shot, plunge or Eclipse. No statuses, poise, MP or drops; an altar takes its linked pillars down with it.
+  damageObstacle(o, amount) {
+    o.hp = Math.max(0, o.hp - amount); o.flash = .12;
+    this.emit('obstacleHit', { x: o.x, y: o.y - o.h / 2, amount, kind: o.kind });
+    if (o.hp > 0) return;
+    this.obstacles = this.obstacles.filter(x => x !== o);
+    if (o.kind === 'altar') for (const id of o.traps) { const tr = this.traps[id]; tr.disabled = true; this.trapPhase(tr); }
+    this.emit('break', { x: o.x, y: o.y - o.h / 2, kind: o.kind, ...(o.kind === 'altar' ? { traps: o.traps } : {}) });
   }
   spawnEnemy(type, x, stage = 0) {
     const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const hp = boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12;
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: boss ? 22 : 8 + stage * 2.5, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -144,7 +214,9 @@ export class Game {
     else if (p.dash > 0) p.vx = p.dir * 730;
     else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
     else p.vx = direction * p.speed * (p.attack > 0 ? .65 : 1);
+    const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
+    for (const o of this.obstacles) if (p.y > o.y - o.h + 1 && p.y - p.h < o.y && Math.abs(p.x - o.x) < (p.w + o.w) / 2) p.x = o.x + (oldX < o.x ? -1 : 1) * (p.w + o.w) / 2; // solid sides
     const oldY = p.y;
     p.vy += 1550 * dt;
     p.y += p.vy * dt;
@@ -152,11 +224,14 @@ export class Game {
     if (p.vy >= 0) {
       let floor = FLOOR;
       for (const plat of this.platforms) if (oldY <= plat.y + 1 && p.y >= plat.y && p.x + p.w / 2 > plat.x && p.x - p.w / 2 < plat.x + plat.w) floor = Math.min(floor, plat.y);
+      for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && p.y >= o.y - o.h && Math.abs(p.x - o.x) < (p.w + o.w) / 2) floor = Math.min(floor, o.y - o.h); // stand on top
       if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.jumps = 0; }
     }
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
+    this.updateTraps(dt);
+    for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
     this.updateShots(dt);
     if (this.state !== 'playing') return;
     for (const b of this.projectiles) {
@@ -234,9 +309,10 @@ export class Game {
       } else s.x += s.vx * dt;
       s.life -= dt;
       if (s.life <= 0) continue;
-      for (const e of this.enemies) {
+      for (const e of this.enemies.concat(this.obstacles)) {
         if (e.hp <= 0 || s.hit.has(e) || Math.abs(e.x - s.x) > e.w / 2 + s.r || s.y + s.r < e.y - e.h || s.y - s.r > e.y) continue;
         s.hit.add(e);
+        if (e.kind) { this.damageObstacle(e, Math.round(p.damage * s.mul)); continue; }
         const crit = this.rand() < p.crit;
         const amount = Math.round(p.damage * s.mul * (crit ? 2 : 1));
         const blocked = e.type === 'shield' && e.guardBreak <= 0 && s.vx * e.dir < 0; // frontal only (decided by travel direction, robust at low frame rates); a returning crescent can hit a back
@@ -249,12 +325,14 @@ export class Game {
     const p = this.player;
     const thrust = p.move === 'thrust';
     const reach = thrust ? 155 + Math.min(60, 20 * this.stacks('pierce')) : p.reach + (p.combo === 3 ? 24 : 0);
-    for (const e of this.enemies) {
+    const mul = thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo];
+    for (const e of this.enemies.concat(this.obstacles)) {
       const dx = (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
       this.hitSet?.add(e);
+      if (e.kind) { this.damageObstacle(e, Math.round(p.damage * mul)); continue; }
       const crit = this.rand() < p.crit;
-      const amount = Math.round(p.damage * (thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo]) * (crit ? 2 : 1));
+      const amount = Math.round(p.damage * mul * (crit ? 2 : 1));
       // Shield bearers block sword hits from the side they face unless Eclipse broke their guard.
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
@@ -281,8 +359,9 @@ export class Game {
     if (!radius) return;
     const vow = this.stacks('plunge');
     if (vow) for (const dir of [-1, 1]) this.launchShot('ground', .45 * vow, 420, GROUND_WAVE_REACH / 420, 12, p.x, p.y - 12, dir);
-    for (const e of this.enemies) {
+    for (const e of this.enemies.concat(this.obstacles)) {
       if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
+      if (e.kind) { this.hitSet.add(e); this.damageObstacle(e, Math.round(p.damage * (1 + .5 * vow))); continue; }
       this.plungeStrike(e, 1 + .5 * vow, POISE_DAMAGE.plunge, 1.4);
     }
   }
@@ -294,11 +373,18 @@ export class Game {
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
-    if (vortex) for (const e of caught) e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
+    if (vortex) for (const e of caught) {
+      const from = e.x; e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
+      if (e.type !== 'bat') for (const o of this.obstacles) { // stay on the near side of any solid in the way
+        const half = (e.w + o.w) / 2;
+        if (e.y > o.y - o.h + 1 && Math.abs(from - o.x) >= half && (Math.abs(e.x - o.x) < half || (from - o.x) * (e.x - o.x) < 0)) e.x = o.x + Math.sign(from - o.x) * half;
+      }
+    }
     for (const e of caught) {
       this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
       if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
+    for (const o of this.obstacles.slice()) if (Math.hypot(o.x - p.x, o.y - p.y) < radius) this.damageObstacle(o, Math.round(p.magicDamage * (1 + .35 * vortex)));
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
@@ -451,8 +537,26 @@ export class Game {
     const speed = e.speed;
     if (e.blessed > 0) e.speed *= 1.15;
     if (e.chill > 0) e.speed *= e.type === 'boss' ? .85 : .68;
+    const prevX = e.x;
     this.moveEnemy(e, dt);
     e.speed = speed;
+    this.collideEnemy(e, prevX, dt);
+  }
+  // Obstacles are solid for ground enemies (bats fly over). A blocked walker hops over (vault); the boss and stunned or frozen enemies just stop. Returns true if blocked.
+  collideEnemy(e, prevX, dt) {
+    if (e.type === 'bat' || (!this.obstacles.length && !e.vault)) return false;
+    if (e.vault) {
+      const oldY = e.y;
+      if (e.stun <= 0 && e.frozen <= 0) e.x = clamp(e.x + e.dir * 180 * dt, 30, this.worldWidth - 40);
+      e.vy += 1550 * dt; e.y += e.vy * dt;
+      let floor = FLOOR;
+      for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && e.y >= o.y - o.h && Math.abs(e.x - o.x) < (e.w + o.w) / 2) floor = Math.min(floor, o.y - o.h);
+      if (e.y >= floor) { e.y = floor; e.vy = 0; e.vault = floor !== FLOOR; } // stays in vault state on top of an obstacle so it falls off the far edge
+    }
+    let blocked = false;
+    for (const o of this.obstacles) if (e.y > o.y - o.h + 1 && Math.abs(e.x - o.x) < (e.w + o.w) / 2) { e.x = o.x + (prevX < o.x ? -1 : 1) * (e.w + o.w) / 2; blocked = true; }
+    if (blocked && !e.vault && e.type !== 'boss' && e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) { e.vault = true; e.vy = -520; }
+    return blocked;
   }
   moveEnemy(e, dt) {
     const p = this.player;
@@ -548,7 +652,9 @@ export class Game {
   }
   bossCharge(e, dt, face) {
     const p = this.player, step = (e.chargeTo - e.x) * Math.min(1, dt / e.travel);
+    const prevX = e.x;
     e.travel -= dt; e.x += step; e.vx = step / dt;
+    if (this.collideEnemy(e, prevX, dt)) { e.chargeTo = e.x; e.travel = 0; } // a barricade stops the charge
     if (Math.abs(p.x - e.x) < (p.w + e.w) / 2 && p.y > e.y - e.h && p.y - p.h < e.y) this.hurt(e.damage * 1.1, e.dir); // i-frames after a hit (0.8 s) outlast the 0.48 s charge: once per charge
     if (e.travel > 0) return;
     e.x = e.chargeTo; e.vx = 0; e.move = ''; e.cd = 1; e.chargeN++;
@@ -610,10 +716,10 @@ export class Game {
     this.freeze = Math.max(this.freeze, .05);
     this.emit('perfectDash', { x: p.x, y: p.y - 30 });
   }
-  hurt(amount, dir) {
+  hurt(amount, dir, hazard = false) {
     const p = this.player;
     if (this.state !== 'playing') return;
-    if (p.invulnerable > 0) { this.perfectDodge(); return; }
+    if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
     const actual = Math.round(amount * p.armor);
     p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);

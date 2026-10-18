@@ -65,6 +65,14 @@ Wind-up limit: an enemy may start a warning only if fewer than N other living en
 
 Kills have a 25% chance to drop a heal that restores 14 HP.
 
+## Stage hazards
+
+Hazards are placed after enemies on the floor of stages I to IV (never the boss stage), at least 250 from the hero spawn (x 150) and the Moon Gate, never overlapping (30 px minimum gap), preferably between enemy spawns. They are not enemies: the Moon Gate ignores them, and they are excluded from wind-up limiting, auto-face, Chain Lightning targeting (Vortex pulls stop at their near face). All reset on stage load. They drop no HP or MP.
+
+- **Traps** (`game.traps`): Forsaken Gate spikes (h 34), Timeless Belfry gears (h 44), Crimson Cathedral blood pillars (h 80, so a hero on a FLOOR-85 platform above is safe); none on the Archive. 2 to 3 per themed stage, width 60 to 90, period 3.4 to 4.5 s, active 1.1 to 2.15 s (blood pillars 1.8 to 2.15 s), seeded random start phase. Cycle: active for the first `active` seconds, idle, then a 0.7 s warning (`warn`, `progress` 0 to 1) before activating again. Contact while active hurts for 10 × 1.13^stage (armor applies; normal 0.8 s hurt invulnerability). Dash invulnerability ignores it and it is never a perfect dodge. They hurt only the hero. Hit area is exactly `x ± w/2`, `y - h` to `y`.
+- **Barricades** (stages I to IV, 1 to 2 each): 40 × 62, health 38 + 12 × stage. Solid on the sides and stand-on-able; the single jump (apex ~107) clears them. Ground enemies that are blocked hop over (vault); bats ignore them; boss charges stop at them. Sword hits, player shots, plunge shockwaves and Eclipse damage them (no crits, statuses, poise, drops or MP gain).
+- **Altars** (Crimson Cathedral only, 1 to 2): 46 × 74, health 64, solid and breakable like barricades. Each blood pillar is linked to one altar (each altar has 1 to 2 pillars); every pillar stands within 600 px (horizontal) of its linked altar; breaking an altar permanently disables its pillars for that stage.
+
 ## Relics
 
 | id | Name | Effect |
@@ -85,7 +93,7 @@ Kills have a 25% chance to drop a heal that restores 14 HP.
 | wave | Returning Crescent | Attack form. Combo hit 3 launches a crescent (speed 540, flies 0.52 s) that then returns to the hero (speed 620) and disappears on reaching them; each pass hits an enemy once, but only the outgoing pass adds frost meter (other statuses apply on both). Damage 0.85 × base, +0.45 × base per extra stack |
 | pierce | Starpierce Lance | Attack form. Combo hit 3 and the dash thrust fire a piercing beam (speed 780, reach capped at 560 px, life = reach / speed), 0.55 × base per stack; thrust reach +20 per stack (cap +60) |
 | plunge | Fallen Star Vow | Attack form. A plunge landing that makes a shockwave (fall ≥ 40 px) also sends two ground waves left and right (speed 420, reach capped at 340 px, 0.45 × base per stack); shockwave damage +50% per stack, radius +24 per stack (cap 190 for this relic; Phantom Glaive alone still caps at 150) |
-| vortex | Vortex Eclipse | Attack form. Eclipse first pulls enemies in its radius 78% of the way to the hero (boss 10%; x only, clamped to the stage, y unchanged), then hits. Eclipse radius +35 and damage +35% per stack (radius cap 320) |
+| vortex | Vortex Eclipse | Attack form. Eclipse first pulls enemies in its radius 78% of the way to the hero (boss 10%; x only, clamped to the stage, y unchanged; a grounded enemy stops at the near face of a barricade or altar rather than crossing it), then hits. Eclipse radius +35 and damage +35% per stack (radius cap 320) |
 | bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 × Blood Sigils owned on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
 
 Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass through enemies, hit each enemy once per pass, are not cleared by Eclipse, deal 8 poise damage, are not heavy (no Shatter or Blood Flame) and never trigger Chain Lightning, but apply elemental statuses like a sword hit. A shield bearer blocks them (×0.15, no shove) when the projectile is on the side it faces; a returning crescent can hit its back. Cleared by loadStage. Events: `shot` {kind: 'wave' | 'beam' | 'ground', x, y, dir, speed, life}; hits use `hit`.

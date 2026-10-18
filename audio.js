@@ -132,6 +132,7 @@ export class AudioSystem {
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
       roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14,
+      woodBreak: 18, altarShatter: [25, 15, 40],
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
@@ -253,6 +254,52 @@ export class AudioSystem {
         tone('noise', 4500, 0.05, 0.1, 1200, 0.1);
         break;
       }
+      case 'trapWarn': { // telegraph tick, very quiet; global throttle so several traps do not machine-gun
+        if (ctx.currentTime - (this._lastWarn ?? -1) < 0.1) return;
+        this._lastWarn = ctx.currentTime;
+        tone('noise', 3000, 0.025, 0.05, 1200);
+        tone('sine', 520, 0.04, 0.035, 380);
+        break;
+      }
+      case 'woodHit': { // barricade struck: dull wooden knock
+        const d = 0.9 + Math.random() * 0.2;
+        tone('noise', 1800 * d, 0.07, 0.2, 400);
+        tone('sine', 150 * d, 0.1, 0.25, 70);
+        break;
+      }
+      case 'stoneHit': { // altar struck: heavy stone tap with a faint dark ring
+        const d = 0.92 + Math.random() * 0.16;
+        tone('noise', 3200, 0.05, 0.18, 700);
+        tone('sine', 95 * d, 0.14, 0.3, 45);
+        tone('triangle', 880 * d, 0.12, 0.04, 820 * d);
+        break;
+      }
+      case 'woodBreak': // barricade collapses: crack, splintering clatter, low thud
+        tone('noise', 4200, 0.1, 0.3, 900);
+        tone('sine', 110, 0.25, 0.35, 45);
+        [0.05, 0.09, 0.15, 0.21].forEach((dl, i) => tone('noise', 2400 - i * 300, 0.04, 0.12, 700, dl));
+        break;
+      case 'altarShatter': // altar bursts, then the traps power down in a falling sweep
+        tone('noise', 6500, 0.3, 0.32, 300);
+        tone('sine', 80, 0.5, 0.45, 28);
+        [2093, 2794, 3520].forEach((f, i) => tone('triangle', f, 0.18, 0.06, f * 0.85, 0.01 * i));
+        tone('sawtooth', 330, 0.7, 0.07, 55, 0.15);
+        tone('sine', 660, 0.6, 0.05, 90, 0.15);
+        break;
+      case 'spikeClang': // spikes thrust: sharp metal stab
+        tone('noise', 6500, 0.05, 0.14, 2000);
+        tone('triangle', 1450, 0.12, 0.06, 1350);
+        tone('sine', 220, 0.08, 0.1, 110);
+        break;
+      case 'gearGrind': // gears: raspy low grind
+        tone('sawtooth', 70, 0.25, 0.06, 55);
+        tone('noise', 1100, 0.25, 0.1, 500);
+        tone('square', 190, 0.1, 0.025, 150);
+        break;
+      case 'pillarGush': // blood pillar: wet rising gush
+        tone('noise', 600, 0.3, 0.14, 2600);
+        tone('sine', 80, 0.28, 0.16, 50);
+        break;
       case 'chain': { // lightning arc: fast zap with a falling buzz, then a spark
         const d = 0.96 + Math.random() * 0.08;
         tone('square', 1800 * d, 0.1, 0.06, 260 * d);
