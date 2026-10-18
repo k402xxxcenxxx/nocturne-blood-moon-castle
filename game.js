@@ -170,6 +170,7 @@ function handleEvent(e) {
         audio.play('bloodFlame');
       } else {
         audio.play('chain');
+        if (e.solo) burst(e.x, e.y, '#ffe97a', 12, 160, 0, 2); // no targets: a local spark on the zapped enemy
         for (const to of e.targets) {
           const pts = [[e.x, e.y]], n = 5, dx = to.x - e.x, dy = to.y - e.y, len = Math.hypot(dx, dy) || 1;
           for (let i = 1; i < n; i++) pts.push([e.x + dx * i / n - dy / len * (Math.random() - .5) * 26, e.y + dy * i / n + dx / len * (Math.random() - .5) * 26]);
@@ -186,7 +187,7 @@ function handleEvent(e) {
         if (!(amount > 0)) continue; // zero damage to HP shows only the ward number
         const n = numbers.find(o => o.tick === key && o.life > .45 && Math.abs(o.x - e.x - dx) < 26 && Math.abs(o.y - e.y) < 40);
         if (n) { n.sum += amount; n.text = String(n.sum); n.life = .7; }
-        else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + dx + Math.random() * 10 - 5, y: e.y - 4 - dx, text: String(amount), sum: amount, tick: key, life: .7, size: 11, color, soft: true });
+        else if (numbers.filter(o => o.tick).length < 12) numbers.push({ x: e.x + dx + Math.random() * 10 - 5, y: e.y - 4 - dx, text: String(amount), sum: amount, tick: key, life: .7, size: 13, color, soft: true });
       }
       break;
     }

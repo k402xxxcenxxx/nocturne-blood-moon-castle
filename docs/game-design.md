@@ -100,14 +100,14 @@ Hazards are placed after enemies on the floor of stages I to IV (never the boss 
 | mana | Starnight Crystal | Max MP +30, MP regeneration ×1.5 |
 | dash | Raven Shadow | Dash cooldown ×0.7, dash invulnerability +0.1 s (`dashShield` capped at 0.3 on top of the base 0.23 s; dash i-frames also never exceed 80% of the dash cooldown, so chained dashes leave a gap), thrust damage +35% (multiplier capped at ×2.4), +8 MP on a perfect dodge (capped at 30) |
 | armor | Darksilver Charm | Damage taken ×0.8 (`armor` floor 0.25) and restore 20 HP |
-| fire | Ember Edge | Hits burn 4 s, 0.14 × base per tick per stack |
+| fire | Ember Edge | Hits burn 4 s, 0.32 × base per tick per stack |
 | frost | Moonfrost Sigil | Hits chill and build frost meter (+1 per stack); at 3 the enemy freezes; bonus hit 0.08 × base per stack |
 | shock | Thunder Conduit | Hits shock 4 s; chain range +14 and +1 target per stack |
-| wave | Returning Crescent | Attack form. Combo hit 3 launches a crescent (speed 540, flies 0.52 s) that then returns to the hero (speed 620) and disappears on reaching them; each pass hits an enemy once, but only the outgoing pass adds frost meter (other statuses apply on both). Damage 0.85 × base, +0.45 × base per extra stack |
+| wave | Returning Crescent | Attack form. Combo hit 3 launches a crescent (speed 540, flies 0.52 s) that then returns to the hero (speed 620) and disappears on reaching them; each pass hits an enemy once, but a throw lands at most one frost hit (meter, chill, frost damage) per enemy; the returning pass adds frost only if the outgoing pass did not hit that enemy (other statuses apply on both). Damage 0.85 × base, +0.45 × base per extra stack |
 | pierce | Starpierce Lance | Attack form. Combo hit 3 and the dash thrust fire a piercing beam (speed 780, reach capped at 560 px, life = reach / speed), 0.55 × base per stack; thrust reach +20 per stack (cap +60) |
 | plunge | Fallen Star Vow | Attack form. A plunge landing that makes a shockwave (fall ≥ 40 px) also sends two ground waves left and right (speed 420, reach capped at 340 px, 0.45 × base per stack); shockwave damage +50% per stack, radius +24 per stack (cap 190 for this relic; Phantom Glaive alone still caps at 150) |
 | vortex | Vortex Eclipse | Attack form. Eclipse first pulls enemies in its radius 78% of the way to the hero (boss 10%; x only, clamped to the stage, y unchanged; a grounded enemy stops at the near face of a barricade or altar rather than crossing it), then hits. Eclipse radius +35 and damage +35% per stack (radius cap 320) |
-| bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 × Blood Sigils owned on an enemy) for 5 s; 0.1 × base per bleed stack per tick |
+| bleed | Blood Sigil | Hits add bleed stacks (+1 per relic stack, max 10 × Blood Sigils owned on an enemy) for 5 s; 0.08 × base per bleed stack per tick |
 
 Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass through enemies, hit each enemy once per pass, are not cleared by Eclipse, deal 8 poise damage, are not heavy (no Shatter or Blood Flame) and never trigger Chain Lightning, but apply elemental statuses like a sword hit. A shield bearer blocks them (×0.15, no shove) when the projectile is on the side it faces; a returning crescent can hit its back. Cleared by loadStage. Events: `shot` {kind: 'wave' | 'beam' | 'ground', x, y, dir, speed, life}; hits use `hit`.
 
@@ -127,17 +127,17 @@ Player projectiles (`game.shots`, separate from enemy `projectiles`): they pass 
 
 | Status | Effect |
 | --- | --- |
-| Burn (fire) | 4 s, refreshed (never stacked) by each hit; 0.14 × base × fire stacks per tick |
+| Burn (fire) | 4 s, refreshed (never stacked) by each hit; 0.32 × base × fire stacks per tick |
 | Chill (frost) | 2.5 s, enemy speed ×0.68 (boss ×0.85) |
-| Frozen (frost) | Frost meter +stacks per hit (+1 more from Eclipse); at 3 the meter resets and the enemy freezes for min(1.5, 0.75 + 0.12 × stacks) s. Frozen enemies cannot move or act and their warnings are cancelled (not paused). Boss: frozen 0.28 s, then immune to freezing until 1.8 s later; the meter still resets. After any thaw (timeout or Shatter) a normal enemy is immune to freezing for 2 s and gains no frost meter meanwhile (the boss keeps its 1.8 s). The frost meter decays to 0 after 3 s without a frost hit |
+| Frozen (frost) | Frost meter +stacks per hit (+1 more from Eclipse); at 3 the meter resets and the enemy freezes for min(1.5, 0.75 + 0.12 × stacks) s. Frozen enemies cannot move or act and their warnings are cancelled (not paused). Boss: frozen 0.28 s, then immune to freezing until 1.8 s later; the meter still resets. After any thaw (timeout or Shatter) a normal enemy is immune to freezing for max(1.2, 2 - 0.2 × (frost stacks - 1)) s and gains no frost meter meanwhile (the boss keeps its 1.8 s). The frost meter decays to 0 after 3 s without a frost hit |
 | Shock (shock) | 4 s, refreshed by each hit |
 | Bleed (bleed) | 5 s, refreshed; stacks reset when it expires |
 
 | Reaction | Condition | Effect | Event |
 | --- | --- | --- | --- |
-| Shatter | frost owned, heavy hit on a frozen enemy | Unfreezes; base × (1 + 0.65 × frost) to every enemy within 130 + 10 × frost, target included | `reaction` {name:'shatter', x, y, radius} |
-| Blood Flame | fire owned, heavy hit on a bleeding enemy; at most once per attack (a plunge's fall and shockwave count as one) or Eclipse cast, on the first bleeding enemy processed, other targets keep their bleed | Consumes all its bleed stacks; (0.7 + 0.3 × stacks) × base × (1 + 0.3 × fire) to every enemy within 115, target included | `reaction` {name:'bloodFlame', x, y, radius} |
-| Chain Lightning | shock owned, any sword hit (not Eclipse; Eclipse still applies shock) on an already shocked enemy | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining) | `reaction` {name:'chain', x, y, targets:[{x,y}]} |
+| Shatter | frost owned, heavy hit on a frozen enemy | Unfreezes; base × (1 + 0.35 × frost) to every enemy within 130 + 10 × frost, target included | `reaction` {name:'shatter', x, y, radius} |
+| Blood Flame | fire owned, heavy hit on a bleeding enemy; at most once per attack (a plunge's fall and shockwave count as one) or Eclipse cast, on the first bleeding enemy processed, other targets keep their bleed | Consumes all its bleed stacks; (0.7 + 0.3 × stacks) × base × (1 + 0.3 × fire) to the target and 0.5× that to every other enemy within 115 | `reaction` {name:'bloodFlame', x, y, radius} |
+| Chain Lightning | shock owned, any sword hit (not Eclipse; Eclipse still applies shock) on an already shocked enemy; at most one chain per attack or sword swing (a plunge's fall and shockwave count as one) | Arcs to the (2 + shock) nearest other living enemies within 180 + 14 × shock; (0.35 × base + 0.12 × that hit's damage) × shock each; shocks them (no further chaining). With no other enemy in range the shocked target itself takes 50% of that damage and this counts as the attack's chain | `reaction` {name:'chain', x, y, targets:[{x,y}], solo?:true} (solo zap: targets is empty, solo true) |
 
 Attack-form projectiles do not exist yet; `damageEnemy` ends with the single `elements()` hook they should call.
 

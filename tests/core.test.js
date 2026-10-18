@@ -1207,7 +1207,7 @@ test('burn applies on hit and ticks every 0.5 s without hit-stop, stun or poise 
   game.freeze = 0; e.stun = 0; e.flash = 0;
   const hp = e.hp, poise = e.poise;
   advance(game, 1.01);
-  assert.equal(e.hp, hp - 2 * Math.round(.14 * player.damage));
+  assert.equal(e.hp, hp - 2 * Math.round(e.burnDmg));
   assert.equal(game.freeze, 0); assert.equal(e.stun, 0); assert.equal(e.poise, poise);
   advance(game, 4);
   assert.equal(e.burn, 0);
@@ -1221,7 +1221,7 @@ test('bleed stacks per hit, refreshes, ticks per stack and expires', () => {
   game.freeze = 0;
   const hp = e.hp;
   advance(game, .51);
-  assert.equal(e.hp, hp - Math.round(.1 * player.damage * 2));
+  assert.equal(e.hp, hp - Math.round(.08 * player.damage * 2));
   advance(game, 5);
   assert.equal(e.bleedStacks, 0);
 });
@@ -1271,7 +1271,7 @@ test('shatter needs a frozen target and a heavy hit, unfreezes and hits everythi
   const r = events.find(ev => ev.type === 'reaction');
   assert.equal(r.name, 'shatter'); assert.equal(r.radius, 140);
   assert.equal(e.frozen, 0);
-  const dmg = Math.round(player.damage * 1.65);
+  const dmg = Math.round(player.damage * 1.35);
   assert.equal(near.hp, nh - dmg); assert.equal(far.hp, fh);
   assert.ok(e.hp <= eh - 24 - dmg);
   const e2 = enemy(game, 900); sword(game, e2, true);
@@ -1285,10 +1285,11 @@ test('blood flame needs fire plus bleeding, consumes stacks and scales with them
   const { game, player, events } = elem('fire', 'bleed');
   const e = enemy(game, 600), side = enemy(game, 690);
   sword(game, e); sword(game, e);
-  const sh = side.hp; sword(game, e, true);
+  const sh = side.hp; const eh = e.hp; sword(game, e, true);
   assert.equal(events.filter(ev => ev.type === 'reaction')[0].name, 'bloodFlame');
   assert.equal(e.bleedStacks, 1, 'stacks consumed, then the hit adds one');
-  assert.equal(side.hp, sh - Math.round((.7 + .6) * player.damage * 1.3));
+  assert.equal(side.hp, sh - Math.round((.7 + .6) * player.damage * 1.3 * .5), 'others take half');
+  assert.equal(e.hp, eh - 24 - Math.round((.7 + .6) * player.damage * 1.3), 'target takes full');
 });
 
 test('chain lightning arcs from a shocked enemy to the nearest others, shocking them', () => {
@@ -2457,4 +2458,71 @@ test('regression: dashing while falling cancels the downward velocity again (bc5
   player.dashCd = 0; player.attack = 0; player.grounded = false; player.y = 300; player.vy = 500;
   game.dash();
   assert.equal(player.vy, 0);
+});
+
+test('#30 chain lightning: at most one chain per attack, then it rearms', () => {
+  const { game, events } = elem('shock');
+  const e = enemy(game, 600), n = enemy(game, 700);
+  e.shock = 4; n.shock = 4;
+  game.chainUsed = false;
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  game.damageEnemy(n, 40, 1, false, false, false, 0);
+  assert.equal(events.filter(ev => ev.type === 'reaction' && ev.name === 'chain').length, 1);
+  game.chainUsed = false; // next attack
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(events.filter(ev => ev.type === 'reaction' && ev.name === 'chain').length, 2);
+});
+
+test('#30 chain gate: a swing re-arms it, an Eclipse cast mid-swing does not', () => {
+  const { game, player } = elem('shock');
+  player.mp = player.maxMp; player.magicCd = 0;
+  game.chainUsed = true;
+  game.attack();
+  assert.equal(game.chainUsed, false, 'a new swing re-arms the chain');
+  game.chainUsed = true; // the swing chained
+  game.magic();
+  assert.equal(game.chainUsed, true, 'Eclipse must not give the same swing a second chain');
+});
+
+test('#30 shock 1v1: with no chain target the shocked enemy takes half the chain damage, once per attack', () => {
+  const { game, player, events } = elem('shock');
+  const e = enemy(game, 600);
+  e.shock = 4; game.chainUsed = false;
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  const zap = Math.round((.35 * player.damage + .12 * 40) * .5);
+  assert.equal(e.maxHp - e.hp, 40 + zap);
+  const r = events.find(ev => ev.type === 'reaction');
+  assert.equal(r.name, 'chain'); assert.equal(r.solo, true);
+  const hp0 = e.hp;
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(hp0 - e.hp, 40, 'the solo zap used the attack\'s chain');
+});
+
+test('#30 frost: post-thaw immunity shrinks 0.2 s per extra stack, floor 1.2 s', () => {
+  const imm = n => elem(...Array(n).fill('frost')).game.thawImmunity();
+  assert.equal(imm(1), 2);
+  assert.ok(Math.abs(imm(2) - 1.8) < 1e-9);
+  assert.equal(imm(5), 1.2); assert.equal(imm(9), 1.2);
+});
+
+test('#30 wave + frost: a throw lands one frost hit per enemy across both passes', () => {
+  const { game, player, events } = elem('wave', 'frost');
+  player.crit = 0;
+  const a = enemy(game, 430); a.armor = 99; a.speed = 0;
+  combo3(game);
+  game.hitSet = new Set();
+  advance(game, 3);
+  assert.equal(events.filter(ev => ev.type === 'statusTick' && ev.source === 'frost').length, 1);
+});
+
+// QA #30: a sword blow that kills a lone shocked enemy runs the solo zap on the corpse, which settles the death a second time.
+test('#30 QA regression: a killing blow on a lone shocked enemy credits one kill and emits one kill event', () => {
+  const { game, events } = elem('shock');
+  const e = enemy(game, 600, { hp: 10 });
+  e.shock = 4; game.chainUsed = false;
+  const kills = game.kills;
+  game.damageEnemy(e, 40, 1, false, false, false, 0);
+  assert.equal(e.hp, 0);
+  assert.equal(game.kills - kills, 1, 'one kill, not two');
+  assert.equal(events.filter(ev => ev.type === 'kill').length, 1);
 });
