@@ -129,7 +129,7 @@ export class AudioSystem {
   play(name, intensity = 1) {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
-      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
+      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], cursedPick: [20, 30, 35], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
       roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
@@ -433,6 +433,13 @@ export class AudioSystem {
         break;
       }
       case 'upgrade': notes([294, 349, 440, 587], 0.09, 0.15); break;
+      case 'cursedPick': // low minor stab (A1 + C2 + E2) with a dark fading tail
+        tone('sawtooth', 55, 0.5, 0.1, 50);
+        tone('triangle', 65.4, 0.6, 0.12, 60);
+        tone('sine', 82.4, 0.7, 0.12, 74);
+        tone('triangle', 165, 0.35, 0.05, 150); // mid body for phone speakers
+        tone('noise', 500, 0.6, 0.05, 90, 0.08);
+        break;
       case 'portal':
         tone('noise', 900, 0.85, 0.12, 4500);
         notes([147, 220, 294, 440], 0.12, 0.13);
