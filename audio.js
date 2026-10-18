@@ -132,7 +132,7 @@ export class AudioSystem {
       magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
       roar: [60, 40, 120], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
-      woodBreak: 18, altarShatter: [25, 15, 40],
+      woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
@@ -414,6 +414,24 @@ export class AudioSystem {
         tone('sine', 95, 0.35, 0.22, 30);
         notes([392, 587], 0.07, 0.05);
         break;
+      case 'eliteDrone': // elite sighted: ~1 s detuned low swell with a dark breath, slow attack via delayed layers; no vibration
+        tone('sawtooth', 55, 1.1, 0.07, 52);
+        tone('sawtooth', 56.5, 1.1, 0.06, 53);
+        tone('sine', 41, 1.2, 0.2, 36);
+        tone('noise', 300, 0.9, 0.06, 900, 0.1);
+        tone('sawtooth', 220, 1.0, 0.035, 205, 0.05); // mid layer for phone speakers
+        tone('sawtooth', 226, 1.0, 0.03, 210, 0.05);
+        tone('triangle', 330, 0.9, 0.03, 310, 0.1);
+        break;
+      case 'eliteKill': { // heavier than kill: deep boom and crunch, then a rising minor-third tail
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 2200, 0.4, 0.3, 120);
+        tone('sine', 80 * d, 0.5, 0.4, 26);
+        tone('sawtooth', 110 * d, 0.3, 0.07, 45);
+        tone('triangle', 260 * d, 0.25, 0.12, 120); // mid thump for phone speakers
+        [294, 349, 440, 587].forEach((f, i) => tone('triangle', f * d, 0.5, 0.06, f * d * 0.999, 0.12 + i * 0.08));
+        break;
+      }
       case 'upgrade': notes([294, 349, 440, 587], 0.09, 0.15); break;
       case 'portal':
         tone('noise', 900, 0.85, 0.12, 4500);

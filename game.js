@@ -103,7 +103,7 @@ function handleEvent(e) {
       if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
       break;
     case 'eliteKill': // big purple burst, ring and shake
-      audio.play('kill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
+      audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
       audio.play('hurt'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
@@ -192,7 +192,7 @@ function handleEvent(e) {
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
-    case 'elite': toast(t('hint.elite')); break;
+    case 'elite': audio.play('eliteDrone', 1); toast(t('hint.elite')); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
