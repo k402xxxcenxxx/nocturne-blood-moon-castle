@@ -202,7 +202,7 @@ function handleEvent(e) {
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
     case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
-    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); openVigil(); break;
+    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = ''; openVigil(); break;
     case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
@@ -226,7 +226,7 @@ function startRun(mode = 'normal') {
   frame.scrollIntoView({ block: 'nearest' }); // the masthead pushes the frame's bottom off short desktop windows
 }
 // Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
-function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && modalKind === 'upgrade')); }
+function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && ['upgrade', 'vigil'].includes(modalKind))); }
 function openModal(html, kind, pause = true) {
   if ($('modal').hidden) previousFocus = document.activeElement;
   if (pause && game.state === 'playing') { returnState = 'playing'; game.state = 'paused'; audio.suspend(); }
@@ -256,7 +256,7 @@ function pauseRelics() {
 }
 function openPause() {
   if (game.state !== 'playing' && game.state !== 'paused') return;
-  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t(game.mode === 'endless' ? 'pause.infoEndless' : 'pause.info', { stage: roman[game.stage], n: game.floor, name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
+  openModal(`<div class="modal-eyebrow">${t('decor.pause')}</div><h2 id="modal-title">${t('pause.title')}</h2><p>${t(game.mode === 'endless' ? 'pause.infoEndless' : game.mode === 'castle' ? 'pause.infoCastle' : 'pause.info', { stage: roman[game.stage], n: game.floor, name: t(`stage.${game.stage}.name`), relics: game.relics.length })}</p>${pauseRelics()}<div class="modal-buttons"><button class="primary-button" data-command="resume">${icon('sword')}${t('pause.resume')}</button><button class="secondary-button" data-command="settings">${t('pause.settings')}</button><button class="secondary-button" data-command="help">${t('pause.help')}</button></div><button class="text-button" data-command="restart-confirm">${t('pause.abandon')}</button>`, 'pause');
 }
 function openSettings() {
   if (['upgrade', 'dead', 'won', 'vigil'].includes(modalKind)) modalReturn = modalKind;
@@ -282,7 +282,7 @@ function openVigil() { // rest point: one weapon card each, choosing one starts 
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t('result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? 'castle.toVigil' : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
