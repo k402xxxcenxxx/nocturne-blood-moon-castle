@@ -218,6 +218,7 @@ function startRun(mode = 'normal') {
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; startBestFloor = records.bestFloor; if (mode === 'normal') records.runs++; // an endless trial never touches normal-run progress
   save('nocturne-records', records);
   game.start();
+  frame.scrollIntoView({ block: 'nearest' }); // the masthead pushes the frame's bottom off short desktop windows
 }
 // Drives the short-landscape settings gear (CSS .gear-on): only on title and the relic pick, never during play.
 function syncGear() { document.body.classList.toggle('gear-on', !$('title-screen').hidden || (!$('modal').hidden && modalKind === 'upgrade')); }
