@@ -593,7 +593,7 @@ function render(dt) {
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
-      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 20px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
+      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');

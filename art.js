@@ -636,7 +636,7 @@ function drawHeavyWarn(ctx, e, time) {
   }
   if (w.kind === 'rush' || w.kind === 'dive') { // path with an arrow tip
     const l = w.line, x2 = Math.round(w.to ?? l.x2), y2 = Math.round(l.y2), x1 = Math.round(l.x1), y1 = Math.round(l.y1), a = Math.sign(x2 - x1 || d) * 12;
-    if (w.kind === 'dive') { ctx.fillStyle = `rgba(255,74,60,${hot})`; ctx.beginPath(); ctx.arc(x2, y2, w.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 2 * w.r; ctx.globalAlpha = .12 + .2 * p; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 3; }
+    if (w.kind === 'dive') { ctx.fillStyle = `rgba(255,74,60,${.35 + .4 * p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x2, y2, w.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 2 * w.r; ctx.globalAlpha = .2 + .25 * p; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 3; }
     ctx.strokeStyle = '#ffe0d0'; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = '#ffe0d0'; ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - a, y2 - 8); ctx.lineTo(x2 - a, y2 + 8); ctx.fill();
   }
@@ -651,7 +651,8 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     ctx.beginPath(); ctx.moveTo(Math.round(e.from.x), Math.round(e.from.y - e.h / 2)); ctx.lineTo(x, Math.round(y - e.h / 2)); ctx.stroke(); ctx.restore();
   }
   if (windup) { ctx.save(); ctx.globalAlpha = .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
-  if (slump) { ctx.save(); ctx.globalAlpha = calm ? .5 : .35 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 26, e.h / 2 + 4, 0, 0, 7); ctx.fill(); ctx.restore(); } // gold shimmer: open to punish
+  if (windup && e.type === 'bat') { const ay = Math.round(y + 14 + (calm ? 0 : Math.sin(time * 12) * 3)); ctx.save(); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 10, ay); ctx.lineTo(x + 10, ay); ctx.lineTo(x, ay + 14); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } // down arrow under the bat: it is about to drop
+  if (slump) { ctx.save(); ctx.globalAlpha = calm ? .7 : .55 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 28, e.h / 2 + 5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke(); ctx.restore(); } // gold shimmer: open to punish
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? 70 : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
   if (boss) drawBossWarn(ctx, e, time);
@@ -667,7 +668,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
   if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
-  else if (slump) { ctx.rotate(.18); ctx.scale(1, .94); } // slumped forward
+  else if (slump) { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
