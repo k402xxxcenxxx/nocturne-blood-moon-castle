@@ -1500,7 +1500,7 @@ test('#14 shots: shield blocks from the front only; poise 8; no chain, not heavy
 
 test('#14 relic list has four attack forms', () => {
   for (const id of ['wave', 'pierce', 'plunge', 'vortex']) assert.ok(RELICS.some(r => r.id === id));
-  assert.equal(RELICS.length, 18);
+  assert.equal(RELICS.length, 21);
 });
 
 test('#13 review: a DoT kill counts once and opens the portal; DoT can change boss phase; one Blood Flame per plunge', () => {
@@ -2313,4 +2313,91 @@ test('statusTick reports the damage that reached HP and the amount the ward abso
   assert.deepEqual([t.amount, t.absorbed, e.hp], [10, 30, 290]);
   game.damageEnemy(e, 5, 1, false, false); // ward is empty; later hits report absorbed 0
   assert.equal(events.findLast(x => x.type === 'hit').absorbed, 0);
+});
+
+test('an elite killed inside update holds the chest until the beat ends (no same-frame chest pick)', () => {
+  const { game, player, events } = arena();
+  const e = enemy(game, player.x + 40, { hp: 1 });
+  Object.assign(e, { elite: true, affix: 'swift', required: false });
+  game.chests = [{ id: 9, x: player.x, y: FLOOR, w: 34, h: 28, kind: 'relic', optional: true, opened: false }];
+  game.update(1 / 120, { attack: true });
+  assert.ok(events.some(x => x.type === 'eliteKill'));
+  assert.equal(game.chests[0].opened, false); assert.equal(game.state, 'playing');
+  advance(game, .9);
+  assert.equal(game.pickReason, 'elite'); // the elite reward comes first; the chest opens after it
+});
+
+// ---- Cursed relics (#1) ----
+const cursed = RELICS.filter(r => r.cursed);
+const grant = (game, id) => { game.choices = [RELICS.find(r => r.id === id)]; game.state = 'upgrade'; game.pickReason = 'chest'; assert.ok(game.chooseRelic(id)); };
+
+test('cursed relics: three exist, never in the opening pick, at most one per offer', () => {
+  assert.deepEqual(cursed.map(r => r.id).sort(), ['bloodOath', 'lunaticMoon', 'nightwalk']);
+  assert.ok(BUILD_POOL.every(id => !cursed.some(r => r.id === id)));
+  let seen = 0;
+  for (let seed = 1; seed <= 300; seed++) for (const reason of ['start', 'stage', 'chest', 'elite']) {
+    const g = new Game(() => {}, seed);
+    g.rollChoices(reason, reason === 'start' ? BUILD_POOL : undefined);
+    const n = g.choices.filter(r => r.cursed).length;
+    if (reason === 'start') assert.equal(n, 0);
+    assert.ok(n <= 1); seen += n;
+  }
+  assert.ok(seen > 0);
+});
+
+test('cursed relics stop being offered at their copy cap', () => {
+  const { game } = arena();
+  const offered = id => { for (let i = 0; i < 200; i++) { game.rollChoices('chest'); if (game.choices.some(r => r.id === id)) return true; } return false; };
+  for (const [id, max] of [['bloodOath', 2], ['lunaticMoon', 1], ['nightwalk', 2]]) {
+    for (let n = 0; n < max; n++) { assert.ok(offered(id), `${id} offered at ${n} copies`); grant(game, id); }
+    assert.equal(offered(id), false, `${id} capped at ${max}`);
+  }
+});
+
+test('Blood Oath Blade multiplies sword damage, stacks, and damage taken applies after armor', () => {
+  const { game, player } = arena();
+  const e = enemy(game, player.x + 50, { hp: 9999 });
+  player.crit = 0; game.hitSet = new Set(); player.combo = 1; player.move = ''; player.attack = .2;
+  game.hitTargets(); const base = 9999 - e.hp;
+  grant(game, 'bloodOath'); e.hp = 9999; game.hitSet = new Set(); game.hitTargets();
+  assert.equal(9999 - e.hp, Math.round(24 * 1.6));
+  assert.ok(9999 - e.hp > base);
+  grant(game, 'armor'); player.hp = player.maxHp; player.invulnerable = 0;
+  game.hurt(20, 1);
+  assert.equal(player.maxHp - player.hp, Math.round(20 * .8 * 1.25));
+  assert.ok(Math.abs(player.swordMul - 1.6) < 1e-9);
+  grant(game, 'bloodOath'); assert.ok(Math.abs(player.takenMul - 1.5625) < 1e-9);
+});
+
+test('Lunatic Moon: free Eclipse on a 4 s cooldown, no noMana, no passive MP, hit MP still works', () => {
+  const { game, player, events } = arena();
+  grant(game, 'lunaticMoon');
+  player.mp = 0; enemy(game, player.x + 50, { hp: 9999 }).damage = 0;
+  game.magic();
+  assert.equal(events.some(x => x.type === 'magic'), true); assert.equal(player.mp, 0);
+  advance(game, 3.5, { magic: true });
+  assert.equal(events.filter(x => x.type === 'magic').length, 1); assert.equal(events.some(x => x.type === 'noMana'), false);
+  advance(game, 1, { magic: true });
+  assert.equal(events.filter(x => x.type === 'magic').length, 2);
+  player.mp = 0; advance(game, 2); assert.equal(player.mp, 0, 'no passive regeneration');
+  game.hitSet = new Set(); player.combo = 1; player.attack = .2; game.hitTargets();
+  assert.ok(player.mp > 0, 'hits still pay MP');
+});
+
+test('Endless Nightwalk: speed up, dash cooldown floor, max HP floor of 40 and current HP clamped', () => {
+  const { game, player } = arena();
+  const speed = player.speed;
+  grant(game, 'nightwalk');
+  assert.ok(Math.abs(player.speed - speed * 1.2) < 1e-9);
+  assert.ok(Math.abs(player.dashCooldown - .85 * .6) < 1e-9);
+  assert.deepEqual([player.maxHp, player.hp], [75, 75]);
+  grant(game, 'nightwalk'); assert.equal(player.maxHp, 50);
+  player.maxHp = 60; grant(game, 'dash'); player.dashCooldown = .4; player.maxHp = 50;
+  RELICS.find(r => r.id === 'nightwalk').apply(player);
+  assert.equal(player.dashCooldown, .35); assert.equal(player.maxHp, 40); assert.ok(player.hp <= 40);
+});
+
+test('cursed offers are deterministic per seed', () => {
+  const roll = seed => { const g = new Game(() => {}, seed); g.rollChoices('stage'); return g.choices.map(r => r.id).join(); };
+  for (let s = 1; s < 20; s++) assert.equal(roll(s), roll(s));
 });

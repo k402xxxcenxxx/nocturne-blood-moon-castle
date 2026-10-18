@@ -41,6 +41,10 @@ export const RELICS = [
   { id: 'pierce', icon: 'sword', apply: () => {} },
   { id: 'plunge', icon: 'star', apply: p => p.plungeRadius = Math.min(190, p.plungeRadius + 24) },
   { id: 'vortex', icon: 'moon', apply: () => {} },
+  // Cursed relics: a benefit and a cost, never in the opening pick, at most one per offer; `max` copies, then no longer offered.
+  { id: 'bloodOath', icon: 'drop', cursed: true, max: 2, apply: p => { p.swordMul *= 1.6; p.takenMul *= 1.25; } }, // swordMul scales sword hits (combo, thrust, plunge), not wave/beam shots; takenMul applies after armor
+  { id: 'lunaticMoon', icon: 'moon', cursed: true, max: 1, apply: p => { p.lunatic = true; p.mpRegen = 0; } }, // Eclipse free, 4 s cooldown; hit / kill / perfect-dodge MP still pays
+  { id: 'nightwalk', icon: 'wind', cursed: true, max: 2, apply: p => { p.speed *= 1.2; p.dashCooldown = Math.max(.35, p.dashCooldown * .6); p.maxHp = Math.max(40, p.maxHp - 25); p.hp = Math.min(p.hp, p.maxHp); } },
 ];
 // Symmetric synergy pairs; the i18n key is `synergy.<first>-<second>` in either direction. Only text: the relics already do the work.
 const SYNERGY_PAIRS = [['arcane', 'vortex'], ['arcane', 'fire'], ['arcane', 'frost'], ['dash', 'pierce'], ['wave', 'shock'], ['wave', 'vortex'], ['wave', 'bleed'], ['pierce', 'vortex'], ['plunge', 'frost'], ['plunge', 'fire'], ['fire', 'bleed']];
@@ -79,7 +83,7 @@ export class Game {
     this.player = {
       x: 155, y: FLOOR, w: 28, h: 58, vx: 0, vy: 0, dir: 1, grounded: true, jumps: 0,
       hp: 100, maxHp: 100, mp: 100, maxMp: 100, damage: 24, magicDamage: 58, magicCost: 35,
-      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, mpRegen: 8,
+      speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
       attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90,
@@ -92,12 +96,14 @@ export class Game {
   // Offer 3 distinct relics (weighted sampling without replacement); reason is 'start' or 'stage'.
   rollChoices(reason, pool) {
     this.state = 'upgrade'; this.pickReason = reason;
-    const left = RELICS.filter(r => !pool || pool.includes(r.id)), choices = [];
+    const left = RELICS.filter(r => (!pool || pool.includes(r.id)) && (!r.max || this.stacks(r.id) < r.max)), choices = [];
     const weight = r => 1 + SYNERGY_WEIGHT * r.synergies.filter(s => this.relics.includes(s.with)).length;
     while (choices.length < 3 && left.length) {
       let roll = this.rand() * left.reduce((n, r) => n + weight(r), 0), i = 0;
       while (i < left.length - 1 && (roll -= weight(left[i])) >= 0) i++;
-      choices.push(...left.splice(i, 1));
+      const [pick] = left.splice(i, 1);
+      choices.push(pick);
+      if (pick.cursed) for (let j = left.length; j--;) if (left[j].cursed) left.splice(j, 1); // at most one cursed relic per offer
     }
     this.choices = choices;
     this.emit('upgrade', { choices, reason });
@@ -112,7 +118,7 @@ export class Game {
     this.worldWidth = spec.width;
     this.portalX = spec.width - 145;
     this.portalOpen = false;
-    this.freeze = 0; this.eliteBeat = 0;
+    this.freeze = 0;
     this.projectiles = [];
     this.shots = []; // player-owned projectiles; never touched by enemy-projectile code or Eclipse clearing
     this.pickups = [];
@@ -294,7 +300,7 @@ export class Game {
     this.updateTraps(dt);
     for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
     this.updateShots(dt);
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.eliteBeat > 0) return; // an elite that died this frame: the beat starts now, no chest, portal or projectile step
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
@@ -423,9 +429,9 @@ export class Game {
       const dx = (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
       this.hitSet?.add(e);
-      if (e.kind) { this.damageObstacle(e, Math.round(p.damage * mul)); continue; }
+      if (e.kind) { this.damageObstacle(e, Math.round(p.damage * p.swordMul * mul)); continue; }
       const crit = this.rand() < p.crit;
-      const amount = Math.round(p.damage * mul * (crit ? 2 : 1));
+      const amount = Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1));
       // Shield bearers block sword hits from the side they face unless Eclipse broke their guard.
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
@@ -436,7 +442,7 @@ export class Game {
   plungeStrike(e, mul, poise, knock) {
     const p = this.player, crit = this.rand() < p.crit;
     this.hitSet.add(e);
-    this.damageEnemy(e, Math.round(p.damage * mul * (crit ? 2 : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
+    this.damageEnemy(e, Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
     p.mp = Math.min(p.maxMp, p.mp + 2);
   }
   plungeHit(oldY) {
@@ -454,14 +460,15 @@ export class Game {
     if (vow) for (const dir of [-1, 1]) this.launchShot('ground', .45 * vow, 420, GROUND_WAVE_REACH / 420, 12, p.x, p.y - 12, dir);
     for (const e of this.enemies.concat(this.obstacles)) {
       if (e.hp <= 0 || this.hitSet.has(e) || Math.abs(e.x - p.x) > radius + e.w / 2 || e.y < p.y - 100 || e.y - e.h > p.y + 4) continue;
-      if (e.kind) { this.hitSet.add(e); this.damageObstacle(e, Math.round(p.damage * (1 + .5 * vow))); continue; }
+      if (e.kind) { this.hitSet.add(e); this.damageObstacle(e, Math.round(p.damage * p.swordMul * (1 + .5 * vow))); continue; }
       this.plungeStrike(e, 1 + .5 * vow, POISE_DAMAGE.plunge, 1.4);
     }
   }
   magic() {
     const p = this.player;
-    if (p.mp < p.magicCost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
-    p.mp -= p.magicCost; p.magicCd = .65; p.invulnerable = Math.max(p.invulnerable, .28);
+    const cost = p.lunatic ? 0 : p.magicCost; // Lunatic Moon: free Eclipse, so noMana never fires
+    if (p.mp < cost || p.magicCd > 0) { if (p.magicCd <= 0) this.emit('noMana'); return; }
+    p.mp -= cost; p.magicCd = p.lunatic ? 4 : .65; p.invulnerable = Math.max(p.invulnerable, .28);
     this.flameUsed = false;
     const vortex = this.stacks('vortex'), radius = vortex ? Math.min(320, 210 + 35 * vortex) : 210;
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
@@ -885,7 +892,7 @@ export class Game {
     const p = this.player;
     if (this.state !== 'playing') return;
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
-    const actual = Math.round(amount * p.armor);
+    const actual = Math.round(amount * p.armor * p.takenMul);
     p.hp = Math.max(0, p.hp - actual); p.invulnerable = .8;
     p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;

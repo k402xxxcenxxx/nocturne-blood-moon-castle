@@ -2339,3 +2339,14 @@ b[data-i18n] {
     top:31%; /* below the objective line, still above the enemy warning band */
   }
 }
+
+.relic-card[data-cursed] {
+  border-color:#8a1c2c;
+  box-shadow:inset 0 3px 0 #b3202f;
+}
+.relic-card[data-cursed]>svg,.relic-card[data-cursed] small,.relic-card .card-cost b {
+  color:#e0505e;
+}
+.relic-card .card-cost {
+  color:#e0a0a6;
+}

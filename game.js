@@ -261,7 +261,7 @@ function synergyLine(id) {
 }
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card" data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
@@ -351,8 +351,9 @@ document.addEventListener('fullscreenchange', resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(frame);
 window.addEventListener('pagehide', () => audio.suspend());
 
-function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2 }); }
+function showRoom(stage, index) { bannerQueue.push({ text: t(`room.${stage}.${index}`), time: 2.2, room: index }); }
 function pumpBanner() {
+  while (bannerQueue.length && bannerQueue[0].room !== undefined && bannerQueue[0].room !== game.roomIndex) bannerQueue.shift(); // stale room names from stepping back and forth
   if (announceTime > 0 || roomTime > 0 || !bannerQueue.length) return;
   const b = bannerQueue.shift(), el = $('room-banner');
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
