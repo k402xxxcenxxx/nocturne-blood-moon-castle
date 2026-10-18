@@ -2918,3 +2918,25 @@ test('castle heavy: normal runs and Endless Trial never start heavies', () => {
     assert.ok(!events.some(ev => ev.type === 'enemyHeavy' || ev.heavy), mode);
   }
 });
+
+test('castle heavy: a rush stopped by a barricade stands still through recovery (no vault)', () => {
+  const { game, player, e } = heavyFoe('shield', 170);
+  player.blood = 200; player.invulnerable = 99; player.x = 380; player.y = FLOOR;
+  game.obstacles = [{ type: 'barricade', x: 440, y: FLOOR, w: 24, h: 40, hp: 50 }];
+  e.x = 550; e.y = FLOOR;
+  while (!(e.heavy && e.recover > 0)) advance(game, .01);
+  const { x, y } = e;
+  advance(game, .5);
+  assert.ok(e.heavy && e.recover > 0, 'still recovering');
+  assert.equal(e.x, x); assert.equal(e.y, y); assert.ok(!e.vault);
+});
+
+test('castle heavy: recovery keeps counting down while hit-stunned', () => {
+  const { game, player, e } = heavyFoe('knight', 50);
+  player.blood = 200; player.invulnerable = 99;
+  e.hp = e.maxHp = 1e6; e.maxPoise = e.poise = 1e6;
+  while (!(e.recover > 0)) advance(game, .01);
+  let t = 0;
+  while (e.heavy && t < 5) { game.damageEnemy(e, 1, 1, false, false, false, 1); game.freeze = 0; advance(game, .05); t += .05; }
+  assert.ok(!e.heavy && t < 2.5, 'recovery ends on time despite repeated hits');
+});
