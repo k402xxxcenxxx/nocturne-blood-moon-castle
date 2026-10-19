@@ -2485,3 +2485,24 @@ b[data-i18n] {
     margin-inline:auto;
   }
 }
+
+/* Short landscape phones: keep the whole guide, Ready button included, inside the viewport. */
+@media(max-height:480px) and (orientation:landscape) {
+  .modal-panel[data-kind="help"] .modal-eyebrow {
+    display:none;
+  }
+  .modal-panel[data-kind="help"] h2 {
+    font-size:20px;
+    margin:0 0 6px;
+  }
+  .modal-panel[data-kind="help"] .help-grid {
+    margin:6px 0;
+  }
+  .modal-panel[data-kind="help"] .modal-footnote {
+    margin:4px 0;
+    line-height:1.5;
+  }
+  .modal-panel[data-kind="help"] .modal-buttons {
+    margin-top:6px;
+  }
+}
