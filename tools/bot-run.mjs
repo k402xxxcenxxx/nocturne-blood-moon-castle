@@ -21,8 +21,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep } =
     else if (e.type === 'sliceEnd' && cur) clear();
     else if (e.type === 'hurt' && cur) cur.taken += e.amount;
     else if (e.type === 'frenzy' && cur) cur.frenzies++;
-    else if (e.type === 'swing' && cur && e.move !== 'plunge') { if (pending && !pending.hit) cur.whiffs++; cur.swings++; pending = { t: game.time, hit: false }; }
-    else if ((e.type === 'hit' || e.type === 'block' || e.type === 'obstacleHit') && pending) pending.hit = true;
+    else if (e.type === 'swing' && cur && e.move !== 'plunge') { if (pending && pending.set.size === 0) cur.whiffs++; cur.swings++; pending = { t: game.time, set: game.hitSet }; }
     else if (e.type === 'death') deathCause = cause;
   }, seed, 'castle');
   const realHurt = game.hurt.bind(game);
@@ -40,7 +39,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep } =
     if (cur && game.floor > maxFloor) break;
     if (cur && game.elapsed - cur.t0 > capSeconds) { cur.timeout = true; break; }
     game.update(DT, bot.input(game));
-    if (cur) { if (pending && !pending.hit && game.time - pending.t > .3) { cur.whiffs++; pending = null; } cur.gained += Math.max(0, game.player.blood - blood); }
+    if (cur) { if (pending && game.time - pending.t > .3) { if (pending.set.size === 0) cur.whiffs++; pending = null; } cur.gained += Math.max(0, game.player.blood - blood); }
     blood = game.player.blood;
     onStep?.(game, bot);
   }

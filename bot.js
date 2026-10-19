@@ -53,8 +53,8 @@ function hitTime(e, px, py) {
   return Infinity; // mages and priests act through projectiles
 }
 
-export function createBot() {
-  const info = new Map(); // enemy or projectile -> { sig, since, seen }: when the bot first perceived it / its current attack
+export function createBot({ decide: decider } = {}) { // `decide` overrides the policy (tests drive the press limiter with it)
+  const info = new WeakMap(); // enemy or projectile -> { sig, since, seen }: when the bot first perceived it / its current attack
   const presses = []; // timestamps of recent rising edges
   let prev = {}, last = {}, dirSince = -1;
   const api = {
@@ -66,7 +66,7 @@ export function createBot() {
       if (game.state !== 'playing' || game.freeze > 0 || game.eliteBeat > 0) return last; // the core ignores this frame; a pending impulse waits
       const now = game.time;
       track(game, now);
-      const want = decide(game, now);
+      const want = (decider || decide)(game, now);
       while (presses.length && presses[0] < now - 1) presses.shift();
       const out = {};
       const allow = (kind, key) => { // rising edges cost budget; attacks leave a reserve for dodges
@@ -91,7 +91,7 @@ export function createBot() {
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
       const sig = e.hp > 0 ? (e.tell > 0 ? 't' : e.strikeT > 0 ? 's' : '') : '';
-      if (sig && !r.sig) r.since = now;
+      if (sig && sig !== r.sig && !(r.sig === 't' && sig === 's')) r.since = now; // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
     }

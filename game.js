@@ -57,6 +57,7 @@ function aiModal(dt) { // the modals are DOM: click the card the bot picked, so 
   const panel = $('modal-panel');
   if (modalKind === 'vigil') panel.querySelector(`[data-weapon="${chooseWeapon(game)}"]`)?.click();
   else if (modalKind === 'upgrade') panel.querySelector(`[data-relic="${chooseRelic(game, game.choices).id}"]`)?.click();
+  else if (['pause', 'settings', 'help', 'confirm'].includes(modalKind)) panel.querySelector('[data-command="resume"]')?.click(); // auto-pause on focus loss: resume through the UI
   else if (modalKind === 'dead' && game.mode === 'castle') panel.querySelector('[data-command="restart"]')?.click();
   aiModalT = .7;
 }
@@ -365,7 +366,7 @@ document.querySelectorAll('[data-control]').forEach(button => {
   button.addEventListener('contextmenu', e => e.preventDefault());
 });
 // While the AI is on, real (trusted) pointer, click and key-release events are swallowed except on the toggle; the AI's own modal clicks are synthetic and pass.
-for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'keyup']) window.addEventListener(type, e => {
+if (testMode) for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'keyup']) window.addEventListener(type, e => {
   if (ai && e.isTrusted && !(e.target.closest?.('#ai-toggle') || (type === 'keyup' && e.code === 'KeyB'))) { e.stopPropagation(); if (e.cancelable) e.preventDefault(); }
 }, { capture: true, passive: false });
 window.addEventListener('keydown', e => {
@@ -675,5 +676,5 @@ game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFram
 syncGear();
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
 if (testMode) $('ai-toggle').hidden = false;
-$('ai-toggle').addEventListener('click', e => { toggleAI(); e.currentTarget.blur(); });
+if (testMode) $('ai-toggle').addEventListener('click', e => { toggleAI(); e.currentTarget.blur(); });
 if (testMode) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput, toggleAI, get ai() { return !!ai; } };

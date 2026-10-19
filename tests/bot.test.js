@@ -56,3 +56,17 @@ test('the bot clears castle floor 1 on a fixed seed within a time cap, never exc
     assert.ok(inWindow <= MAX_PRESSES_PER_SECOND, `${inWindow} presses within one second`);
   }
 });
+
+test('the press limiter caps rising edges even when the policy asks for far more', () => {
+  const game = castle(), flip = { n: 0 };
+  const bot = createBot({ decide: () => { flip.n++; return { dir: flip.n % 2 ? 1 : -1, jump: flip.n % 2 === 0, attack: flip.n % 2 === 0, dash: flip.n % 2 === 0, magic: false, urgent: true }; } });
+  const edges = []; let prev = {};
+  for (let i = 0; i < 300; i++) {
+    const input = bot.input(game);
+    for (const key of ['left', 'right', 'jump', 'attack', 'dash']) if (input[key] && !prev[key]) edges.push(game.time);
+    prev = input;
+    game.update(DT, input);
+  }
+  assert.ok(edges.length > 20, 'the policy did press');
+  for (const t of edges) assert.ok(edges.filter(x => x > t - 1 && x <= t).length <= MAX_PRESSES_PER_SECOND);
+});
