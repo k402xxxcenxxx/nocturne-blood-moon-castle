@@ -43,6 +43,8 @@ function hitTime(e, px, py) {
     }
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
   }
+  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton: tell, then a 0.15 s lunge
+  if (e.move === 'counter' && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // castle shield shove
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
@@ -122,7 +124,8 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
       return dx >= -e.w / 2 && dx <= p.reach + e.w / 2 && e.y >= p.y - 88 && e.y - e.h <= p.y - 4;
     };
     const blockedBy = e => e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
-    const flinches = e => !e.heavy && e.type !== 'knight' && e.type !== 'boss' && e.armor <= 0 && !blockedBy(e) && e.frozen <= 0;
+    // castle attacks have hyper armor from tell start, so a light hit cancels nothing
+    const flinches = e => !castle && !e.heavy && e.type !== 'knight' && e.type !== 'boss' && e.armor <= 0 && !blockedBy(e) && e.frozen <= 0;
     const dirAway = e => Math.sign(p.x - e.x) || -p.dir;
     let danger = Infinity;
     if (threats.length) {
@@ -142,7 +145,7 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
     // --- offence and navigation when nothing is about to land
     if (danger > .45) {
       const known = foes.filter(e => api.known(e, now));
-      const punish = known.filter(e => e.heavy && e.punishable && e.recover > 0 && Math.abs(e.x - p.x) < 330);
+      const punish = known.filter(e => e.punishable && e.recover > 0 && Math.abs(e.x - p.x) < 330);
       const pool = punish.length ? punish : known;
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;

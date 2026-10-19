@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD } from '../core.js';
+import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2793,7 +2793,7 @@ test('castle heavy: sword hits and shots do not cancel the wind-up, Eclipse does
   const { game, player, e } = heavyFoe();
   player.blood = 150; advance(game, .02);
   const poise = e.poise; game.attack(); advance(game, .1);
-  assert.ok(e.heavy && e.tell > 0 && e.poise === poise && e.stun === 0, 'hyper armor');
+  assert.ok(e.heavy && e.tell > 0 && e.poise < poise && e.stun === 0, 'hyper armor: posture still drops, no flinch');
   assert.ok(e.hp < 500, 'damage still lands');
   player.magicCd = 0; game.magic();
   assert.ok(!e.heavy && e.tell === 0 && e.warn === null, 'Eclipse cancels');
@@ -2807,13 +2807,14 @@ test('castle heavy: an Eclipse-cancelled heavy still starts the cooldown and the
     assert.ok(e.heavy, type + ' winds up');
     if (wait === null) { for (let i = 0; i < 240 && !(e.strikeT > 0); i++) advance(game, 1 / 120); advance(game, .1); assert.ok(e.strikeT > 0, 'mid-travel'); }
     player.magicCd = 0; game.magic();
-    assert.ok(!e.heavy && e.heavyCd >= HEAVY_CD - .1 && game.heavyGap > 0, type + ' cooldown set on cancel');
+    advance(game, .1);
+    assert.ok(!e.heavy && e.heavyCd >= HEAVY_CD - .2 && e.token === '' && game.gaps.length > 0, type + ' cooldown set and token in its retake gap on cancel');
   }
 });
 
 test('castle heavy: hit events carry punish only while the enemy recovers from its heavy', () => {
   const { game, player, events, e } = heavyFoe();
-  player.blood = 200; player.invulnerable = 99; advance(game, .02);
+  player.blood = 200; player.invulnerable = 99; advance(game, .02); e.cd = 1e9; // no light attacks after the heavy
   game.damageEnemy(e, 1, 1, false, false); // during the tell
   advance(game, .9);
   game.damageEnemy(e, 1, 1, false, false); // recovering
@@ -2833,7 +2834,7 @@ test('castle heavy: recovery lasts about a second, punish hits pay +2 and double
   assert.equal(player.blood, 105, '+3 hit +2 punish');
   assert.equal(poise - e.poise, 34, 'poise damage doubled (17 x 2)');
   advance(game, 2); // recovery over, heavy cooldown still running
-  assert.ok(!e.heavy && !e.punishable);
+  assert.ok(!e.heavy);
   advance(game, 1.5);
   assert.equal(heavyStrikes(events).length, 1, 'still on cooldown (light attacks only)');
   advance(game, 2.5);
@@ -2939,4 +2940,272 @@ test('castle heavy: recovery keeps counting down while hit-stunned', () => {
   let t = 0;
   while (e.heavy && t < 5) { game.damageEnemy(e, 1, 1, false, false, false, 1); game.freeze = 0; advance(game, .05); t += .05; }
   assert.ok(!e.heavy && t < 2.5, 'recovery ends on time despite repeated hits');
+});
+
+// ---- Castle combat systems (#50 PR 1): hyper armor, posture, steady, tokens, glint, delayed heavies, skeleton and shield kits ----
+function lightFoe(type = 'skeleton', gap = 40, floor = 1) {
+  const c = castle(42, floor);
+  c.game.rand = () => .99; // heavy and read rolls fail: only light attacks
+  const e = enemy(c.game, c.player.x + gap, { type });
+  e.cd = 0; e.dir = -1;
+  return { ...c, e };
+}
+const holders = game => game.enemies.filter(e => e.hp > 0 && e.token);
+
+test('castle hyper armor: a hit during a light tell lowers posture by half but does not cancel, flinch or knock back', () => {
+  const { game, player, e, events } = lightFoe();
+  player.blood = 150; advance(game, .02);
+  assert.ok(e.tell > 0 && !e.heavy, 'a light tell started');
+  const tell = e.tell, poise = e.poise;
+  game.damageEnemy(e, 5, 1, false, false, false, 10);
+  assert.ok(e.tell > 0 && e.tell <= tell && e.stun === 0 && e.vx === 0 && e.steady === 0, 'no cancel, stun, knockback or steady');
+  assert.equal(poise - e.poise, 5, 'posture damage x0.5 during a tell');
+  advance(game, .6);
+  assert.ok(events.some(ev => ev.type === 'enemySwing') && player.blood < 150, 'the attack still lands');
+});
+
+test('castle posture: a break cancels the attack, frees the token and stuns; the first sword hit in the stun is a riposte', () => {
+  const { game, player, e, events } = lightFoe();
+  player.blood = 150; player.combo = 0; advance(game, .02);
+  assert.equal(e.token, 'light'); assert.equal(holders(game).length, 1);
+  e.poise = 1; game.damageEnemy(e, 1, 1, false, false, false, 10);
+  assert.ok(e.tell === 0 && e.warn === null && e.stun === STAGGER_STUN && e.riposte, 'cancelled and stunned');
+  const st = events.find(ev => ev.type === 'stagger');
+  assert.ok(st.cancelled === true && st.enemy === 'skeleton');
+  game.freeze = 0; advance(game, .02);
+  assert.equal(e.token, ''); assert.ok(game.gaps.length > 0, 'token freed, retake gap running');
+  player.blood = 100; const hp = e.hp; player.combo = 1; player.move = ''; player.dir = 1; game.hitSet = new Set(); game.hitTargets();
+  assert.equal(hp - e.hp, Math.round(player.damage * 1.5), 'riposte damage x1.5');
+  assert.equal(player.blood, 100 + 3 + 5, 'hit plus riposte blood');
+  assert.equal(events.filter(ev => ev.type === 'riposte').length, 1);
+  const hp2 = e.hp; game.hitSet = new Set(); game.hitTargets();
+  assert.equal(hp2 - e.hp, player.damage, 'only the first hit is a riposte');
+  assert.equal(events.filter(ev => ev.type === 'riposte').length, 1);
+});
+
+test('castle posture: refills only after 1.5 s without posture damage, 25% of max per second', () => {
+  const { game, e } = lightFoe('skeleton', 300);
+  e.cd = 1e9;
+  game.damageEnemy(e, 1, 1, false, false, false, 20);
+  const low = e.poise; assert.ok(low < e.maxPoise);
+  advance(game, 1.4); assert.equal(e.poise, low, 'no regeneration before 1.5 s');
+  advance(game, .6); assert.ok(e.poise > low, 'regenerating');
+  const mid = e.poise; advance(game, 1);
+  assert.ok(e.poise - mid > e.maxPoise * .2, 'about a quarter of max per second');
+  game.damageEnemy(e, 1, 1, false, false, false, 5); const hit = e.poise; advance(game, 1);
+  assert.equal(e.poise, hit, 'a new hit restarts the wait');
+});
+
+test('castle flinch budget: a hit flinches only while steady is 0, and each flinch sets steady', () => {
+  const { game, e } = lightFoe('skeleton', 300);
+  e.cd = 1e9;
+  game.damageEnemy(e, 1, 1, false, false, false, 1);
+  assert.ok(e.stun > 0 && e.steady > e.stun, 'first hit flinches and sets steady');
+  advance(game, .3); assert.equal(e.stun, 0); assert.ok(e.steady > 0);
+  const vx = e.vx, poise = e.poise;
+  game.damageEnemy(e, 1, 1, false, false, false, 4);
+  assert.ok(e.stun === 0 && e.vx === vx && e.poise < poise, 'steady: damage and posture, no stun or knockback');
+  advance(game, 1);
+  assert.equal(e.steady, 0);
+  game.damageEnemy(e, 1, 1, false, false, false, 1);
+  assert.ok(e.stun > 0, 'flinches again once steady has run out');
+  const { game: g, e: r } = lightFoe(); // recovery hits never flinch
+  advance(g, .02 + .5 + .05); assert.ok(r.recover > 0 && r.punishable, 'light recovery');
+  g.damageEnemy(r, 1, 1, false, false, false, 1);
+  assert.equal(r.stun, 0);
+});
+
+test('castle tokens: never more than 2 holders or 1 heavy holder, and enemies keep taking turns', () => {
+  const { game, player, events } = castle(42, 2);
+  game.enemies = [];
+  game.rand = (r => () => { r = (r * 16807) % 2147483647; return r / 2147483647; })(7);
+  player.invulnerable = 1e9; player.blood = 200;
+  for (const [type, dx] of [['skeleton', 50], ['skeleton', 70], ['shield', 90], ['skeleton', -60], ['shield', -90]]) { const e = enemy(game, player.x + dx, { type, hp: 1e6 }); e.cd = 0; e.maxPoise = e.poise = 1e6; }
+  let maxHolders = 0, maxHeavy = 0, maxBusy = 0;
+  for (let i = 0; i < 120 * 25; i++) {
+    game.update(1 / 120, {}); player.blood = 200;
+    maxHolders = Math.max(maxHolders, holders(game).length);
+    maxHeavy = Math.max(maxHeavy, holders(game).filter(e => e.token === 'heavy').length);
+    maxBusy = Math.max(maxBusy, game.enemies.filter(e => game.attacking(e) || e.recover > 0).length);
+  }
+  assert.ok(maxHolders === ATTACK_TOKENS && maxHeavy <= 1 && maxBusy <= ATTACK_TOKENS, `holders ${maxHolders}, heavy ${maxHeavy}, busy ${maxBusy}`);
+  assert.ok(events.filter(ev => ev.type === 'enemyTell' || ev.type === 'enemyHeavy').length >= 6, 'attacks keep coming');
+  assert.ok(events.some(ev => ev.type === 'enemyHeavy'), 'a heavy was rolled');
+});
+
+test('castle tokens: a starved enemy outranks one in front of the hero', () => {
+  for (const [wait, winner] of [[0, 'front'], [STARVED + 1, 'behind']]) {
+    const { game, player } = castle();
+    game.rand = () => .99; player.dir = 1;
+    const hold = enemy(game, player.x + 300); Object.assign(hold, { token: 'light', tell: 5, cd: 1e9 }); // one of the two tokens is taken
+    const front = enemy(game, player.x + 40), behind = enemy(game, player.x - 40);
+    Object.assign(front, { cd: 0, dir: -1 }); Object.assign(behind, { cd: 0, dir: 1, wait });
+    game.update(1 / 120, {});
+    assert.equal(front.token === 'light', winner === 'front');
+    assert.equal(behind.token === 'light', winner === 'behind');
+    assert.ok(holders(game).length <= ATTACK_TOKENS);
+  }
+});
+
+test('castle on-screen rule: no tell starts beyond 320 px left or 560 px right of the hero', () => {
+  const { game, player } = castle();
+  player.x = 800; game.rand = () => .99;
+  for (const [dx, ok] of [[559, true], [561, false], [-319, true], [-321, false]]) assert.equal(game.canWindUp(enemy(game, player.x + dx)), ok, `dx ${dx}`);
+  const mage = enemy(game, player.x - 455, { type: 'mage' }); mage.cd = 0;
+  const near = enemy(game, player.x + 330, { type: 'mage' }); near.cd = 0;
+  advance(game, 1);
+  assert.equal(mage.tell, 0, 'a mage off screen to the left never starts a tell');
+  assert.ok(near.tell > 0 || near.cd > 0, 'on screen to the right it does');
+});
+
+test('castle heavies: never delayed on floors 1-4, delayed only after the heavy was met on an earlier floor (floors 5+)', () => {
+  const tellOf = (floor, type) => {
+    const c = castle(42, floor); c.game.rand = () => 0;
+    const e = enemy(c.game, c.player.x + (type === 'spear' ? 150 : 50), { type }); e.cd = 0; e.dir = -1;
+    advance(c.game, .02);
+    return { e, heavyEvent: c.events.find(ev => ev.type === 'enemyHeavy') };
+  };
+  for (const floor of [1, 2, 3, 4]) { const { e, heavyEvent } = tellOf(floor, 'skeleton'); assert.ok(e.heavy && !e.delayed && heavyEvent.delayed === false && e.tell < .9, `floor ${floor}`); }
+  const five = tellOf(5, 'skeleton');
+  assert.ok(five.e.delayed && five.heavyEvent.delayed === true && five.e.tell > 1.2, 'floor 5: a cleave met on floor 1 may be delayed (rolled with game.rand())');
+  assert.ok(!tellOf(5, 'spear').e.delayed, 'a lunge is first met on floor 5, so it is never delayed there');
+  assert.ok(tellOf(6, 'spear').e.delayed);
+  assert.ok(tellOf(8, 'skeleton').e.delayed);
+});
+
+test('castle glint: every heavy flashes exactly 0.4 s before contact, delayed or not', () => {
+  for (const floor of [1, 5]) {
+    const c = castle(42, floor); c.game.rand = () => 0; c.player.invulnerable = 99;
+    const e = enemy(c.game, c.player.x + 50); e.cd = 0; e.dir = -1;
+    let glintAt = null, strikeAt = null;
+    for (let i = 0; i < 120 * 3 && strikeAt === null; i++) {
+      c.game.update(1 / 120, {});
+      if (glintAt === null && c.events.some(ev => ev.type === 'enemyGlint')) { glintAt = c.game.time; assert.ok(e.glint > 0); }
+      if (c.events.some(ev => ev.type === 'enemySwing' && ev.heavy)) strikeAt = c.game.time;
+    }
+    assert.ok(Math.abs(strikeAt - glintAt - .4) <= 1 / 120 + 1e-9, `floor ${floor}: ${strikeAt - glintAt}`);
+    assert.equal(c.events.filter(ev => ev.type === 'enemyGlint').length, 1);
+    assert.equal(c.game.floor >= 5, c.events.find(ev => ev.type === 'enemyHeavy').delayed);
+  }
+});
+
+test('castle skeleton: slash ends in a punishable recovery that holds the token; a recovery hit gives +2 and x2 posture, with no flinch', () => {
+  const { game, player, e } = lightFoe();
+  player.blood = 150; advance(game, .02 + .5 + .05);
+  assert.ok(e.recover > 0 && e.punishable && e.token === 'light' && e.tell <= 0);
+  player.blood = 100; const poise = e.poise; player.combo = 1; player.move = ''; player.dir = 1; game.hitSet = new Set(); game.hitTargets();
+  assert.equal(player.blood, 105); assert.equal(poise - e.poise, 34); assert.equal(e.stun, 0);
+  e.cd = 9; advance(game, .6); // no next slash, so the release is visible
+  assert.equal(e.recover, 0, 'recovery over');
+});
+
+test('castle skeleton: stepcut backsteps with armor, then lunges along a path fixed at tell start', () => {
+  const { game, player, e, events } = lightFoe('skeleton', 95);
+  game.rand = () => 0; e.dir = -1; player.blood = 150; e.heavyCd = HEAVY_CD; // cleave cooling down: rolls first at this distance
+  game.update(1 / 120, { right: true });
+  assert.equal(e.move, 'stepcut'); assert.ok(e.stepT > 0 && e.token === 'light');
+  advance(game, .05);
+  const x = e.x; game.damageEnemy(e, 1, 1, false, false, false, 2);
+  assert.ok(e.stun === 0 && e.stepT > 0, 'hyper armor in the backstep');
+  advance(game, .3); assert.ok(e.x > x, 'steps away from the hero');
+  assert.ok(e.tell > 0 && e.warn.kind === 'stepcut', 'then the tell');
+  const box = { ...e.warn.box }, to = e.warn.to; player.x -= 60; advance(game, .2);
+  assert.deepEqual(e.warn.box, box); assert.equal(e.warn.to, to);
+  player.x += 60; player.invulnerable = 0; advance(game, .7);
+  assert.ok(events.some(ev => ev.type === 'enemySwing' && ev.kind === 'stepcut'));
+  assert.ok(player.blood < 150, 'a hero who stays in the box is cut');
+});
+
+test('castle shield: two blocked hits within 1 s trigger a counter shove (tell, 120 px push, recovery)', () => {
+  const { game, player, e, events } = lightFoe('shield', 50);
+  player.blood = 150; player.dir = 1; player.x = 600; e.x = 650;
+  game.damageEnemy(e, 5, 1, false, false, true, 5);
+  assert.equal(e.counterT, 0, 'one block is not enough');
+  game.freeze = 0; game.damageEnemy(e, 5, 1, false, false, true, 5);
+  assert.ok(e.counterT > 0);
+  game.freeze = 0; e.x = player.x + 50; e.dir = -1; e.cd = 0; game.update(1 / 120, {});
+  assert.ok(e.move === 'counter' && e.tell > .4 && e.token === 'light', 'counter tell');
+  const x = player.x; advance(game, .5);
+  assert.ok(events.some(ev => ev.type === 'enemySwing' && ev.kind === 'counter'));
+  assert.ok(player.blood < 150 && x - player.x >= 110, `hero shoved ${x - player.x}`);
+  assert.ok(e.recover > 0 && e.punishable);
+  const { game: g, e: s } = lightFoe('shield', 50);
+  g.damageEnemy(s, 5, 1, false, false, true, 5); advance(g, 1.2); g.damageEnemy(s, 5, 1, false, false, true, 5);
+  assert.equal(s.counterT, 0, 'blocks more than 1 s apart do not count');
+});
+
+test('castle spacing: without a token a melee enemy backs off to just outside its probe range and never walks into the hero', () => {
+  const { game, player, e } = lightFoe('skeleton', 50);
+  e.cd = 1e9; player.x = 600; e.x = 650;
+  advance(game, 1.5);
+  const d = e.x - player.x;
+  assert.ok(d >= 100 && d <= 140 && e.tell === 0, `holds at ${d}`);
+  player.x = e.x - 330; advance(game, 3);
+  assert.ok(e.x - player.x >= 100 && e.x - player.x <= 140, 'steps in when the hero backs off');
+});
+
+test('castle facing: a minion locked in a tell does not turn; outside attacks it turns after its re-face delay', () => {
+  const { game, player, e } = lightFoe('skeleton', 100);
+  e.cd = 1e9; e.dir = 1; advance(game, .1);
+  assert.equal(e.dir, 1, 'still facing away inside the 0.15 s delay');
+  advance(game, .1); assert.equal(e.dir, -1);
+  const c = lightFoe(); advance(c.game, .02); assert.ok(c.e.tell > 0);
+  c.player.x = c.e.x + 100; advance(c.game, .1);
+  assert.equal(c.e.dir, -1, 'facing locked at tell start');
+});
+
+test('castle skeleton: a failed cleave roll does not block the stepcut roll', () => {
+  const { game, player, e } = lightFoe('skeleton', 95);
+  let n = 0; game.rand = () => [.99, 0][n++] ?? 0; // cleave roll fails, stepcut roll succeeds
+  e.dir = -1; player.blood = 150;
+  game.update(1 / 120, { right: true });
+  assert.ok(e.rollT > 0, 'the cleave roll failed');
+  assert.equal(e.move, 'stepcut');
+});
+
+test('castle mash (QA 50 PR 1): a fresh skeleton in spear reach starts a tell or hits back before a stationary hold-attack kills it', () => {
+  // Regression: spawn cooldown (1-2 s) keeps a fresh skeleton in the hold ring (112-132 px), inside spear reach (~141 px), so it dies to pokes with no tell.
+  const { game, player, events } = castle(42, 1);
+  game.spawnEnemy('skeleton', player.x + 120, game.stage);
+  const e = game.enemies.at(-1); e.dir = -1;
+  for (let time = 0; time < 3 && e.hp > 0; time += 1 / 120) game.update(1 / 120, { attack: true });
+  const tells = events.filter(ev => ev.type === 'enemyTell' && ev.enemy === 'skeleton').length;
+  assert.ok(tells > 0 || player.blood < 100, `no tell and no damage taken (hp ${Math.round(e.hp)}, blood ${Math.round(player.blood)})`);
+});
+
+test('castle poke: the answer to a poke from 90 px never hits a stationary hero without a readable tell', () => {
+  // A provoked skeleton may answer with its heavy cleave (box 10-125 px). That is fine only when it is fully telegraphed: enemyHeavy at least 0.85 s
+  // and enemyGlint 0.4 s before the hit. Seed 11 at 90 px reproduces the cleave answer.
+  const events = [];
+  let steps = 0;
+  const game = new Game(event => events.push({ ...event, at: steps }), 11, 'castle');
+  game.start(); game.setWeapon('spear'); game.descend(); game.loadFloor(1);
+  game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
+  const player = game.player; player.blood = 100;
+  game.spawnEnemy('skeleton', player.x + 90, game.stage);
+  const e = game.enemies.at(-1); e.dir = -1; e.cd = 0; e.poiseHit = 0;
+  const tick = input => { steps++; game.update(1 / 120, input); };
+  tick({ attack: true });
+  for (let i = 0; i < 1.5 * 120; i++) { game.traps = []; tick({}); }
+  const hits = events.filter(ev => ev.type === 'hurt');
+  assert.ok(hits.every(h => h.heavy), 'no light hit on a stationary hero');
+  for (const h of hits) {
+    const heavy = events.filter(ev => ev.type === 'enemyHeavy' && ev.at <= h.at).at(-1), glint = events.filter(ev => ev.type === 'enemyGlint' && ev.at <= h.at).at(-1);
+    assert.ok(heavy && (h.at - heavy.at) / 120 >= .85 - 1e-9, 'a heavy tell of at least 0.85 s came first');
+    assert.ok(glint && Math.abs((h.at - glint.at) / 120 - .4) <= 1 / 120 + 1e-9, 'the glint came 0.4 s before the hit');
+  }
+});
+
+test('castle poke: one answer per poke (a landing poke arms exactly one tell)', () => {
+  const { game, player, events } = castle(42, 1);
+  game.rand = () => .99; // no extra rolls
+  const e = enemy(game, player.x + 130, { hp: 1e6 }); e.cd = 0; e.heavyCd = 99; e.dir = -1; e.maxPoise = e.poise = 1e6;
+  const tells = () => events.filter(ev => ev.type === 'enemyTell' && ev.enemy === 'skeleton').length;
+  game.update(1 / 120, { attack: true }); // one spear poke lands at 130 px
+  assert.ok(e.provoke > 0, 'armed');
+  advance(game, .3);
+  assert.equal(tells(), 1); assert.equal(e.provoke, 0, 'the tell start spends the arming');
+  advance(game, 1.2); assert.equal(tells(), 1, 'no second tell from the same poke');
+  e.cd = 99; e.token = ''; player.x = e.x - 100; player.dir = 1; game.hitSet = new Set(); player.combo = 1; player.move = ''; game.hitTargets();
+  advance(game, .3); assert.equal(tells(), 2, 'a second landing poke draws a second tell despite the cooldown');
 });

@@ -167,6 +167,7 @@ function handleEvent(e) {
     case 'stagger':
       audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); rumble(e.boss ? 7 : 5, .18);
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
+      if (e.enemy) effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#ffd36e' }); // castle posture break: gold ring (the crack is drawn on the body)
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
     case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
@@ -176,6 +177,15 @@ function handleEvent(e) {
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
     case 'enemyHeavy': audio.play('heavyWarn'); break;
+    case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
+    case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
+      const cue = { slash: 'tellSlash', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
+      audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
+    }
+    case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
+      audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
+      burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#fff0b0', r: 90 }); break;
     case 'enemySwing':
       if (e.heavy) audio.play('heavyWhoosh'); else
       if (e.kind === 'spear') audio.play('thrust');
@@ -290,7 +300,7 @@ function openSettings() {
 }
 function openHelp() {
   const castle = game.mode === 'castle' && game.state !== 'title';
-  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'], ...(castle ? [['drop', 'castleHeavy']] : []) ];
+  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'], ...(castle ? [['drop', 'castleHeavy'], ['shield', 'castleArmor']] : []) ];
   openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`, { cost: SWING_COST, damage: HEAVY_DAMAGE })}</p></div>`).join('')}</div><p class="modal-footnote">${t(castle ? 'help.castleFootnote' : 'help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function synergyLine(id) {
@@ -603,9 +613,11 @@ function render(dt) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
       }
-      if (e.maxPoise && e.poise < e.maxPoise && (e.type === 'knight' || e.type === 'shield' || e.type === 'boss')) {
-        const bw = e.type === 'boss' ? 56 : 30, by = Math.round(e.y + 5);
-        ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - bw / 2), by, bw, 3); ctx.fillStyle = e.punishable ? '#ffd36e' : '#c9a85a'; ctx.fillRect(Math.round(e.x - bw / 2 + 1), by + 1, Math.max(0, Math.round((bw - 2) * e.poise / e.maxPoise)), 1);
+      const brk = e.riposte && e.stun > 0; // posture bar: only below max (or flashing while broken, until the riposte lands)
+      if (e.maxPoise && (brk || e.poise < e.maxPoise) && (game.mode === 'castle' || e.type === 'knight' || e.type === 'shield' || e.type === 'boss') && e.type !== 'bat') {
+        const bw = e.type === 'boss' ? 56 : 30, bx = Math.round(e.x - bw / 2), by = Math.round(e.y + 5);
+        ctx.fillStyle = brk ? '#fff0b0' : '#13111b'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5); ctx.fillStyle = '#13111b'; ctx.fillRect(bx, by, bw, 3);
+        ctx.fillStyle = brk ? (!settings.shake || (worldTime * 12 | 0) % 2 ? '#fff0b0' : '#ffd36e') : e.punishable ? '#ffd36e' : '#c9a85a'; ctx.fillRect(bx + 1, by + 1, brk ? bw - 2 : Math.max(0, Math.round((bw - 2) * e.poise / e.maxPoise)), 1);
       }
       if (e.stun > 0 && e.armor > 0 && e.hp > 0) { // stun with armor left = a stagger stun (flinch stuns need armor 0): ring of gold stars over the head
         const ry = Math.round(e.y - e.h - 6), rw = e.type === 'boss' ? 26 : 16; ctx.fillStyle = '#ffd36e';
@@ -618,7 +630,7 @@ function render(dt) {
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
-      if (e.tell > 0) { ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const bx = Math.round(e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
+      if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
@@ -653,12 +665,17 @@ function watchBlood() {
   if (live && prevBlood !== null && p.blood > prevBlood + .5) audio.play(prevBlood < BLOOD_HALF && p.blood >= BLOOD_HALF ? 'bloodHalf' : 'bloodGain', .3 + p.blood / BLOOD_MAX * 1.2);
   prevBlood = live ? p.blood : null;
 }
+function watchHold() { // delayed-heavy hold loop: on only while a delayed heavy waits before its glint; no allocation
+  let hold = false;
+  if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = true; break; }
+  audio.setHold(hold);
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   if (ai) aiModal(dt);
   const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
-  watchBlood();
+  watchBlood(); watchHold();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
