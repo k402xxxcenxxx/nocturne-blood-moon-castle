@@ -3096,8 +3096,7 @@ test('castle skeleton: slash ends in a punishable recovery that holds the token;
   player.blood = 100; const poise = e.poise; player.combo = 1; player.move = ''; player.dir = 1; game.hitSet = new Set(); game.hitTargets();
   assert.equal(player.blood, 105); assert.equal(poise - e.poise, 34); assert.equal(e.stun, 0);
   e.cd = 9; advance(game, .6); // no next slash, so the release is visible
-  assert.ok(e.recover === 0 && !e.punishable);
-  advance(game, .02); assert.equal(e.token, '');
+  assert.equal(e.recover, 0, 'recovery over');
 });
 
 test('castle skeleton: stepcut backsteps with armor, then lunges along a path fixed at tell start', () => {

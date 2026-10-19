@@ -83,6 +83,7 @@ const LIGHT_CD = { skeleton: 1 }; // castle light-attack cooldown overrides (s);
 const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
 const TRIGGER = { bat: 30, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
 const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35 }; // castle re-face delay outside attacks
+const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
 const DELAY_CHANCE = floor => floor >= 8 ? .5 : floor >= 5 ? .3 : 0;
@@ -809,8 +810,8 @@ export class Game {
   // Does o ask for a token right now: ready, not busy, and the hero is inside its trigger range?
   wantsToken(o) {
     const p = this.player;
-    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && o.cd <= 0 && o.turn <= 0
-      && Math.abs(o.x - p.x) < TRIGGER[o.type] && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
+    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
+      && Math.abs(o.x - p.x) < (this.provoked(o) ? PROVOKED_REACH : TRIGGER[o.type]) && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
   }
   // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
   // one in front of the hero, then the longest waiting. Elsewhere: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once.
@@ -980,9 +981,9 @@ export class Game {
     } else if (castle && this.startMove(e, distance)) {
       e.vx = 0; // skeleton stepcut / shield counter started
     } else {
-      const near = distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0;
+      const near = distance < (this.provoked(e) ? PROVOKED_REACH : e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && this.ready(e);
       if (near && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = (castle && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.stage * .12); }
-      else if (castle && HOLD_RING[e.type] && (near || e.cd > 0 || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
+      else if (castle && HOLD_RING[e.type] && (near || !this.ready(e) || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
         const lo = HOLD_RING[e.type];
         e.vx = distance < lo ? -face * e.speed * .6 : distance > lo + 20 ? e.dir * e.speed : 0;
         e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
@@ -990,6 +991,10 @@ export class Game {
     }
     if (e.affix === 'swift' && e.tell > 0 && !(tellBefore > 0)) e.tell = Math.max(e.heavy ? .7 : .3, e.tell * .8); // Swift: shorter warnings, never under 0.3 s (heavy 0.7 s)
   }
+  // Castle skeleton / shield bearer that took posture damage in the last 1.5 s: it answers a poke at once (no spawn or attack cooldown parking it in the hold
+  // ring, inside the hero's reach) and may start its light tell from PROVOKED_REACH, so a hero who pokes from a distance always meets a tell.
+  provoked(e) { return this.mode === 'castle' && !!HOLD_RING[e.type] && e.poiseHit > 0 && e.recover <= 0; }
+  ready(e) { return e.cd <= 0 || this.provoked(e); }
   tokensFree() { return ATTACK_TOKENS - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
   // A token is taken when a tell (or the stepcut backstep) starts and released once the whole attack, recovery included, is over or cancelled.
   syncToken(e) {
