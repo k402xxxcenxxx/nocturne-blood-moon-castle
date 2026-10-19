@@ -300,7 +300,7 @@ function openSettings() {
 }
 function openHelp() {
   const castle = game.mode === 'castle' && game.state !== 'title';
-  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'], ...(castle ? [['drop', 'castleHeavy']] : []) ];
+  const items = [ ['wind', 'move'], ['jump', 'jump'], ['sword', 'combo'], ['wind', 'dash'], ['moon', castle ? 'castleMagic' : 'magic'], ['gem', castle ? 'castleBlood' : 'relics'], ...(castle ? [['drop', 'castleHeavy'], ['shield', 'castleArmor']] : []) ];
   openModal(`<div class="modal-eyebrow">${t('decor.help')}</div><h2 id="modal-title">${t('help.title')}</h2><div class="help-grid">${items.map(([symbol, key]) => `<div class="help-item">${icon(symbol)}<strong>${t(`help.${key}`)}</strong><p>${t(`help.${key}Text`, { cost: SWING_COST, damage: HEAVY_DAMAGE })}</p></div>`).join('')}</div><p class="modal-footnote">${t(castle ? 'help.castleFootnote' : 'help.footnote')}</p><div class="modal-buttons"><button class="primary-button" data-command="resume">${t('help.ready')}</button></div>`, 'help');
 }
 function synergyLine(id) {
