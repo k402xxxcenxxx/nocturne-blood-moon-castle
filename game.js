@@ -176,6 +176,8 @@ function handleEvent(e) {
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
     case 'enemyHeavy': audio.play('heavyWarn'); break;
+    case 'enemyGlint': audio.play('block', .5); burst(e.x, e.y, '#ffffff', 6, 120); break; // placeholder release cue (#50): art and audio roles replace it
+    case 'riposte': audio.play('crit', 1); burst(e.x, e.y, '#ffd36e', 14, 220); break; // placeholder (#50)
     case 'enemySwing':
       if (e.heavy) audio.play('heavyWhoosh'); else
       if (e.kind === 'spear') audio.play('thrust');

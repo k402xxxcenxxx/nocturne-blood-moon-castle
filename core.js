@@ -66,13 +66,25 @@ export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40,
 const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
-  skeleton: { kind: 'cleave', tell: .85, recover: .9, base: .2, reads: { whiff: .65, dashSpent: .5 } },
+  skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .2, reads: { whiff: .65, dashSpent: .5 } },
   bat: { kind: 'dive', tell: .9, recover: 1, base: .15, reads: { airborne: .6, frenzy: .5 } },
   shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
   knight: { kind: 'greatswing', tell: 1, recover: 1.1, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
 };
-export const HEAVY_CD = 3, HEAVY_GAP = .3, HEAVY_RANGE = 620, HEAVY_WHIFF = .4;
+export const HEAVY_CD = 3, HEAVY_WHIFF = .4;
+// Castle combat systems (#50 PR 1). Posture, flinch budget, attack tokens, glint and delayed heavies; all numbers are playtest starting points.
+export const ATTACK_TOKENS = 2, TOKEN_GAP = .3, STARVED = 2; // tokens for the whole field (at most 1 heavy), retake gap, s of denial after which an enemy outranks the rest
+export const STEADY = .5, POISE_REGEN_DELAY = 1.5, POISE_REGEN = .25, STAGGER_STUN = 1.5, RIPOSTE_MUL = 1.5, RIPOSTE_BLOOD = 5, GLINT_LEAD = .4, DELAY_EXTRA = .4;
+export const SCREEN_LEFT = 320, SCREEN_RIGHT = 560; // a tell may only start within this many px left / right of the hero
+const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40 };
+const LIGHT_RECOVER = { skeleton: .45, shield: .6 }; // castle light-attack recovery (standing still, punishable); other types join with their kits
+const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
+const TRIGGER = { bat: 30, skeleton: 60, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
+const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35 }; // castle re-face delay outside attacks
+const HOLD_RING = { skeleton: 112, shield: 100 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
+const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
+const DELAY_CHANCE = floor => floor >= 8 ? .5 : floor >= 5 ? .3 : 0;
 export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 128 } };
 const SLICE_EXCLUDED = ['vital', 'leech', 'mana', 'arcane', 'lunaticMoon', 'nightwalk']; // relics that only touch HP, MP or magic cost
 export const SLICE_POOL = RELICS.filter(r => !SLICE_EXCLUDED.includes(r.id)).map(r => r.id);
@@ -110,6 +122,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
+    this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.loadStage(0);
   }
   rand() { let t = this.randomState += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
@@ -138,7 +151,7 @@ export class Game {
     this.stage = index;
     const spec = STAGES[index], boss = index === 4, castle = this.mode === 'castle';
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
-    this.tier = tier; this.heavyGap = 0; // splitting copies use the floor tier
+    this.tier = tier; this.gaps = []; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
     this.worldWidth = spec.width;
@@ -330,11 +343,11 @@ export class Game {
     this.emit('break', { x: o.x, y: o.y - o.h / 2, kind: o.kind, ...(o.kind === 'altar' ? { traps: o.traps } : {}) });
   }
   spawnEnemy(type, x, stage = 0) {
-    const maxPoise = { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
+    const maxPoise = (this.mode === 'castle' && CASTLE_POISE[type]) || { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12) * scale.hp);
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     return this.enemies.at(-1);
   }
   update(dt, input = {}) {
@@ -348,7 +361,8 @@ export class Game {
     }
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
-    this.heavyGap = Math.max(0, this.heavyGap - dt);
+    this.step = dt;
+    this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
     if (p.frenzy) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
@@ -528,23 +542,28 @@ export class Game {
       this.hitSet?.add(e);
       if (e.kind) { this.damageObstacle(e, Math.round(p.damage * p.swordMul * mul)); continue; }
       const crit = this.rand() < p.crit;
-      const amount = Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1));
+      const rip = this.takeRiposte(e);
+      const amount = Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1) * (rip ? RIPOSTE_MUL : 1));
       // Shield bearers block sword hits from the side they face unless Eclipse broke their guard.
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
       const punish = this.punishing(e);
       p.whiff = 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       p.mp = Math.min(p.maxMp, p.mp + 2);
-      this.gainBlood((blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0));
+      this.gainBlood((blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+      if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
     }
   }
+  // Castle: the first sword hit on an enemy stunned by a posture break is a riposte (x1.5 damage, +5 blood); the flag is spent by that hit.
+  takeRiposte(e) { const r = this.mode === 'castle' && e.riposte && e.stun > 0; if (r) e.riposte = false; return r; }
   // Plunge hits: sword-style damage, never blocked (it comes from above); the fall and the landing shockwave share this.hitSet.
   plungeStrike(e, mul, poise, knock) {
-    const p = this.player, crit = this.rand() < p.crit, punish = this.punishing(e);
+    const p = this.player, crit = this.rand() < p.crit, punish = this.punishing(e), rip = this.takeRiposte(e);
     this.hitSet.add(e);
-    this.damageEnemy(e, Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
+    this.damageEnemy(e, Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1) * (rip ? RIPOSTE_MUL : 1)), Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
     p.mp = Math.min(p.maxMp, p.mp + 2);
-    this.gainBlood(3 + (punish ? 2 : 0));
+    this.gainBlood(3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+    if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
   }
   plungeHit(oldY) {
     const p = this.player;
@@ -594,13 +613,20 @@ export class Game {
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
     const through = this.absorb(e, amount), absorbed = amount - through;
     e.hp -= through; e.flash = .14;
-    const winding = e.heavy && (e.tell > 0 || e.strikeT > 0); // heavy wind-up and strike: hyper armor against everything except Eclipse
+    // Castle (#50): every minion attack (not a priest's bless) has hyper armor from tell start; posture damage still lands at x0.5. Before: heavy wind-up and strike only.
+    const castle = this.mode === 'castle' && e.type !== 'boss';
+    const winding = castle ? this.attacking(e) && !e.blessRadius : e.heavy && (e.tell > 0 || e.strikeT > 0); // hyper armor against everything except Eclipse
     const armored = e.armor > 0 || (winding && !eclipse); // post-stagger armor: damage lands, but no poise damage, flinch or knockback
-    if (e.hp > 0 && !armored) e.poise -= poiseDamage * (blocked ? .25 : 1) * (e.punishable ? 2 : 1);
+    if (e.hp > 0 && (castle ? e.armor <= 0 : !armored) && poiseDamage > 0) {
+      e.poise -= poiseDamage * (blocked ? .25 : 1) * (castle && winding ? .5 : 1) * (e.punishable ? 2 : 1);
+      e.poiseHit = POISE_REGEN_DELAY;
+    }
     const broken = e.hp > 0 && e.poise <= 0;
     // The boss deliberately keeps its warning but still takes a 0.08 s hit stun (see the stun line below).
     const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken && !(eclipse && e.type !== 'boss'); // light hits don't interrupt heavy enemies
+    const hold = castle && !eclipse && (e.recover > 0 || e.steady > 0); // castle: no flinch during recovery or the steady window after a flinch
     if (blocked) {
+      if (castle && e.type === 'shield' && !shot) { e.blocks = e.blocks.filter(t => this.time - t < 1).concat(this.time); if (e.blocks.length >= 2) e.counterT = 1; }
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
       if (!shot) { // a projectile hitting the shield pushes nobody
@@ -612,12 +638,13 @@ export class Game {
       }
       this.emit('block', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, amount, dir: e.dir });
     } else {
-      const quiet = armored && !(eclipse && e.type !== 'boss'); // Eclipse still interrupts armored non-bosses
+      const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold; // Eclipse still interrupts armored non-bosses
       if (!quiet && (!keepsTell || e.type === 'boss')) {
         e.stun = Math.max(e.stun, e.type === 'boss' ? .08 : heavy ? .42 : .24);
+        if (castle) e.steady = e.stun + STEADY;
         e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * (e.type === 'boss' ? .25 : 1);
       } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * .4;
-      if (!quiet && !keepsTell && e.type !== 'boss') { if (winding) this.cancelAttack(e); if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; }
+      if ((!quiet || (castle && e.blessRadius)) && !keepsTell && e.type !== 'boss') { if (winding) this.cancelAttack(e); if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; } // a bless has no armor: any hit cancels it
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy, punish: this.punishing(e) });
     }
@@ -757,24 +784,49 @@ export class Game {
     Object.assign(e, { bossPhase: phase, tell: 0, warn: null, move: '', travel: 0, recover: 0, punishable: false, poise: e.maxPoise, pause: 1.1 });
     this.emit('bossPhase', { phase, x: e.x, y: e.y - e.h * .5 });
   }
+  // An attack in progress: wind-up, strike, the skeleton's backstep and lunge, or a boss charge.
+  attacking(e) { return e.tell > 0 || e.strikeT > 0 || e.stepT > 0 || e.cutT > 0 || e.travel > 0; }
   cancelAttack(e) {
-    if (e.heavy) { e.heavyCd = HEAVY_CD; this.heavyGap = HEAVY_GAP; } // a cancelled heavy cools down like a landed one
+    if (e.heavy) e.heavyCd = HEAVY_CD; // a cancelled heavy cools down like a landed one; its token frees on the next update
     if (e.blessRadius) e.blessCd = 2.5;
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false;
-    e.heavy = false; e.heavyKind = ''; e.strikeT = 0;
+    e.heavy = false; e.heavyKind = ''; e.strikeT = 0; e.stepT = 0; e.cutT = 0; e.glint = 0; e.glinted = false; e.delayed = false;
   }
   stagger(e) {
+    const cancelled = this.attacking(e) || e.recover > 0, castle = this.mode === 'castle' && e.type !== 'boss';
     this.cancelAttack(e); e.poise = e.maxPoise;
-    e.stun = e.type === 'boss' ? .85 : 1;
+    e.stun = e.type === 'boss' ? .85 : castle ? STAGGER_STUN : 1;
+    e.riposte = castle; // the first sword hit during this stun is a riposte
     e.armor = e.stun + (e.type === 'boss' ? .6 : 1.2); // counts down with the stun, so 1.2 s (boss 0.6 s) of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
     this.freeze = Math.max(this.freeze, .055);
-    this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss' });
+    this.emit('stagger', { x: e.x, y: e.y - e.h * .55, boss: e.type === 'boss', enemy: e.type, cancelled });
   }
-  // Wind-up limiter: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once; far enemies never start.
-  canWindUp(e) {
+  // Castle attack tokens (#50). Holders are living enemies with e.token ('light' or 'heavy'); a released token is free again after TOKEN_GAP.
+  get tokens() { return this.enemies.filter(e => e.hp > 0 && e.token).map(e => ({ type: e.type, kind: e.token, x: Math.round(e.x) })); }
+  // Does o ask for a token right now: ready, not busy, and the hero is inside its trigger range?
+  wantsToken(o) {
     const p = this.player;
+    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && o.cd <= 0 && o.turn <= 0
+      && Math.abs(o.x - p.x) < TRIGGER[o.type] && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
+  }
+  // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
+  // one in front of the hero, then the longest waiting. Elsewhere: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once.
+  canWindUp(e, kind = 'light') {
+    const p = this.player;
+    if (this.mode === 'castle' && e.type !== 'boss') {
+      if (e.x - p.x < -SCREEN_LEFT || e.x - p.x > SCREEN_RIGHT) return false; // nothing attacks from off screen
+      if (kind === 'support') return !this.enemies.some(o => o !== e && o.hp > 0 && o.blessRadius && o.tell > 0);
+      const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = ATTACK_TOKENS - holders.length - this.gaps.length;
+      const deny = () => { e.wait += this.step; return false; };
+      if (free <= 0) return deny();
+      if (kind === 'heavy' && holders.some(o => o.token === 'heavy')) return false; // one heavy token; the light attack that follows still asks
+      const rivals = this.enemies.filter(o => o !== e && this.wantsToken(o)), ranged = o => o.type === 'priest' || o.type === 'mage';
+      if (ranged(e) && rivals.some(o => !ranged(o) && Math.abs(o.x - p.x) < 110)) return deny(); // ranged enemies yield to close melee
+      const front = o => (o.x - p.x) * p.dir > 0, ahead = (a, b) => (a.wait >= STARVED) !== (b.wait >= STARVED) ? a.wait >= STARVED : front(a) !== front(b) ? front(a) : a.wait > b.wait;
+      return rivals.filter(o => ahead(o, e)).length < free || deny();
+    }
     if (Math.abs(p.x - e.x) > (e.type === 'boss' ? 620 : 560)) return false;
     return this.enemies.filter(o => o !== e && o.hp > 0 && o.tell > 0 && Math.abs(p.x - o.x) <= 620).length < (this.stage >= 3 ? 3 : 2);
   }
@@ -792,6 +844,7 @@ export class Game {
     const prevX = e.x;
     this.moveEnemy(e, dt);
     e.speed = speed;
+    if (this.mode === 'castle' && e.type !== 'boss') this.syncToken(e);
     // Hero above and a step up is in reach: hold at the platform edge instead of walking off, until the jump cooldown allows the jump.
     // Only while a reachable step exists and the cooldown runs, so it can never wait forever.
     const pl = e.plat, hp = this.player;
@@ -840,7 +893,7 @@ export class Game {
     }
     let blocked = false, ahead = false; // vault only over an obstacle in the facing direction; otherwise just stop
     for (const o of this.obstacles) if (e.y > o.y - o.h + 1 && Math.abs(e.x - o.x) < (e.w + o.w) / 2) { e.x = o.x + (prevX < o.x ? -1 : 1) * (e.w + o.w) / 2; blocked = true; if ((o.x - prevX) * e.dir > 0) ahead = true; }
-    if (ahead && !e.vault && e.type !== 'boss' && !e.heavy && e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) { e.vault = true; e.vy = -520; }
+    if (ahead && !e.vault && e.type !== 'boss' && !e.heavy && !(e.stepT > 0 || e.cutT > 0) && e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0)) { e.vault = true; e.vy = -520; }
     return blocked;
   }
   moveEnemy(e, dt) {
@@ -850,21 +903,33 @@ export class Game {
     e.stun = Math.max(0, e.stun - dt);
     e.armor = Math.max(0, e.armor - dt);
     e.guardBreak = Math.max(0, e.guardBreak - dt);
+    const castle = this.mode === 'castle' && e.type !== 'boss';
+    if (castle) {
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.counterT = Math.max(0, e.counterT - dt); e.glint = Math.max(0, e.glint - dt);
+      if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
+      if (e.stun <= 0) e.riposte = false;
+    }
     if (e.frozen > 0) { e.vx = 0; return; } // frozen: cannot move or attack (warnings were cancelled)
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt); e.rollT = Math.max(0, e.rollT - dt); e.heavyCd = Math.max(0, e.heavyCd - dt);
-    if (e.stun > 0) { if (e.heavy && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
+    const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
+    if (e.stun > 0) { if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     if (e.strikeT > 0) { this.heavyTravel(e, dt); return; }
-    if (e.heavy && !(e.tell > 0)) { // recovery: stands still, facing locked, open to punishing hits
+    if (e.stepT > 0 || e.cutT > 0) { this.stepcut(e, dt); return; }
+    if (resting && !(e.tell > 0)) { // recovery: stands still, facing locked, open to punishing hits
       e.vx = 0;
-      if (e.type === 'bat') e.y += (FLOOR - e.y) * Math.min(1, dt * 10);
+      if (e.type === 'bat' && e.heavy) e.y += (FLOOR - e.y) * Math.min(1, dt * 10);
       if ((e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false });
       return;
     }
     const dx = p.x - e.x, distance = Math.abs(dx);
     const face = dx >= 0 ? 1 : -1;
     if (e.heavy) e.reface = 0; // heavy: facing locked from wind-up to the end of recovery
-    else if (e.type === 'boss') { if (!(e.tell > 0 || e.travel > 0)) e.dir = face; } // boss facing is locked while warning and charging
+    else if (castle) { // castle: facing locks at tell start; outside attacks a minion turns after its own re-face delay
+      if (e.tell > 0 || e.turn > 0) e.reface = 0;
+      else if (wasTurning || dx * e.dir >= 0) { if (wasTurning) e.dir = face; e.reface = 0; }
+      else if ((e.reface += dt) >= REFACE[e.type]) { e.dir = face; e.reface = 0; }
+    } else if (e.type === 'boss') { if (!(e.tell > 0 || e.travel > 0)) e.dir = face; } // boss facing is locked while warning and charging
     else if (e.type !== 'shield' && !(e.type === 'spear' && e.tell > 0)) e.dir = face; // spear facing is locked during the warning
     else if (e.tell > 0 || e.turn > 0) e.reface = 0; // facing locked during the bash warning and the post-bash turn delay
     else if (wasTurning) e.dir = face; // the turn delay just ended: face at once, no re-face delay on top
@@ -874,6 +939,10 @@ export class Game {
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
       if (e.heavyKind === 'dive') e.y += (e.warn.hover - e.y) * Math.min(1, dt * 8); // the bat rises and hovers during the tell
+      if (castle && e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { // release cue: the same 0.4 s before contact for every heavy, delayed or not
+        e.glinted = true; e.glint = .1;
+        this.emit('enemyGlint', { x: e.x, y: e.y - e.h * .5, kind: e.heavyKind, enemy: e.type, delayed: e.delayed });
+      }
       if (e.tell <= 0) this.enemyAttack(e);
       return;
     }
@@ -890,7 +959,7 @@ export class Game {
       else e.vx = 0;
     } else if (e.type === 'priest') {
       const near = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= 250);
-      if (near.length && e.blessCd <= 0 && this.canWindUp(e)) { e.tell = .9; e.blessRadius = 250; e.vx = 0; }
+      if (near.length && e.blessCd <= 0 && this.canWindUp(e, 'support')) { e.tell = .9; e.blessRadius = 250; e.vx = 0; }
       else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.stage * .13; }
       else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'boss') {
@@ -907,11 +976,62 @@ export class Game {
       } else { e.vx = distance > 145 ? e.dir * e.speed : distance < 80 ? -e.dir * e.speed * .8 : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.turn > 0 || e.reface > 0) {
       e.vx = 0; // shield bearer recovering from a bash or about to turn: holds its old facing, leaving its back open
+    } else if (castle && this.startMove(e, distance)) {
+      e.vx = 0; // skeleton stepcut / shield counter started
     } else {
-      if (distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0 && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
-      else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
+      const near = distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0;
+      if (near && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
+      else if (castle && HOLD_RING[e.type] && (near || e.cd > 0 || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
+        const lo = HOLD_RING[e.type];
+        e.vx = distance < lo ? -face * e.speed * .6 : distance > lo + 20 ? e.dir * e.speed : 0;
+        e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
+      } else { e.vx = distance > 45 ? e.dir * e.speed : 0; e.x += e.vx * dt; }
     }
     if (e.affix === 'swift' && e.tell > 0 && !(tellBefore > 0)) e.tell = Math.max(e.heavy ? .7 : .3, e.tell * .8); // Swift: shorter warnings, never under 0.3 s (heavy 0.7 s)
+  }
+  tokensFree() { return ATTACK_TOKENS - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
+  // A token is taken when a tell (or the stepcut backstep) starts and released once the whole attack, recovery included, is over or cancelled.
+  syncToken(e) {
+    if (!e.token && !e.blessRadius && (e.tell > 0 || e.stepT > 0)) {
+      e.token = e.heavy ? 'heavy' : 'light'; e.wait = 0;
+      if (!e.heavy) this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: e.type, kind: e.move || LIGHT_KIND[e.type], dir: e.dir });
+    } else if (e.token && !this.attacking(e) && !(e.recover > 0)) { e.token = ''; this.gaps.push(TOKEN_GAP); }
+  }
+  // Third moves of the PR 1 kits. Skeleton `stepcut` (read: the hero walks in within 110): backstep 70 px in 0.25 s, then a 0.5 s tell and a 0.15 s lunge of 80 px.
+  // Shield `counter` (read: 2 blocked sword hits within 1 s): a 0.45 s tell, then a shove in front. Returns true if the move started.
+  startMove(e, distance) {
+    const p = this.player, dy = Math.abs(p.y - e.y);
+    if (e.type === 'shield') {
+      if (!(e.counterT > 0 && (p.x - e.x) * e.dir > 0 && distance <= 100 && dy < 82 && this.canWindUp(e))) return false;
+      const d = e.dir;
+      Object.assign(e, { tell: .45, move: 'counter', counterT: 0, cd: Math.max(e.cd, 1.2), warn: { kind: 'counter', box: { x: Math.min(e.x + d * 10, e.x + d * 60), y: e.y - 58, w: 50, h: 58 } } });
+      return true;
+    }
+    if (e.type !== 'skeleton' || e.cd > 0 || e.rollT > 0 || distance >= 110 || dy >= 82 || !(p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100) || !this.canWindUp(e)) return false;
+    if (this.rand() >= .5) { e.rollT = 1; return false; }
+    Object.assign(e, { stepT: .25, move: 'stepcut', stepV: -(Math.sign(p.x - e.x) || 1) * 280, cd: Math.max(e.cd, 1.2) });
+    return true;
+  }
+  // Stepcut backstep, then (after the tell, see enemyAttack) the lunge along the path fixed at tell start. Hyper armor throughout (attacking()).
+  stepcut(e, dt) {
+    const prevX = e.x;
+    if (e.stepT > 0) {
+      e.stepT = Math.max(0, e.stepT - dt); e.vx = e.stepV; e.x = clamp(e.x + e.stepV * dt, 30, this.worldWidth - 40);
+      if (this.collideEnemy(e, prevX, dt)) e.stepT = 0; // a barricade ends the backstep
+      if (e.stepT > 0) return;
+      const d = e.dir, to = clamp(e.x + d * 80, 30, this.worldWidth - 40);
+      e.vx = 0; e.tell = .5;
+      e.warn = { kind: 'stepcut', to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + d * 10, to + d * 100), y: e.y - 70, w: 90, h: 70 } };
+      return;
+    }
+    const w = e.warn, d = e.dir;
+    e.cutT = Math.max(0, e.cutT - dt);
+    e.x = e.cutFrom + (w.to - e.cutFrom) * (1 - e.cutT / .15); e.vx = (e.x - prevX) / dt;
+    if (this.collideEnemy(e, prevX, dt)) e.cutT = 0; // a barricade stops the lunge
+    if (e.cutT > 0) return;
+    if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * 100), y: e.y - 70, w: 90, h: 70 })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: .6, punishable: true, cd: Math.max(e.cd, 1.2) });
+    e.action++;
   }
   // Boss move choice: never the same move twice in a row; null-like '' means walk closer.
   bossPick(e, distance) {
@@ -983,7 +1103,23 @@ export class Game {
     const p = this.player;
     if (e.heavy) { this.heavyStrike(e); return; }
     e.punishable = false;
-    const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1);
+    const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1), castle = this.mode === 'castle';
+    if (castle && e.move === 'stepcut') { // the tell is over: lunge along the stored path
+      Object.assign(e, { cutT: .15, cutFrom: e.x });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'stepcut' });
+      return;
+    }
+    if (castle && e.move === 'counter') {
+      const w = e.warn, was = p.invulnerable, from = p.x;
+      Object.assign(e, { warn: null, move: '', recover: .5, punishable: true });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'counter' });
+      if (this.heavyHits(e, w.box)) {
+        this.hurt(dmg, e.dir);
+        if (was <= 0 && this.state === 'playing') { p.x = clamp(p.x + e.dir * 100, 25, this.worldWidth - 30); this.keepBeside(p, from); } // hurt pushes 20; the shove makes it 120
+      }
+      e.action++;
+      return;
+    }
     if (e.blessRadius) {
       const targets = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= e.blessRadius);
       for (const o of targets) o.blessed = 5;
@@ -1004,14 +1140,16 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false });
       if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : 77)) this.hurt(dmg, e.dir);
     }
+    if (castle && LIGHT_RECOVER[e.type]) { e.recover = LIGHT_RECOVER[e.type]; e.punishable = true; } // the attack ends in a punishable recovery
     e.action++;
   }
   // --- Castle heavy attacks (#47) ---
-  punishing(e) { return this.mode === 'castle' && e.heavy && e.punishable && e.recover > 0; } // a hit on an enemy recovering from its heavy
-  // At most one heavy winding up or striking near the hero, and 0.3 s after the last heavy strike.
-  heavyFree(e) {
-    const p = this.player;
-    return this.heavyGap <= 0 && !this.enemies.some(o => o !== e && o.hp > 0 && o.heavy && (o.tell > 0 || o.strikeT > 0) && Math.abs(p.x - o.x) <= HEAVY_RANGE);
+  punishing(e) { return this.mode === 'castle' && e.punishable && e.recover > 0; } // a hit on an enemy recovering from an attack
+  // Delayed heavy (castle): never on floors 1-4; 30% on floors 5-7 and 50% on 8-9, only for a heavy met on an earlier floor.
+  delayHeavy(e, kind) {
+    const chance = DELAY_CHANCE(this.floor); // shortcut: elites and bosses (50% on any floor) join with their twists in PR 3 / 4
+    if (!chance || this.floor <= HEAVY_FIRST_FLOOR[kind]) return false;
+    return this.rand() < chance;
   }
   // Hero state the player can already see (never raw input) decides the heavy chance.
   heavyChance(e) {
@@ -1025,7 +1163,7 @@ export class Game {
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.rollT > 0 || e.turn > 0 || e.reface > 0 || e.heavy) return false;
     const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
     const ok = { cleave: distance <= 100 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
-    if (!ok || !this.canWindUp(e) || !this.heavyFree(e)) return false;
+    if (!ok || !this.canWindUp(e, 'heavy')) return false;
     if (this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
     const box = (from, to, height) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - height, w: to - from, h: height });
     const warn = { kind: h.kind };
@@ -1041,9 +1179,10 @@ export class Game {
       const x2 = clamp(tx + (tx - ax) / len * 60, 30, this.worldWidth - 40), y2 = Math.min(FLOOR - e.h / 2, ty + (ty - ay) / len * 60);
       warn.hover = hover; warn.r = 22; warn.line = { x1: ax, y1: ay, x2, y2 };
     }
-    Object.assign(e, { heavy: true, heavyKind: h.kind, tell: h.tell, warn, recover: 0, punishable: false, thrustBox: null });
+    const delayed = this.delayHeavy(e, h.kind); // the tell grows by 0.4 s; the glint still comes 0.4 s before contact
+    Object.assign(e, { heavy: true, heavyKind: h.kind, tell: h.tell + (delayed ? DELAY_EXTRA : 0), warn, recover: 0, punishable: false, thrustBox: null, delayed, glinted: false, glint: 0 });
     e.cd = 1.2;
-    this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: h.kind, area: warn });
+    this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: h.kind, area: warn, delayed });
     return true;
   }
   heavyHits(e, rect, pad = 0) {
@@ -1077,7 +1216,6 @@ export class Game {
   }
   heavyEnd(e) {
     Object.assign(e, { warn: null, strikeT: 0, vx: 0, recover: HEAVY[e.type].recover, punishable: true, heavyCd: HEAVY_CD, cd: Math.max(e.cd, 1.2) });
-    this.heavyGap = HEAVY_GAP;
     e.action++;
   }
   // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.
