@@ -3154,3 +3154,12 @@ test('castle facing: a minion locked in a tell does not turn; outside attacks it
   c.player.x = c.e.x + 100; advance(c.game, .1);
   assert.equal(c.e.dir, -1, 'facing locked at tell start');
 });
+
+test('castle skeleton: a failed cleave roll does not block the stepcut roll', () => {
+  const { game, player, e } = lightFoe('skeleton', 95);
+  let n = 0; game.rand = () => [.99, 0][n++] ?? 0; // cleave roll fails, stepcut roll succeeds
+  e.dir = -1; player.blood = 150;
+  game.update(1 / 120, { right: true });
+  assert.ok(e.rollT > 0, 'the cleave roll failed');
+  assert.equal(e.move, 'stepcut');
+});
