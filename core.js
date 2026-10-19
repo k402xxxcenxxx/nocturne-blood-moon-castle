@@ -69,6 +69,8 @@ const WARDEN_MOVES = { // tell and recovery in seconds; heavy ones deal a flat H
   sweep: { tell: .6, recover: .6 }, backhand: { tell: .5, recover: .6 },
   slam: { tell: .95, recover: 1.2, heavy: true }, charge: { tell: .9, recover: 1, heavy: true }, seize: { tell: 1.1, recover: 1.3, heavy: true },
 };
+// Warden strings: a follow-up starts at the end of a sweep or charge, picked by where the hero stands then; its tell is FOLLOW_TELL (heavies still glint GLINT_LEAD before contact) and it is never delayed.
+const FOLLOW_TELL = { charge: .5, seize: .75, backhand: .5 }, FOLLOW_CHANCE = .5, PHASE2_RECOVER_CUT = .3, MAX_FOLLOWS = 2;
 const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
@@ -1145,7 +1147,7 @@ export class Game {
     const p = this.player, close = distance < 150, counts = {};
     for (const h of e.habit.slice(-3)) counts[h] = (counts[h] || 0) + 1;
     const read = ['crossed', 'jumped', 'retreated'].find(k => counts[k] >= 2);
-    e.chain = ''; e.read = read || '';
+    e.chain = ''; e.read = read || ''; e.follows = 0;
     if (read) {
       e.habit = [];
       if (read === 'crossed') { e.chain = 'backhand'; return { move: close ? 'sweep' : 'charge' }; }
@@ -1154,13 +1156,14 @@ export class Game {
     }
     if ((p.frenzy || p.blood > 150) && distance <= 160 && e.lastMove !== 'seize') return { move: 'seize' };
     const approach = p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100;
-    const pool = close ? ['sweep', 'slam', 'seize'] : distance <= 330 && approach ? ['charge', 'seize'] : ['charge'];
+    const pool = close ? (e.bossPhase >= 2 ? ['sweep', 'slam', 'seize', 'charge'] : ['sweep', 'slam', 'seize']) : distance <= 330 ? (approach ? ['charge', 'slam', 'seize'] : ['charge', 'slam']) : ['charge']; // mid range: the slam's floor wave covers it too
     const list = pool.filter(m => m !== e.lastMove);
     const from = list.length ? list : pool;
     return { move: from[Math.floor(this.rand() * from.length)] };
   }
   // Starts a tell and exposes the exact hit area in e.warn. Heavies (slam, charge, seize) are held 0.4 s longer when delayed; their glint always comes GLINT_LEAD before contact.
-  wardenStart(e, move, forceDelay = false) {
+  wardenStart(e, move, forceDelay = false, follow = false) {
+    if (follow && move !== 'backhand') e.dir = this.player.x >= e.x ? 1 : -1; // a follow-up turns to the hero as its tell starts, then locks
     const d = e.dir, def = WARDEN_MOVES[move], warn = { kind: move };
     const front = (from, to, h) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - h, w: to - from, h });
     if (move === 'sweep') warn.box = front(0, 146, e.h);
@@ -1172,14 +1175,27 @@ export class Game {
       warn.line = { x1: e.x, y1: e.y - e.h * .5, x2: e.chargeTo, y2: e.y - e.h * .5 };
       warn.box = { x: Math.min(e.x, e.chargeTo) - e.w / 2, y: e.y - e.h, w: Math.abs(e.chargeTo - e.x) + e.w, h: e.h };
     }
-    const delayed = !!def.heavy && (forceDelay || (e.bossPhase >= 2 && (move === 'slam' || move === 'charge') && this.rand() < .5));
-    Object.assign(e, { move, lastMove: move, warn, tell: def.tell + (delayed ? DELAY_EXTRA : 0), heavy: !!def.heavy, heavyKind: def.heavy ? move : '', delayed, glinted: false, glint: 0, punishable: false, recover: 0, vx: 0, struck: false, noted: false });
+    const delayed = !!def.heavy && !follow && (forceDelay || (e.bossPhase >= 2 && this.rand() < .5)); // phase 2: any opening heavy, the seize included
+    if (move === 'slam' && e.bossPhase >= 2) warn.wave2 = { x1: e.x - d * 40, y1: FLOOR - 6, x2: e.x - d * 760, y2: FLOOR - 6 }; // phase 2: a second wave runs out behind it
+    Object.assign(e, { move, lastMove: move, warn, tell: follow ? FOLLOW_TELL[move] : def.tell + (delayed ? DELAY_EXTRA : 0), follow, heavy: !!def.heavy, heavyKind: def.heavy ? move : '', delayed, glinted: false, glint: 0, punishable: false, recover: 0, vx: 0, struck: false, noted: false });
     if (def.heavy) this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: move, enemy: 'warden', area: warn, delayed });
     else this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'warden', kind: move, dir: d });
   }
   wardenRecover(e, move) {
-    Object.assign(e, { warn: null, move: '', vx: 0, recover: WARDEN_MOVES[move].recover, punishable: true, cd: Math.max(e.cd, .35) });
-    if (e.chain === 'backhand' && (move === 'sweep' || move === 'charge')) { e.chain = ''; e.recover = 0; e.punishable = false; e.heavy = false; e.heavyKind = ''; this.wardenStart(e, 'backhand'); }
+    const cut = e.bossPhase >= 2 && WARDEN_MOVES[move].heavy ? PHASE2_RECOVER_CUT : 0;
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: Math.max(cut ? .9 : 0, WARDEN_MOVES[move].recover - cut), punishable: true, cd: Math.max(e.cd, .35) });
+    const next = this.wardenFollow(e, move);
+    if (next) { e.chain = ''; e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.wardenStart(e, next, false, true); }
+  }
+  // Which follow-up (if any) ends a sweep or charge, from where the hero is at that moment (visible state only). A crossed read always ends in the backhand; otherwise phase 2 always follows and phase 1 half the time.
+  wardenFollow(e, move) {
+    const p = this.player, side = e.x - p.x, behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(side);
+    if ((move !== 'sweep' && move !== 'charge') || (e.follows || 0) >= MAX_FOLLOWS || e.follow && move === 'charge' || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
+    if (e.chain === 'backhand') return 'backhand'; // a crossed read expects the hero behind it
+    if (!(e.bossPhase >= 2 || this.rand() < FOLLOW_CHANCE)) return '';
+    if (move === 'charge') return behind && gap <= 330 ? 'charge' : ''; // the return charge: a dash through the first one leaves the dash on cooldown
+    if (behind) return gap <= 140 ? 'backhand' : 'charge';
+    return gap <= 130 && p.grounded ? 'seize' : gap <= 330 ? 'charge' : ''; // walked out of the sweep: the gauntlet or the charge follows
   }
   // How the hero answered a heavy at contact: jumped (airborne), crossed (behind the Warden), stood (in the area) or retreated (out of range).
   noteAnswer(e, answer) { e.habit.push(answer); if (e.habit.length > 3) e.habit.shift(); }
@@ -1195,11 +1211,11 @@ export class Game {
     else if (move === 'slam') {
       this.noteAnswer(e, seen);
       if (hit) this.hurt(HEAVY_DAMAGE, d, false, true);
-      this.projectiles.push({ x: w.wave.x1, y: w.wave.y1, vx: d * 240, vy: 0, r: 14, life: 3, damage: HEAVY_DAMAGE, heavy: true, ground: true });
+      for (const [wave, dir] of [[w.wave, d], [w.wave2, -d]]) if (wave) this.projectiles.push({ x: wave.x1, y: wave.y1, vx: dir * 240, vy: 0, r: 14, life: 3, damage: HEAVY_DAMAGE, heavy: true, ground: true });
       this.spawnPools(e);
-    } else { // seize: the Toll only takes a grounded hero, a jump clears it
+    } else { // seize: the Toll takes a hero inside its 80 px tall box, so a jump must clear the box at contact (a late jump is still caught)
       this.noteAnswer(e, seen);
-      if (hit && p.grounded) this.wardenToll(e);
+      if (hit) this.wardenToll(e);
     }
     if (this.state === 'playing' || this.state === 'dead') this.wardenRecover(e, move);
   }

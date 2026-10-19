@@ -3409,6 +3409,64 @@ test('warden: every attack shows a tell, and heavies glint 0.4 s before contact 
   }
 });
 
+// Strings (follow-ups), phase 2 escalation and the seize box height (Warden difficulty pass)
+const wardenP2 = (wx, hx) => { const t = warden(wx, hx); t.b.bossPhase = 2; t.player.invulnerable = 99; return t; };
+const runTo = (game, b, move, limit = 2) => { for (let t = 0; t < limit && !(b.move === move && b.tell > 0 && b.follow); t += 1 / 120) game.update(1 / 120, {}); };
+
+test('warden return charge: a hero behind it when a charge ends draws a turned charge with a short tell that still glints, never delayed', () => {
+  const { game, player, events, b } = wardenP2(1000, 1200);
+  b.dir = 1; game.wardenStart(b, 'charge'); advance(game, .9); // contact: the charge runs 305 px to 1305
+  player.x = 1200; // the hero ended up behind it (dashed or jumped through)
+  runTo(game, b, 'charge');
+  assert.equal(b.move, 'charge'); assert.ok(b.follow && !b.delayed && b.dir === -1, 'a turned follow-up, not delayed');
+  assert.ok(Math.abs(b.tell - .5) < .02 && b.heavy && b.warn.line.x2 < b.x, 'its path runs back toward the hero');
+  const n = events.length; let glintAt = null, swingAt = null;
+  for (let t = 0; t < 1 && swingAt === null; t += 1 / 120) { game.update(1 / 120, {}); for (const e of events.slice(n)) { if (e.type === 'enemyGlint' && glintAt === null) glintAt = game.time; if (e.type === 'enemySwing' && swingAt === null) swingAt = game.time; } }
+  assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, 'the follow-up glints 0.4 s before contact');
+  advance(game, .6); assert.ok(b.recover > 0, 'one return per string: the second charge ends in its recovery');
+  assert.equal(b.move, '');
+});
+
+test('warden sweep string: the follow-up depends on where the hero stands when the sweep ends', () => {
+  for (const [hx, move] of [[1080, 'seize'], [1250, 'charge'], [940, 'backhand'], [1400, '']]) {
+    const { game, player, b } = wardenP2(1000, 1300);
+    b.dir = 1; game.wardenStart(b, 'sweep'); player.x = hx;
+    advance(game, .62);
+    assert.equal(b.follow ? b.move : '', move, `hero at ${hx - 1000}: ${move || 'no follow-up'}`);
+    if (move === 'backhand') assert.ok(b.warn.box.x < b.x, 'the backhand box is behind it');
+    if (move === 'seize') assert.equal(b.dir, 1);
+  }
+});
+
+test('warden phase 2: the slam sends a second wave behind it and heavy recoveries are 0.3 s shorter (never under 0.9 s)', () => {
+  const { game, b } = wardenP2(1000, 1300);
+  b.dir = 1; game.wardenStart(b, 'slam'); game.wardenStrike(b);
+  assert.deepEqual(game.projectiles.filter(q => q.ground).map(q => Math.sign(q.vx)).sort(), [-1, 1]);
+  assert.ok(Math.abs(b.recover - .9) < 1e-9, 'slam 1.2 - 0.3');
+  const one = warden(1000, 1300); one.b.dir = 1; one.game.wardenStart(one.b, 'slam'); one.game.wardenStrike(one.b);
+  assert.equal(one.game.projectiles.filter(q => q.ground).length, 1, 'phase 1: one wave, forward');
+  assert.ok(Math.abs(one.b.recover - 1.2) < 1e-9);
+  const c = wardenP2(1000, 1500); c.b.dir = 1; c.game.wardenStart(c.b, 'charge'); c.game.wardenStrike(c.b); advance(c.game, .51); // hero ahead of the path end: no return charge
+  assert.ok(c.b.recover > .87 && c.b.recover <= .9, 'charge 1.0 floors at 0.9');
+});
+
+test('warden seize: the Toll takes a hero inside its 80 px box, so a late, low jump is still caught', () => {
+  const late = warden(1000, 1060); late.b.dir = 1; late.player.blood = 150;
+  late.game.wardenStart(late.b, 'seize'); advance(late.game, 1.06);
+  late.game.jump(); advance(late.game, .06); // still under 80 px at contact
+  assert.equal(late.player.grounded, false); assert.ok(late.events.some(e => e.type === 'toll'), 'caught in the air');
+});
+
+test('warden band pool: the mid range adds the slam, and phase 2 adds the charge up close', () => {
+  const { game, b, player } = warden(1000, 1250); player.vx = 0;
+  const mid = new Set(), close = new Set();
+  for (let i = 0; i < 60; i++) { b.lastMove = ''; b.habit = []; mid.add(game.wardenPick(b, 250).move); }
+  assert.deepEqual([...mid].sort(), ['charge', 'slam']);
+  player.blood = 100; b.bossPhase = 2;
+  for (let i = 0; i < 80; i++) { b.lastMove = ''; b.habit = []; close.add(game.wardenPick(b, 100).move); }
+  assert.deepEqual([...close].sort(), ['charge', 'seize', 'slam', 'sweep']);
+});
+
 test('warden never starts an attack from off screen: it walks in first', () => {
   const { game, b } = warden(2000, 1200);
   b.cd = 0;
