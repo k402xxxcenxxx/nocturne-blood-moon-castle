@@ -2,6 +2,8 @@
 
 How NOCTURNE enemies and bosses are designed. Every new enemy, move, elite or boss proposal follows this guide, and the engineer can check an implementation against it. It covers Castle Descent (`mode === 'castle'`), the direction approved in #43; the normal run and Endless Trial are the legacy prototype. Current numbers live in `docs/game-design.md`. Every number below is a design range: tune inside it, and change the guide only if the range itself is wrong.
 
+**Status.** This guide is the target standard for new enemy work, not a description of the code. Today (`core.js`, documented in `docs/game-design.md`) castle mode has: heavies with a red `!!` and a fixed `e.warn` hit area; hyper armor on heavies only (light tells are still cancelled by hits); a punishable heavy recovery worth +2 blood; at most two wind-ups at once plus one live heavy within 620 px; poise that never regenerates and a 1.0 s stagger; a re-face delay on the shield bearer only (0.25 s); a Fallen King with poise 120 and stagger; castle elites dealing ×1.3 damage and a Swift affix that shortens tells. Hyper armor on every attack, the posture changes, `steady`, attack tokens, the glint and hold sound, per-type re-face delays, the boss super armor gauge and rule-twist elites are planned in proposal #50 (needs approval); sections marked "(planned, #50)" describe that work. Until #50 lands, `docs/game-design.md` describes the code; new proposals still follow this guide.
+
 ## Principles
 
 1. **Same timescale, both sides commit.** Enemy attacks and the hero's swings use the same anticipation → contact → recovery structure. A whiffed enemy attack is the player's safest offense; a whiffed hero swing is the enemy's opening. Neither side can cancel freely.
@@ -35,10 +37,10 @@ Reaction on touch is about 0.25 s plus 0.05-0.1 s of input latency, and the dash
 | Follow-up in a string | at least 0.45 s from the previous contact | 0.4 s glint for heavy follow-ups | the string ends with the longest recovery of the string |
 
 - **Never above 2 s** for a single tell: beyond that the player counts instead of reacting.
-- **Never under 0.45 s** for anything that can hit (light probes included; the current 0.36 s bat tell is too short).
+- **Never under 0.45 s** for anything that can hit (light probes included). Current violations: the 0.36 s bat tell, the 0.43 s skeleton light tell (`core.js:911`) and Swift light tells down to 0.3 s (`core.js:914`).
 - A projectile counts its tell until release; after release it must be visible for at least 0.3 s before it can reach the hero.
 
-### The release cue (glint)
+### The release cue (glint) (planned, #50)
 
 Every heavy, every delayed variant and every boss big move shows a **glint** (a white flash on the weapon plus a short metallic "shing") exactly **0.4 s before contact**. This is the one constant in the game: the player can always dodge on the glint, whatever happened before it. It is what keeps delays readable.
 
@@ -48,12 +50,12 @@ Every heavy, every delayed variant and every boss big move shows a **glint** (a 
 - **Consistent signals across the cast.** `!` = light, red `!!` = heavy (one-shot range), glint = 0.4 s to contact, sustained "hold" sound = delayed variant, ring of light on the ground = area attack. These mean the same thing on every enemy and boss.
 - **Reads use visible state only.** An enemy may react to what the player can see about themselves: a whiffed swing (`p.whiff`), a spent dash (dash cooldown running), being airborne, frenzy, a recent cast, walking in, blood level (the bar is on screen), standing on a ledge, the last few answers the player used. Never to raw input, a button press or a buffer.
 - **Read at decision time, then commit.** A read picks the move when the tell starts. Nothing re-aims during the tell, except a boss re-aim that has its own cue and stops 0.4 s before contact.
-- **No attack from off screen.** A tell may only start when the attacker is visible: within 320 px on the hero's left and 560 px on the right (the camera anchors the hero at 37% of a view at least 960 wide). Projectiles must also start on screen.
+- **No attack from off screen.** A tell may only start when the attacker is visible: inside the camera view. Mid-level that is within 320 px on the hero's left and 560 px on the right (the camera anchors the hero at 37% of a view at least 960 wide); near the start and end of a level the camera stops at the world edge (`game.js:548`), so check against the actual view there. Projectiles must also start on screen.
 - **Readable in a crowd.** The tell sound of the enemy holding a token plays at full volume; others are quieter. At most one heavy tell is on screen at a time (see "Attack tokens").
 
-## Hyper armor and posture
+## Hyper armor and posture (planned, #50)
 
-These replace "hit first and mash" in castle mode.
+These will replace "hit first and mash" in castle mode.
 
 - **Hyper armor from tell start.** Once a tell starts (light or heavy), sword hits and projectiles deal damage but never flinch, knock back or cancel the attack. Only three things interrupt an attack in progress: a **posture break**, **Eclipse** (the weapon skill) and **freeze**. Killing the enemy also ends it.
 - **Posture** (core field `poise` / `maxPoise`). Every hit deals posture damage (combo 17 / 17 / 62, thrust 35, plunge 45, Eclipse 55, shot 8).
@@ -67,7 +69,7 @@ These replace "hit first and mash" in castle mode.
 ## Tracking (2D)
 
 - Facing locks at tell start and stays locked until recovery ends. Crossing behind an enemy during its tell is always a valid answer unless the move is explicitly a two-sided move with its own pose (for example a spin).
-- Outside attacks, a minion that finds the hero behind it turns after a **re-face delay**: 0.15 s (bat, skeleton) to 0.35 s (knight); the shield bearer keeps 0.25 s plus its 0.6 s post-bash turn delay. Slow turners are the ones you flank.
+- (Planned, #50; today only the shield bearer has a delay.) Outside attacks, a minion that finds the hero behind it turns after a **re-face delay**: 0.15 s (bat, skeleton) to 0.35 s (knight); the shield bearer keeps 0.25 s plus its 0.6 s post-bash turn delay. Slow turners are the ones you flank.
 - Travelling attacks (rush, lunge, dive, charge) travel a fixed path. No steering, no homing projectiles; aimed projectiles aim once, at release.
 - Tracking strength is a difficulty lever: elites and bosses may turn faster or re-aim once (with a cue), never mid-contact.
 
@@ -84,7 +86,7 @@ These replace "hit first and mash" in castle mode.
 - **Without a token** (see below) a melee enemy waits at the edge of its band: about 30-50 px outside its probe range, stepping back if the hero walks in and stepping in when the hero backs off. Enemies never stand inside the hero or walk through it.
 - **Retreat**: after a recovery, a ranged or support enemy backs off toward its band before acting again.
 
-## Attack tokens
+## Attack tokens (planned, #50)
 
 - The field has **2 attack tokens** (castle mode). A minion must hold one to start any tell (light, heavy, projectile, area). It keeps the token through contact and recovery and releases it when the recovery ends or the attack is cancelled, staggered or killed. A released token is free again after 0.3 s.
 - **At most one of the two tokens may be a heavy** (generalizes the one-live-heavy cap from #47).
@@ -130,20 +132,20 @@ Per 10-floor theme (from #43):
 - **Test (floors 8-9)**: the full cast, variants at 50%, one elite.
 - **Floor 10**: a mini-boss that tests the theme's lessons (each of its moves echoes a minion lesson) and adds one signature mechanic.
 
-## Elites: a rule twist, not stat inflation
+## Elites: a rule twist, not stat inflation (planned, #50)
 
-An elite is the same enemy with **one rule changed**, which the player must read anew. Health at most ×1.5, damage unchanged (heavies stay 100, so "above 100 blood survives a heavy" stays true). Examples of good twists: a probe becomes a two-hit string; it turns without a delay; it protects an ally; it re-aims once with a cue. Bad twists: more health, more damage, shorter tells, no tells. The elite banner names the twist.
+An elite is the same enemy with **one rule changed**, which the player must read anew. Health at most ×1.5, damage unchanged (heavies stay 100, so "above 100 blood survives a heavy" stays true). Examples of good twists: a probe becomes a two-hit string; it turns without a delay; it protects an ally; it re-aims once with a cue. Bad twists: more health, more damage, shorter tells, no tells. The elite banner names the twist. Today castle elites still deal ×1.3 damage (a heavy does 130, so 101 blood does not survive it) and the Swift affix shortens tells; #50 replaces both.
 
 ## Bosses
 
 A boss is not a bigger minion. It needs all four:
 
 1. **Intelligence**: move pools per range band; combo branching (at each glint the next hit depends on where the hero is); punishes habits from visible behavior (for example, the player's last two answers to a move); reads blood level and frenzy.
-2. **Physicality**: size, reach, footfalls; a **super armor gauge** (#44: normal hits do nothing to it, the weapon skill chips it, frenzy hits break it) instead of flinching; knockback immunity; heavy recoveries that are real punish windows.
+2. **Physicality**: size, reach, footfalls; a **super armor gauge** (planned, #44 step 3 and #50; the Fallen King uses poise 120 and stagger today: normal hits do nothing to it, the weapon skill chips it, frenzy hits break it) instead of flinching; knockback immunity; heavy recoveries that are real punish windows.
 3. **A signature mechanic** that no minion has, tied to blood.
 4. **Phases** that change the question (new move, new branch, signature escalates), each announced with a pause and a banner.
 
-Every boss must be **beatable with every weapon** (#43): check each move against the Greatsword (slow, Numb to pain frenzy), Twin Blades (no dash during frenzy) and Spear (no i-frames during frenzy). Each move needs at least one answer that is not a dash. Boss fights must give blood from somewhere other than armored hits (blood pools, punish windows, break stuns).
+Every boss must be **beatable with every weapon** (#43): check each move against the Greatsword (slow, Numb to pain frenzy: knockback immunity, damage deferred as blood debt), Twin Blades (no dash during frenzy) and Spear (no i-frames during frenzy). Each move needs at least one answer that is not a dash. Boss fights must give blood from somewhere other than armored hits (blood pools, punish windows, break stuns).
 
 ## Blood and the pillars
 
@@ -151,7 +153,7 @@ Enemy design is what makes the blood decisions matter:
 
 - **Pillar 1, blood is the only resource**: correct answers pay (recovery punish +2, posture break punish +5), mistakes cost (whiffs pay the swing cost, heavies take 100). An enemy must offer a blood-positive line for a player who reads it, and a blood-negative line for a masher.
 - **Pillar 2, fullness is power and risk**: heavies deal 100, so the overfed half is visible insurance. Reads of `frenzy` and of high blood make a full bar a target; bosses may take blood above 100 specifically.
-- **Pillar 3, the weapon defines the frenzy**: every enemy needs answers for all three weapons and all three frenzy downsides (no knockback immunity is assumed, no dash, no i-frames).
+- **Pillar 3, the weapon defines the frenzy**: every enemy needs answers for all three weapons and all three frenzy downsides (Greatsword: damage deferred as blood debt, paid when the frenzy ends, #43 and #44; Twin Blades: no dash; Spear: no i-frames).
 
 ## Checklist for every new enemy or move
 
@@ -176,7 +178,7 @@ Enemy design is what makes the blood decisions matter:
 - [The design lessons designers fail to learn from Dark Souls](https://www.gamedeveloper.com/design/the-design-lessons-designers-fail-to-learn-from-dark-souls) (behavior over stats, attack pools by distance, unfair patterns)
 - [The art of the fakeout](https://www.wayline.io/blog/the-art-of-the-fakeout-combat-design) (delays with readable tells and counterplay)
 - [Sekiro posture system](https://samurai-gamers.com/sekiro-shadows-die-twice/posture-system/) (a second meter against hit-lock)
-- [Dark Souls II tracking discussion](https://www.gamebanshee.com/kpcuy) (limited tracking, getting to the side)
+- [Dark Souls II: Crown of the Sunken King review](https://www.gamebanshee.com/kpcuy) (enemy tracking: low-tracking Sanctum soldiers you can get to the side of)
 - [Designing engaging enemy archetypes](https://www.wayline.io/blog/designing-engaging-enemy-archetypes) (group roles)
 - [Enemy AI tech talk: attack tokens](https://serfofcinder.itch.io/archetype-portal-to-hell/devlog/738495/enemy-ai-tech-talk) (token pools as a difficulty lever)
 - [Boss battle design and structure](https://www.gamedeveloper.com/design/boss-battle-design-and-structure) (bosses that test learned skills, phases)
