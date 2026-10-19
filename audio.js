@@ -46,6 +46,7 @@ export class AudioSystem {
   setMuted(value) {
     this.muted = Boolean(value);
     this._syncBeat();
+    this._syncHold();
     if (this.context) {
       this._master.gain.setTargetAtTime(this.muted ? 0 : 0.6, this.context.currentTime, 0.025);
     }
@@ -88,10 +89,37 @@ export class AudioSystem {
     this._beatTimer = setInterval(beat, 700);
   }
 
+  // Delayed-heavy hold: a quiet low creak loop. game.js flips it on edges only; it also dies on pause, mute and suspend.
+  setHold(on) { on = Boolean(on); if (on === this._holding) return; this._holding = on; this._syncHold(); }
+
+  _syncHold() {
+    const active = this._holding && this.context?.state === 'running' && !this._paused && !this.muted;
+    if (!active) { this._hold?.(); this._hold = null; return; }
+    if (this._hold) return;
+    const ctx = this.context, now = ctx.currentTime;
+    const noise = ctx.createBufferSource(), band = ctx.createBiquadFilter(), tone = ctx.createOscillator(), lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain(), out = ctx.createGain();
+    noise.buffer = this._noiseBuffer; noise.loop = true;
+    band.type = 'bandpass'; band.frequency.value = 700; band.Q.value = 4;
+    tone.type = 'sawtooth'; tone.frequency.value = 78;
+    lfo.frequency.value = 9; lfoGain.gain.value = 0.03; // flutter, so the hold reads as strain rather than a drone
+    out.gain.setValueAtTime(0.0001, now); out.gain.exponentialRampToValueAtTime(0.06, now + 0.05);
+    lfo.connect(lfoGain); lfoGain.connect(out.gain);
+    noise.connect(band); band.connect(out); tone.connect(out); out.connect(this._master);
+    noise.start(); tone.start(); lfo.start();
+    this._hold = () => {
+      const end = ctx.currentTime;
+      out.gain.cancelScheduledValues(end); out.gain.setTargetAtTime(0.0001, end, 0.015);
+      for (const node of [noise, tone, lfo]) { try { node.stop(end + 0.1); } catch { /* Already stopped. */ } }
+      setTimeout(() => { for (const node of [noise, band, tone, lfo, lfoGain, out]) node.disconnect(); }, 150);
+    };
+  }
+
   suspend() {
     this._paused = true;
     this._syncMusic();
     this._syncBeat();
+    this._syncHold();
     for (const voice of [...this._voices]) voice.stop();
     this.vibrate(0);
     return this.context?.suspend().catch(() => {});
@@ -104,6 +132,7 @@ export class AudioSystem {
       await this.context.resume();
       this._syncMusic();
       this._syncBeat();
+      this._syncHold();
       return this.context.state === 'running';
     } catch { return false; }
   }
@@ -154,7 +183,7 @@ export class AudioSystem {
       roar: [60, 40, 120], frenzy: [50, 30, 90, 30, 160], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
-      block: 12, guardBreak: [25, 20, 55], stagger: [20, 15, 50], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -458,6 +487,46 @@ export class AudioSystem {
           tone('square', (i ? 1480 : 1245) * d, 0.12, 0.035, undefined, dl);
           tone('sine', 55 * (i + 1), 0.25, 0.22, undefined, dl);
         });
+        break;
+      }
+      // Castle enemy tells (#50): one cue per move, mid/high and short so they read over a fight; none shares a shape with swing or heavyWarn.
+      case 'tellSlash': // skeleton/knight slash: two dry bone clicks climbing
+        tone('noise', 4800, 0.025, 0.12, 2200);
+        tone('triangle', 700, 0.07, 0.08, 980);
+        tone('noise', 5600, 0.025, 0.12, 2600, 0.06);
+        tone('triangle', 940, 0.08, 0.08, 1300, 0.06);
+        break;
+      case 'tellStepcut': // skeleton stepcut: falling scrape (the backstep) then a sharp rising tsk
+        tone('noise', 3200, 0.14, 0.1, 500);
+        tone('sine', 420, 0.14, 0.07, 210);
+        tone('square', 1500, 0.07, 0.04, 2400, 0.15);
+        tone('noise', 6500, 0.04, 0.1, 3000, 0.15);
+        break;
+      case 'tellBash': // shield bash: dull armoured clunk with a short grind
+        tone('sine', 170, 0.12, 0.2, 100);
+        tone('square', 430, 0.09, 0.04, 380);
+        tone('noise', 1300, 0.13, 0.12, 400);
+        break;
+      case 'tellCounter': // shield counter: ringing shield rim, brighter and longer than bash so the shove is known early
+        [1180, 1870, 2960].forEach((f, i) => tone('sine', f, 0.3 - i * 0.05, 0.07, f * 1.02));
+        tone('triangle', 590, 0.2, 0.07, 700);
+        tone('noise', 5200, 0.03, 0.08, 2000);
+        break;
+      case 'tellGeneric': // other moves (swoop, thrust, bolt) until they get their own: soft rising blip
+        tone('triangle', 620, 0.1, 0.08, 940);
+        tone('noise', 3400, 0.07, 0.07, 1500);
+        break;
+      case 'glint': // THE timing cue, 0.4 s before a heavy lands: fixed pitch (no detune), rising bright swish into two high partials
+        tone('noise', 3000, 0.16, 0.2, 9000);
+        tone('sine', 4186, 0.24, 0.17, 4100);
+        tone('sine', 6272, 0.18, 0.1, 6100, 0.012);
+        tone('triangle', 2093, 0.14, 0.09, 2300);
+        break;
+      case 'riposte': { // accent over the normal hit: gold double chime and a low snap
+        const d = 0.98 + Math.random() * 0.04;
+        tone('triangle', 1568 * d, 0.22, 0.12, 1560 * d);
+        tone('triangle', 2349 * d, 0.3, 0.1, 2340 * d, 0.05);
+        tone('sine', 95, 0.18, 0.3, 45);
         break;
       }
       case 'heavyWhoosh': // heavy strike swing: long low whoosh, heavier than swing

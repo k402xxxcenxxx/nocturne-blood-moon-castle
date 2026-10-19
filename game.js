@@ -177,9 +177,13 @@ function handleEvent(e) {
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
     case 'enemyHeavy': audio.play('heavyWarn'); break;
-    case 'enemyGlint': audio.play('block', .5); burst(e.x, e.y, '#ffffff', 6, 120); break; // placeholder release cue (#50): art and audio roles replace it
+    case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
+    case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
+      const cue = { slash: 'tellSlash', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
+      audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
+    }
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
-      audio.play('crit', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
+      audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#fff0b0', r: 90 }); break;
     case 'enemySwing':
@@ -661,12 +665,17 @@ function watchBlood() {
   if (live && prevBlood !== null && p.blood > prevBlood + .5) audio.play(prevBlood < BLOOD_HALF && p.blood >= BLOOD_HALF ? 'bloodHalf' : 'bloodGain', .3 + p.blood / BLOOD_MAX * 1.2);
   prevBlood = live ? p.blood : null;
 }
+function watchHold() { // delayed-heavy hold loop: on only while a delayed heavy waits before its glint; no allocation
+  let hold = false;
+  if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = true; break; }
+  audio.setHold(hold);
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   if (ai) aiModal(dt);
   const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
-  watchBlood();
+  watchBlood(); watchHold();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
