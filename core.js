@@ -66,7 +66,7 @@ export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40,
 const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
-  skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .2, reads: { whiff: .65, dashSpent: .5 } },
+  skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .1, reads: { whiff: .8, dashSpent: .5 } },
   bat: { kind: 'dive', tell: .9, recover: 1, base: .15, reads: { airborne: .6, frenzy: .5 } },
   shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
@@ -80,7 +80,7 @@ export const SCREEN_LEFT = 320, SCREEN_RIGHT = 560; // a tell may only start wit
 const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40 };
 const LIGHT_RECOVER = { skeleton: .45, shield: .6 }; // castle light-attack recovery (standing still, punishable); other types join with their kits
 const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
-const TRIGGER = { bat: 30, skeleton: 60, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
+const TRIGGER = { bat: 30, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
 const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35 }; // castle re-face delay outside attacks
 const HOLD_RING = { skeleton: 112, shield: 100 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
@@ -346,7 +346,7 @@ export class Game {
     const maxPoise = (this.mode === 'castle' && CASTLE_POISE[type]) || { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
-    const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? 55 : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : 43) + stage * 12) * scale.hp);
+    const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     return this.enemies.at(-1);
   }
@@ -980,7 +980,7 @@ export class Game {
       e.vx = 0; // skeleton stepcut / shield counter started
     } else {
       const near = distance < (e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && e.cd <= 0;
-      if (near && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = Math.max(.9, 1.7 - this.stage * .12); }
+      if (near && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = castle && e.type === 'skeleton' ? 1 : Math.max(.9, 1.7 - this.stage * .12); }
       else if (castle && HOLD_RING[e.type] && (near || e.cd > 0 || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
         const lo = HOLD_RING[e.type];
         e.vx = distance < lo ? -face * e.speed * .6 : distance > lo + 20 ? e.dir * e.speed : 0;
@@ -997,7 +997,7 @@ export class Game {
       if (!e.heavy) this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: e.type, kind: e.move || LIGHT_KIND[e.type], dir: e.dir });
     } else if (e.token && !this.attacking(e) && !(e.recover > 0)) { e.token = ''; this.gaps.push(TOKEN_GAP); }
   }
-  // Third moves of the PR 1 kits. Skeleton `stepcut` (read: the hero walks in within 110): backstep 70 px in 0.25 s, then a 0.5 s tell and a 0.15 s lunge of 80 px.
+  // Third moves of the PR 1 kits. Skeleton `stepcut` (read: the hero walks in within 100): backstep 70 px in 0.25 s, then a 0.5 s tell and a 0.15 s lunge of 80 px.
   // Shield `counter` (read: 2 blocked sword hits within 1 s): a 0.45 s tell, then a shove in front. Returns true if the move started.
   startMove(e, distance) {
     const p = this.player, dy = Math.abs(p.y - e.y);
@@ -1007,7 +1007,7 @@ export class Game {
       Object.assign(e, { tell: .45, move: 'counter', counterT: 0, cd: Math.max(e.cd, 1.2), warn: { kind: 'counter', box: { x: Math.min(e.x + d * 10, e.x + d * 60), y: e.y - 58, w: 50, h: 58 } } });
       return true;
     }
-    if (e.type !== 'skeleton' || e.cd > 0 || e.rollT > 0 || distance >= 110 || dy >= 82 || !(p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100) || !this.canWindUp(e)) return false;
+    if (e.type !== 'skeleton' || e.cd > 0 || e.rollT > 0 || distance >= 100 || dy >= 82 || !(p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100) || !this.canWindUp(e)) return false;
     if (this.rand() >= .5) { e.rollT = 1; return false; }
     Object.assign(e, { stepT: .25, move: 'stepcut', stepV: -(Math.sign(p.x - e.x) || 1) * 280, cd: Math.max(e.cd, 1.2) });
     return true;
@@ -1162,7 +1162,7 @@ export class Game {
     const h = HEAVY[e.type], p = this.player;
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.rollT > 0 || e.turn > 0 || e.reface > 0 || e.heavy) return false;
     const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
-    const ok = { cleave: distance <= 100 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
+    const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
     if (this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
     const box = (from, to, height) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - height, w: to - from, h: height });

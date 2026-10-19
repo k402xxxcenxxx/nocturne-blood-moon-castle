@@ -3095,14 +3095,14 @@ test('castle skeleton: slash ends in a punishable recovery that holds the token;
   assert.ok(e.recover > 0 && e.punishable && e.token === 'light' && e.tell <= 0);
   player.blood = 100; const poise = e.poise; player.combo = 1; player.move = ''; player.dir = 1; game.hitSet = new Set(); game.hitTargets();
   assert.equal(player.blood, 105); assert.equal(poise - e.poise, 34); assert.equal(e.stun, 0);
-  advance(game, .6);
+  e.cd = 9; advance(game, .6); // no next slash, so the release is visible
   assert.ok(e.recover === 0 && !e.punishable);
   advance(game, .02); assert.equal(e.token, '');
 });
 
 test('castle skeleton: stepcut backsteps with armor, then lunges along a path fixed at tell start', () => {
-  const { game, player, e, events } = lightFoe('skeleton', 105);
-  game.rand = () => 0; e.dir = -1; player.blood = 150;
+  const { game, player, e, events } = lightFoe('skeleton', 95);
+  game.rand = () => 0; e.dir = -1; player.blood = 150; e.heavyCd = HEAVY_CD; // cleave cooling down: rolls first at this distance
   game.update(1 / 120, { right: true });
   assert.equal(e.move, 'stepcut'); assert.ok(e.stepT > 0 && e.token === 'light');
   advance(game, .05);

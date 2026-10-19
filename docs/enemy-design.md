@@ -111,6 +111,8 @@ Fakeouts are a Souls signature and the most criticized pattern when they are unf
 
 Every theme's cast covers these roles; every combine and test floor mixes at least two.
 
+**Weapon matchups.** A weapon may counter some enemies (for example Spear reach against a short sword), but no weapon may counter every enemy of a 10-floor theme, and a countered matchup should be hard to win (still beatable by a reader). Write the matchup down by behavior (reach vs hold ring, swing speed vs tell and window length, damage vs HP and posture); the current table is in `docs/game-design.md` (Castle Descent).
+
 | Role | Job in a group | NOCTURNE enemy |
 | --- | --- | --- |
 | Frontline / tank | Blocks the direct path, forces flanking | Shield bearer |
