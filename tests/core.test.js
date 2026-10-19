@@ -3172,3 +3172,19 @@ test('castle mash (QA 50 PR 1): a fresh skeleton in spear reach starts a tell or
   const tells = events.filter(ev => ev.type === 'enemyTell' && ev.enemy === 'skeleton').length;
   assert.ok(tells > 0 || player.blood < 100, `no tell and no damage taken (hp ${Math.round(e.hp)}, blood ${Math.round(player.blood)})`);
 });
+
+test('castle poke (QA 50 PR 1 re-check): a stationary hero poked from 90 px is not hit by the answer to the poke (seed 11)', () => {
+  // Regression: a provoked skeleton may start a heavy cleave (box 10-125 px) instead of the light slash, so the playtest scenario's whiffing answer
+  // becomes a 100-damage hit on a hero who stands still. Seed 11 at 90 px reproduces it at 1.14 s.
+  const events = [];
+  const game = new Game(event => events.push(event), 11, 'castle');
+  game.start(); game.setWeapon('spear'); game.descend(); game.loadFloor(1);
+  game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
+  const player = game.player; player.blood = 100;
+  game.spawnEnemy('skeleton', player.x + 90, game.stage);
+  const e = game.enemies.at(-1); e.dir = -1; e.cd = 0; e.poiseHit = 0;
+  game.update(1 / 120, { attack: true });
+  for (let i = 0; i < 1.5 * 120; i++) { game.traps = []; game.update(1 / 120, {}); }
+  const hits = events.filter(ev => ev.type === 'hurt');
+  assert.equal(hits.length, 0, `the answer to the poke hit the stationary hero (blood ${Math.round(player.blood)})`);
+});
