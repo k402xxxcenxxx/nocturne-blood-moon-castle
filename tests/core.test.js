@@ -3163,3 +3163,13 @@ test('castle skeleton: a failed cleave roll does not block the stepcut roll', ()
   assert.ok(e.rollT > 0, 'the cleave roll failed');
   assert.equal(e.move, 'stepcut');
 });
+
+test('castle mash (QA 50 PR 1): a fresh skeleton in spear reach starts a tell or hits back before a stationary hold-attack kills it', () => {
+  // Regression: spawn cooldown (1-2 s) keeps a fresh skeleton in the hold ring (112-132 px), inside spear reach (~141 px), so it dies to pokes with no tell.
+  const { game, player, events } = castle(42, 1);
+  game.spawnEnemy('skeleton', player.x + 120, game.stage);
+  const e = game.enemies.at(-1); e.dir = -1;
+  for (let time = 0; time < 3 && e.hp > 0; time += 1 / 120) game.update(1 / 120, { attack: true });
+  const tells = events.filter(ev => ev.type === 'enemyTell' && ev.enemy === 'skeleton').length;
+  assert.ok(tells > 0 || player.blood < 100, `no tell and no damage taken (hp ${Math.round(e.hp)}, blood ${Math.round(player.blood)})`);
+});
