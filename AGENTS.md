@@ -48,8 +48,9 @@ Logic and presentation talk only through events: core calls `this.emit('type', d
 
 ## Tests
 
-- `npm test` runs `tests/*.test.js` (`core`, `endless`, `i18n`). In core tests, `arena()` clears the scene, `enemy()` places a target and `advance()` steps time at 1/120 s. Add a test in that style for each new mechanic and assert **rules** (hits, cooldowns, state transitions), not feel-tuning numbers. The i18n test fails if a language is missing a key.
+- `npm test` runs `tests/*.test.js` (`core`, `endless`, `i18n`, `bot`). In core tests, `arena()` clears the scene, `enemy()` places a target and `advance()` steps time at 1/120 s. Add a test in that style for each new mechanic and assert **rules** (hits, cooldowns, state transitions), not feel-tuning numbers. The i18n test fails if a language is missing a key.
 - Browser test (optional): run `python3 -m http.server 8080`, then `node tests/browser-smoke.mjs`. Needs Playwright; `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` and `BASE_URL` override the paths. `node tests/cursed-ui.mjs` is a second optional browser check (cursed-relic UI and room banners) run the same way.
+- Test bot (#52): `bot.js` plays the hero under human limits (0.18 s reaction, 8 presses/s). `node tools/bot-run.mjs --seeds 20 --floors 1-9` prints per-floor clear rate, deaths and blood stats for a build (use it to check enemy changes). With `?test`, key B or the on-screen AI button hands the hero to the bot and ignores all other player input.
 - Adding `?test` to the URL exposes `window.__nocturne` (`game`, `settings`, `startRun`, `clearInput`) for changing state from the browser console, for example `__nocturne.game.loadStage(4)` to jump to the boss stage.
 - Vibration, volume and feel must be checked on real devices; automated tests only verify rules.
 

@@ -383,6 +383,9 @@ canvas {
 .hud-button:hover {
   border-color:var(--gold);
 }
+.hud-button[hidden] { display:none; }
+.ai-button { position:absolute; left:8px; top:50%; z-index:11; width:34px; height:34px; font:700 12px var(--serif); } /* above the modal: the test AI can be toggled during a pick */
+.ai-button[aria-pressed="true"] { background:#e0bd6a; color:#13111b; border-color:#fff0a9; }
 .title-screen {
   pointer-events:none;
   position:absolute;

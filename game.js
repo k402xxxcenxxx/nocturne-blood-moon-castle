@@ -1,6 +1,7 @@
 import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE } from './core.js';
 import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
+import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
 
 const $ = id => document.getElementById(id);
@@ -42,8 +43,25 @@ function applyLanguage() {
   applySettings(); updateBest();
 }
 function clearInput() { held.clear(); buffered.clear(); document.querySelectorAll('[data-control]').forEach(b => b.classList.remove('active')); }
+// Test-mode AI player (#52): only with ?test. While on, every player input except the toggle is ignored.
+const testMode = new URLSearchParams(location.search).has('test');
+let ai = null, aiModalT = 0;
+function toggleAI() {
+  if (!testMode) return;
+  ai = ai ? null : createBot(); aiModalT = .7; clearInput();
+  $('ai-toggle').setAttribute('aria-pressed', String(!!ai));
+}
+function aiModal(dt) { // the modals are DOM: click the card the bot picked, so the normal handler applies it
+  if ($('modal').hidden) { aiModalT = .7; return; }
+  if ((aiModalT -= dt) > 0) return;
+  const panel = $('modal-panel');
+  if (modalKind === 'vigil') panel.querySelector(`[data-weapon="${chooseWeapon(game)}"]`)?.click();
+  else if (modalKind === 'upgrade') panel.querySelector(`[data-relic="${chooseRelic(game, game.choices).id}"]`)?.click();
+  else if (modalKind === 'dead' && game.mode === 'castle') panel.querySelector('[data-command="restart"]')?.click();
+  aiModalT = .7;
+}
 function press(control, source) {
-  if (game.state !== 'playing') return;
+  if (ai || game.state !== 'playing') return;
   held.set(source, control);
   if (impulseControls.has(control)) buffered.set(control, performance.now() + 200);
   document.querySelector(`[data-control="${control}"]`)?.classList.add('active');
@@ -347,6 +365,8 @@ document.querySelectorAll('[data-control]').forEach(button => {
   button.addEventListener('contextmenu', e => e.preventDefault());
 });
 window.addEventListener('keydown', e => {
+  if (testMode && e.code === 'KeyB') { e.preventDefault(); if (!e.repeat) toggleAI(); return; }
+  if (ai) { if (/^(Enter|Space|Digit[123])$/.test(e.code)) e.preventDefault(); return; } // modal shortcuts, pause and game keys are all ignored
   if (!$('modal').hidden) {
     if (e.repeat && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); return; } // a held Enter must not activate the focused modal button
     if (e.code === 'Escape' && !['upgrade', 'dead', 'won', 'vigil'].includes(modalKind)) { e.preventDefault(); closeModal(); }
@@ -630,7 +650,8 @@ function watchBlood() {
 }
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
-  const input = getInput(), consume = game.state === 'playing' && game.freeze <= 0;
+  if (ai) aiModal(dt);
+  const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
   watchBlood();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
@@ -649,4 +670,6 @@ function tick(now) {
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
 syncGear();
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
-if (new URLSearchParams(location.search).has('test')) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput };
+if (testMode) $('ai-toggle').hidden = false;
+$('ai-toggle').addEventListener('click', e => { toggleAI(); e.currentTarget.blur(); });
+if (testMode) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput, toggleAI, get ai() { return !!ai; } };
