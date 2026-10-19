@@ -55,6 +55,8 @@ The input-level qualities of the prototype stay requirements under every pillar:
 
 ## Enemies
 
+Enemy and boss design follows the style guide in [`enemy-design.md`](enemy-design.md).
+
 Regular enemies scale with `stage` (0 to 4): health +12×stage, damage 8 + 2.5×stage. The boss is fixed at 900 HP and 22 damage.
 
 | Type | Base health | Speed | Behavior | Warning time |
