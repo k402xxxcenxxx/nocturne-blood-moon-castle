@@ -32,8 +32,8 @@ export function resolveModal(game) {
 
 const CHARGE_SPEED = 610; // Warden charge: 305 px in 0.5 s
 const WARDEN_STANDOFF = 120; // the bot waits this far from the Warden: outside its slam box, so every close move shows a tell it can answer
-// Seconds until the Warden's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss (a seize needs a grounded hero).
-function wardenHit(w, px, py, grounded = true) {
+// Seconds until the Warden's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss (a seize box is 80 px tall: feet above it are safe).
+function wardenHit(w, px, py) {
   const a = w.warn, striking = w.travel > 0;
   if (!a || !(w.tell > 0 || striking)) return Infinity;
   if (a.kind === 'charge') {
@@ -42,7 +42,6 @@ function wardenHit(w, px, py, grounded = true) {
     if (ahead < -50 || ahead > Math.abs(w.chargeTo - w.x) + 50) return Infinity;
     return (striking ? 0 : w.tell) + Math.max(0, ahead - 50) / CHARGE_SPEED;
   }
-  if (a.kind === 'seize' && !grounded) return Infinity;
   return w.tell > 0 && a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
 }
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
@@ -138,25 +137,33 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const speed = p.speed * (p.attack > 0 ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
     const toward = Math.sign(w.x - p.x) || p.dir, away = -toward;
     let danger = Infinity;
-    const t = api.reacts(w, now) ? wardenHit(w, p.x, p.y, p.grounded) : Infinity;
+    const t = api.reacts(w, now) ? wardenHit(w, p.x, p.y) : Infinity;
     if (t < Infinity) {
       danger = t;
       const kind = w.warn.kind;
       if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; }
-      else if (kind === 'seize') { if (p.grounded && t <= .45 + jit(w)) { o.jump = true; o.urgent = true; } }
+      else if (kind === 'seize') { if (p.grounded && t <= .38 + jit(w)) { o.jump = true; o.urgent = true; } }
       else {
         let best = null; // walk out on this side of the body if there is time
         if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) {
           const x = p.x + away * d;
-          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y, p.grounded) === Infinity) best = { dir: away };
+          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) best = { dir: away };
         }
         if (best) { o.dir = flip(w, best.dir); o.urgent = true; }
+        else if (kind === 'charge' && (!w.follow || (p.dashCd > 0 && p.dashCd > t - .1))) {
+          // double jump the first charge (keeps the dash for the quick return charge), or any charge while the dash is on cooldown; the dash is the fallback
+          if ((p.grounded && t <= .5 + jit(w) && t > .3) || (!p.grounded && p.jumps === 1 && p.vy > -150)) { o.jump = true; o.urgent = true; }
+          else if (t <= .1 + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); }
+        }
         else if (t <= (kind === 'charge' ? .1 : .12) + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); } // through the body: i-frames, and a perfect dodge pays blood
       }
     }
-    if (api.reacts(w, now) && w.warn?.kind === 'slam' && w.tell > 0 && t === Infinity) { // the wave line is drawn during the tell: time the jump to its arrival
-      const s = (p.x - (w.x + w.dir * 40)) * w.dir, arrive = w.tell + s / 240;
-      if (s > 0) { danger = Math.min(danger, arrive); if (arrive <= .28 + jit(w) && p.grounded) { o.jump = true; o.urgent = true; } }
+    if (api.reacts(w, now) && w.warn?.kind === 'slam' && w.tell > 0 && t === Infinity) { // the wave lines (front, and behind in phase 2) are drawn during the tell: time the jump to their arrival
+      for (const v of [w.warn.wave, w.warn.wave2]) {
+        if (!v) continue;
+        const dir = Math.sign(v.x2 - v.x1), s = (p.x - v.x1) * dir, arrive = w.tell + s / 240;
+        if (s > 0) { danger = Math.min(danger, arrive); if (arrive <= .28 + jit(w) && p.grounded) { o.jump = true; o.urgent = true; } }
+      }
     }
     for (const b of game.projectiles) { // the slam's floor wave: jump it (it was announced by the tell, so no fresh reaction delay)
       if (!b.ground) continue;
