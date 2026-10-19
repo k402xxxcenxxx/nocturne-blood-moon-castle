@@ -426,6 +426,7 @@ export class Game {
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
     for (const o of this.obstacles) if (p.y > o.y - o.h + 1 && p.y - p.h < o.y && Math.abs(p.x - o.x) < (p.w + o.w) / 2) p.x = o.x + (oldX < o.x ? -1 : 1) * (p.w + o.w) / 2; // solid sides
+    for (const e of this.enemies) if (e.warden && e.hp > 0 && e.travel <= 0 && p.dash <= 0 && p.y > e.y - e.h + 1 && Math.abs(p.x - e.x) < (p.w + e.w) / 2) p.x = e.x + (oldX < e.x ? -1 : 1) * (p.w + e.w) / 2; // the Warden's body blocks walking (a dash passes, a double jump clears it)
     const oldY = p.y;
     p.vy += 1550 * dt;
     p.y += p.vy * dt;

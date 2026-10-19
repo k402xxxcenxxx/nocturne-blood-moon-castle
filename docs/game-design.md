@@ -6,7 +6,7 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 ### Approved direction (#43)
 
-Approved by the user in #43. This is the direction new proposals must serve. Its vertical slice (#44, approved) is being built in steps: step 1, the blood loop, is the Castle Descent mode below; weapon frenzy effects and debt (step 2) and the Gate Warden, blood pools, save, second rest point and castle records (step 3) are still planned. The normal run and Endless Trial described in the rest of this document are unchanged.
+Approved by the user in #43. This is the direction new proposals must serve. Its vertical slice (#44, approved) is being built in steps: step 1, the blood loop, is the Castle Descent mode below; the Gate Warden, blood pools and the second rest point (#50 PR 4) are built; weapon frenzy effects and debt (step 2) and save and castle records (step 3) are still planned. The normal run and Endless Trial described in the rest of this document are unchanged.
 
 - **Core fun**: blood is your only resource: the fuller you are, the stronger you get, and the closer you are to losing control.
 - **Pillars**
@@ -168,7 +168,7 @@ Approved in #22; explicitly **not balanced**: it exists for combination testing 
 
 ## Castle Descent (slice step 1)
 
-Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). Constants are exported from `core.js`. Not balanced: every number is a playtest starting point.
+Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45; the Gate Warden from #50 PR 4). Constants are exported from `core.js`. Not balanced: every number is a playtest starting point.
 
 - **The Vigil** (state `rest`, `rest` {weapons} event): the run starts here. It resets the player to base stats, blood to 100, no relics, no frenzy. Pick a weapon with `setWeapon(id)`, then `descend()` loads floor 1. No opening build pick.
 - **Weapons** (`WEAPONS`, base stats only; frenzy effects are step 2): they replace `damage`, `attackSpeed` (attack cooldown multiplier) and `reach`.
@@ -219,9 +219,34 @@ Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). C
 
 - **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
 - **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).
-- **Slice end**: clearing floor 9 (after its pick) sets state `sliceEnd` and emits `sliceEnd`; a placeholder for floor 10 and the Gate Warden (step 3). Castle runs write no records yet.
+- **Floor 10, the Gate Warden** (#50 section 5, `loadFloor(10)`): floor 9's pick leads to floor 10, the Warden alone in the boss arena layout (width 2800, two ledges, Gate art, HUD "Floor 10 / 10"). `loadFloor(50)` (the Fallen King) is a stub that returns false. See "The Gate Warden" below.
+- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then sets state `sliceEnd` and emits `sliceEnd`. Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
 
-Differences from #44: the slice ends after floor 9, not at the Warden on floor 10 (step 3); frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
+### The Gate Warden (floor 10)
+
+A `boss`-type enemy flagged `warden: true` (the King's body and art, none of its moves). 520 HP, speed 75, body 72 x 112 (blocks walking; a dash passes, a double jump clears it), super armor gauge `superArmor` / `superArmorMax` 100. It never flinches, takes poise damage or loses a tell to a hit; its engagement range is 900 px, and it only starts a tell with the hero within 320 px left / 560 px right of it (nothing attacks from off screen). Lights deal 16, heavies a flat `HEAVY_DAMAGE` 100.
+
+| Move | Kind | Tell | Hit area | Recovery |
+| --- | --- | --- | --- | --- |
+| `sweep` | light | 0.6 | 146 in front, body height | 0.6 |
+| `backhand` | light, follow-up | 0.5 | 10-120 behind | 0.6 |
+| `slam` | heavy | 0.95 | 112 x 123 in front, plus a 100-damage floor wave (240 px/s, 3 s; jump it); two blood pools | 1.2 |
+| `charge` | heavy | 0.9 | 305 px path, body height, 0.5 s travel (dash through or double jump) | 1.0 |
+| `seize` | heavy, the Gate Toll | 1.1 | 10-95 in front, 80 tall, **grounded hero only** (a jump clears it) | 1.3 |
+
+Every heavy glints `GLINT_LEAD` (0.4 s) before contact; a delayed heavy (phase 2 slam/charge 50%, or a habit read) adds 0.4 s of hold before the glint. Heavies keep `heavy` through their recovery.
+
+- **Gauge**: normal hits and projectiles change nothing; an Eclipse hit takes 25 (`armorChip` {x, y, value, left}); any damaging hit while the hero is in Blood Frenzy breaks it. Break (`armorBreak` {x, y}): cancels the move and tell, slides it 140 px away from the hero, stuns 1.8 s with x1.5 damage, then `armorRestore` refills the gauge to 100 and locks it for 2.5 s (no chip, no break), so one frenzy gives about two breaks. Damage over time does not count as a hit.
+- **Blood from hitting it**: none while armored, except hits during a heavy's recovery; the break stun pays normally. Kill gives +8 as usual.
+- **Gate Toll** (`seize` contact on a grounded hero without invulnerability): the hero loses all blood above 100, or 30 at 100 or less (never more than they have), the Warden's gauge gains the same amount (cap 100), frenzy ends when blood lands at 100, the hero is thrown 120 px back and gets 0.8 s of invulnerability. `toll` {x, y, amount}. A death by toll emits `death` {cause: 'toll'}. A dash's invulnerability avoids it (and is a perfect dodge). The Numb to pain debt variant waits for the weapon frenzies (#44 step 2).
+- **Blood pools**: a slam spawns two pools at Warden x +-200 (+-260 in phase 2, clamped), +14 blood each, 4 s life, at most 2 on the field (the newest). `bloodPool` {x, y, life} on spawn, `poolTaken` {x, y, amount} on pickup (touch while grounded on the floor; frenzy does not halve it). `game.pools` holds {x, y, life, max}.
+- **Habit memory**: for each heavy, the hero's answer at contact is stored (`jumped` airborne, `crossed` behind it, `stood` in the area, `retreated` out of range; for a charge, at the moment it passes the hero). When two of the last three match the next pick follows the read and the memory clears: `crossed` -> sweep (close) or charge, ending with a `backhand`; `jumped` -> slam (close) or a delayed charge; `retreated` -> charge.
+- **Move pool**: close (< 150 px): sweep, slam, seize; mid (150-330): charge, plus seize if the hero walks toward it; far: charge; never the same move twice in a row. Hero in frenzy or above 150 blood within 160 px: seize.
+- **Phase 2** at 50% HP: `wardenPhase` {phase: 2, x, y}, a 1.1 s pause, slam and charge are delayed half the time, pools at +-260.
+- **Fight stats**: `game.fightStats` {gained, taken, time, breaks, frenzies} resets when floor 10 loads (time counts from when the Warden wakes) and goes out once as `fightStats` {won, ...} on the kill or the hero's death.
+- **Bot** (`node tools/bot-run.mjs --seeds 20 --floors 10 --weapon <w>`; floors starting at 10 begin straight on floor 10 with no relics): it dashes charges, jumps seizes and the slam wave, walks out of boxes, takes pools, hits recoveries and the break stun, and hits at once in a frenzy. 20 seeds, all weapons: 100% clears in 25-30 s, 0-7 blood taken per fight, 0-1 breaks. The bot reads exact hit boxes, so this is a ceiling, not a human estimate.
+
+Differences from #44: the Warden has the #50 moveset instead of the King's slash, slam and charge, two phases, and the Toll; the weapon frenzies do not exist yet, so "frenzy hits break the armor" uses the shared Blood Frenzy; frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
 
 ## Playtest verdicts
 

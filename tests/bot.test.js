@@ -70,3 +70,16 @@ test('the press limiter caps rising edges even when the policy asks for far more
   assert.ok(edges.length > 20, 'the policy did press');
   for (const t of edges) assert.ok(edges.filter(x => x > t - 1 && x <= t).length <= MAX_PRESSES_PER_SECOND);
 });
+
+test('the bot beats the Gate Warden on floor 10 under the same human limits and ends at the second Vigil', () => {
+  for (const seed of [1, 2, 3]) {
+    const events = [], game = new Game(e => events.push(e), seed, 'castle');
+    game.start(); resolveModal(game); game.loadFloor(10);
+    const bot = createBot();
+    for (let t = 0; t < 120 && game.state === 'playing'; t += DT) game.update(DT, bot.input(game));
+    assert.equal(game.state, 'rest', `seed ${seed}: Warden down, second Vigil open`);
+    assert.equal(game.vigil, 2);
+    assert.equal(events.find(e => e.type === 'fightStats').won, true);
+    assert.ok(bot.presses.length <= MAX_PRESSES_PER_SECOND);
+  }
+});

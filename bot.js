@@ -24,6 +24,21 @@ export function resolveModal(game) {
   return false;
 }
 
+const CHARGE_SPEED = 610; // Warden charge: 305 px in 0.5 s
+const WARDEN_STANDOFF = 120; // the bot waits this far from the Warden: outside its slam box, so every close move shows a tell it can answer
+// Seconds until the Warden's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss (a seize needs a grounded hero).
+function wardenHit(w, px, py, grounded = true) {
+  const a = w.warn, striking = w.travel > 0;
+  if (!a || !(w.tell > 0 || striking)) return Infinity;
+  if (a.kind === 'charge') {
+    if (py <= w.y - w.h) return Infinity; // feet above the body: a double jump clears the pass
+    const d = Math.sign(w.chargeTo - w.x) || w.dir, ahead = (px - w.x) * d;
+    if (ahead < -50 || ahead > Math.abs(w.chargeTo - w.x) + 50) return Infinity;
+    return (striking ? 0 : w.tell) + Math.max(0, ahead - 50) / CHARGE_SPEED;
+  }
+  if (a.kind === 'seize' && !grounded) return Infinity;
+  return w.tell > 0 && a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
+}
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
 
 // Seconds until enemy e's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss. Reads the warn geometry the core exposes.
@@ -92,14 +107,65 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' : e.strikeT > 0 ? 's' : '') : '';
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
       if (sig && sig !== r.sig && !(r.sig === 't' && sig === 's')) r.since = now; // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
     }
     for (const b of game.projectiles) if (!info.has(b)) info.set(b, { sig: 'p', since: now, seen: now });
   }
+  // The Gate Warden: answer its tell (jump the seize and the slam wave, walk out of boxes, dash through a charge), take pools,
+  // hit it in its heavy recoveries and break stun, and break the armor with the first hit of a frenzy.
+  function decideWarden(game, now, w) {
+    const p = game.player, W = game.worldWidth;
+    const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
+    const speed = p.speed * (p.attack > 0 ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
+    const toward = Math.sign(w.x - p.x) || p.dir, away = -toward;
+    let danger = Infinity;
+    const t = api.reacts(w, now) ? wardenHit(w, p.x, p.y, p.grounded) : Infinity;
+    if (t < Infinity) {
+      danger = t;
+      const kind = w.warn.kind;
+      if (kind === 'seize') { if (p.grounded && t <= .45) { o.jump = true; o.urgent = true; } }
+      else {
+        let best = null; // walk out on this side of the body if there is time
+        if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) {
+          const x = p.x + away * d;
+          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y, p.grounded) === Infinity) best = { dir: away };
+        }
+        if (best) { o.dir = best.dir; o.urgent = true; }
+        else if (t <= (kind === 'charge' ? .1 : .12) && dashReady) { o.dash = true; o.urgent = true; o.dir = toward; } // through the body: i-frames, and a perfect dodge pays blood
+      }
+    }
+    if (api.reacts(w, now) && w.warn?.kind === 'slam' && w.tell > 0 && t === Infinity) { // the wave line is drawn during the tell: time the jump to its arrival
+      const s = (p.x - (w.x + w.dir * 40)) * w.dir, arrive = w.tell + s / 240;
+      if (s > 0) { danger = Math.min(danger, arrive); if (arrive <= .28 && p.grounded) { o.jump = true; o.urgent = true; } }
+    }
+    for (const b of game.projectiles) { // the slam's floor wave: jump it (it was announced by the tell, so no fresh reaction delay)
+      if (!b.ground) continue;
+      for (let s = 0; s <= .5; s += .02) if (Math.abs(b.x + b.vx * s - p.x) < 14 + b.r) { danger = Math.min(danger, s); if (s <= .3 && p.grounded) { o.jump = true; o.urgent = true; } break; }
+    }
+    if (danger > .45) {
+      const dx = w.x - p.x, face = Math.sign(dx) || p.dir, gap = Math.abs(dx);
+      const open = w.superArmor <= 0 || (w.heavy && w.recover > 0); // blood-paying windows: break stun, heavy recovery
+      const breakable = p.frenzy && w.superArmor > 0 && w.armorLock <= 0;
+      const pool = game.pools.filter(q => (q.x - w.x) * (p.x - w.x) > 0 || Math.abs(q.x - w.x) > 60).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).find(q => Math.abs(q.x - p.x) / speed < q.life - .1);
+      let goal = null, tol = 12;
+      if ((open || breakable) && gap < 330) {
+        const spacing = Math.max(50, p.reach - 22);
+        if (gap > spacing) { goal = w.x; tol = spacing - 4; }
+        else if (p.dir !== face) o.dir = face;
+        else if (ready && p.y >= FLOOR - 5) o.attack = true;
+      } else if (pool && p.grounded) { goal = pool.x; tol = 6; }
+      else if (gap < WARDEN_STANDOFF - 25) { const x = p.x + away * 30; if (x > 60 && x < W - 60) o.dir = away; } // too close: back off to the standoff
+      else if (gap > WARDEN_STANDOFF + 40) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; }
+      if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
+    }
+    return o;
+  }
   function decide(game, now) {
+    const warden = game.enemies.find(e => e.warden && e.hp > 0);
+    if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const speed = p.speed * (p.attack > 0 ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);

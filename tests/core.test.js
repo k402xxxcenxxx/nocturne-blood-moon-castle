@@ -3455,3 +3455,12 @@ test('warden fight stats count blood gained and taken, time since it woke, break
   game.hurt(20, 1); assert.equal(game.fightStats.taken, 20);
   game.armorBreak(b); assert.equal(game.fightStats.breaks, 1);
 });
+
+test('warden body blocks walking, but a dash passes through it', () => {
+  const { game, player } = warden(1000, 900);
+  advance(game, 1, { right: true });
+  assert.ok(player.x <= 1000 - 50 + 1, `blocked at the body (${player.x})`);
+  player.x = 940; player.dashCd = 0;
+  advance(game, .5, { right: true, dash: true });
+  assert.ok(player.x > 1050, `dashed through (${player.x})`);
+});
