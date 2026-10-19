@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game, FLOOR, RELICS, WEAPONS } from '../core.js';
-import { createBot, chooseWeapon, chooseRelic, resolveModal, REACTION_DELAY, MAX_PRESSES_PER_SECOND } from '../bot.js';
+import { createBot, chooseWeapon, chooseRelic, resolveModal, REACTION_DELAY, MAX_PRESSES_PER_SECOND, SKILLS } from '../bot.js';
 
 const DT = 1 / 60;
 const castle = (seed = 1) => { const game = new Game(() => {}, seed, 'castle'); game.start(); resolveModal(game); return game; }; // Vigil weapon pick, then floor 1
@@ -82,4 +82,32 @@ test('the bot beats the Gate Warden on floor 10 under the same human limits and 
     assert.equal(events.find(e => e.type === 'fightStats').won, true);
     assert.ok(bot.presses.length <= MAX_PRESSES_PER_SECOND);
   }
+});
+
+test('the average profile reacts in 0.3 s, presses at most 6 times a second and never touches game.rand()', () => {
+  const avg = SKILLS.average;
+  assert.ok(avg.reaction >= .3 && avg.presses <= 6 && avg.mistime > 0 && avg.greedy > 0 && avg.misread > 0);
+  assert.throws(() => createBot({ skill: 'nope' }));
+  const game = new Game(() => {}, 5, 'castle');
+  game.start(); resolveModal(game);
+  const real = game.rand.bind(game); let botCalls = 0, inBot = false;
+  game.rand = () => { if (inBot) botCalls++; return real(); };
+  const bot = createBot({ skill: 'average', seed: 5 }), edges = []; let prev = {}, dashAt = null;
+  // reaction: a fresh tell must wait 0.3 s
+  game.enemies = []; game.traps = []; game.obstacles = []; game.platforms = [];
+  const e = game.spawnEnemy('knight', game.player.x + 50, 0);
+  Object.assign(e, { hp: 500, maxHp: 500, tell: .5, dir: -1, cd: 5 }); game.player.invulnerable = 0;
+  for (let t = 0; t < .5 && dashAt === null; t += DT) {
+    inBot = true; const input = bot.input(game); inBot = false;
+    if (input.dash) dashAt = t;
+    game.update(DT, input);
+  }
+  assert.ok(dashAt === null || dashAt >= avg.reaction - DT, `dashed at ${dashAt}`);
+  for (let i = 0; i < 1800 && game.state === 'playing'; i++) { // then a stretch of play: press cap
+    inBot = true; const input = bot.input(game); inBot = false;
+    for (const key of ['left', 'right', 'jump', 'attack', 'dash', 'magic']) if (input[key] && !prev[key]) edges.push(game.time);
+    prev = input; game.update(DT, input);
+  }
+  for (const x of edges) assert.ok(edges.filter(y => y > x - 1 && y <= x).length <= avg.presses);
+  assert.equal(botCalls, 0, 'the bot rolls its mistakes from its own RNG');
 });
