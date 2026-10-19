@@ -2506,3 +2506,11 @@ b[data-i18n] {
     margin-top:6px;
   }
 }
+
+/* Castle guide has 8 cards: four columns keep Ready on screen at 720p desktop heights. */
+@media (min-height:481px) and (min-width:761px) {
+  .help-grid:has(.help-item:nth-child(8)) {
+    grid-template-columns:repeat(4,1fr);
+    max-width:820px;
+  }
+}
