@@ -364,6 +364,10 @@ document.querySelectorAll('[data-control]').forEach(button => {
   for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, e => { e.preventDefault(); release(`pointer-${e.pointerId}`); });
   button.addEventListener('contextmenu', e => e.preventDefault());
 });
+// While the AI is on, real (trusted) pointer, click and key-release events are swallowed except on the toggle; the AI's own modal clicks are synthetic and pass.
+for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'keyup']) window.addEventListener(type, e => {
+  if (ai && e.isTrusted && !(e.target.closest?.('#ai-toggle') || (type === 'keyup' && e.code === 'KeyB'))) { e.stopPropagation(); if (e.cancelable) e.preventDefault(); }
+}, { capture: true, passive: false });
 window.addEventListener('keydown', e => {
   if (testMode && e.code === 'KeyB') { e.preventDefault(); if (!e.repeat) toggleAI(); return; }
   if (ai) { if (/^(Enter|Space|Digit[123])$/.test(e.code)) e.preventDefault(); return; } // modal shortcuts, pause and game keys are all ignored
