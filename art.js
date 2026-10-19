@@ -454,10 +454,12 @@ function skeleton(c, e, time, white) {
   rect(c, dark, -5, -55, 4, 4); rect(c, dark, 3, -55, 4, 4); rect(c, white || '#de7665', -3, -54, 2, 2); rect(c, white || '#de7665', 4, -54, 2, 2); rect(c, '#30313b', 0, -51, 2, 3);
   for (let x = -4; x < 6; x += 3) rect(c, '#394047', x, -46, 1, 3);
   line(c, shade, -9, -40, -14, -29, 4); line(c, bone, -14, -29, -7, -23, 3);
-  const raised = (e.tell || 0) > 0;
-  line(c, bone, 9, -41, 16, raised ? -49 : -31, 4);
-  line(c, bone, 16, raised ? -49 : -31, raised ? 10 : 23, raised ? -62 : -32, 3);
-  if (raised) { line(c, '#a7aaa9', 10, -62, 0, -85, 4); line(c, '#eee3c5', 9, -63, -1, -85, 1); line(c, '#a18c5d', 5, -62, 14, -65, 3); }
+  const cocked = e.move === 'stepcut' && (e.tell || 0) > 0, raised = (e.tell || 0) > 0 && !cocked; // stepcut: blade drawn back low, a lunge not an overhead cut
+  const ex = cocked ? 13 : 16, ey = raised ? -49 : cocked ? -37 : -31, hx = raised ? 10 : cocked ? 7 : 23, hy = raised ? -62 : cocked ? -38 : -32;
+  line(c, bone, 9, -41, ex, ey, 4);
+  line(c, bone, ex, ey, hx, hy, 3);
+  if (cocked) { poly(c, shade, [[8, -40], [-26, -47], [-24, -42], [8, -35]]); line(c, '#e2ddc4', 8, -40, -26, -47, 1); rect(c, '#ad9260', 8, -44, 3, 12); }
+  else if (raised) { line(c, '#a7aaa9', 10, -62, 0, -85, 4); line(c, '#eee3c5', 9, -63, -1, -85, 1); line(c, '#a18c5d', 5, -62, 14, -65, 3); }
   else { poly(c, shade, [[21, -34], [52, -39], [48, -34], [22, -31]]); line(c, '#e2ddc4', 22, -34, 52, -39); rect(c, '#ad9260', 20, -38, 3, 12); }
 }
 function bat(c, e, time, white) {
@@ -565,9 +567,9 @@ function shieldBearer(c, e, time, white) {
   }
   // Tower shield on the facing side: tall slab, cold rim light on the front edge.
   // Bash wind-up rears the shield back and tilts it within 0.15 s; the bash itself thrusts it forward.
-  const k = (e.tell || 0) > 0 ? Math.min(1, (.55 - e.tell) / .15) : 0, thrust = (e.turn || 0) > .45 ? 6 : 0;
-  const pull = Math.round(-12 * k + thrust - ((e.reface || 0) > 0 ? 3 : 0));
-  c.save(); c.translate(17 + pull, -2); c.rotate(-.32 * k); c.translate(-17, 2);
+  const ctr = e.move === 'counter' && (e.tell || 0) > 0, k = !ctr && (e.tell || 0) > 0 ? Math.min(1, (.55 - e.tell) / .15) : 0, thrust = (e.turn || 0) > .45 ? 6 : 0;
+  const pull = Math.round(-12 * k + thrust + (ctr ? 5 : 0) - ((e.reface || 0) > 0 ? 3 : 0));
+  c.save(); c.translate(17 + pull, ctr ? -8 : -2); c.rotate(-.32 * k); c.translate(-17, 2); // counter: shield braced forward and lifted, not reared back like the bash
   poly(c, '#0c101b', [[8, -74], [27, -71], [28, -6], [17, 1], [7, -5]]);
   poly(c, bronze, [[10, -72], [26, -69], [26, -8], [17, -2], [9, -7]]);
   poly(c, white || '#3f4a58', [[12, -69], [24, -67], [24, -10], [17, -5], [11, -9]]);
@@ -625,16 +627,16 @@ function drawBossWarn(ctx, e, time) {
 }
 // Castle heavy (#47): non-boss e.warn area. Outline = full hit area, inner fill grows from the enemy outward as the tell runs out; path stays lit through rush / dive travel.
 function drawHeavyWarn(ctx, e, time) {
-  const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0; if (!w || !(tl || strike)) return;
+  const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0 || e.cutT > 0; if (!w || !(tl || strike)) return;
   if (tl && !tellMax.has(w)) tellMax.set(w, e.tell);
   const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
-  ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = 3;
+  ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; // light moves (stepcut, counter) get a thinner outline than a heavy
   const b = w.box;
-  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush') {
+  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter') {
     const fw = Math.round(b.w * p); ctx.fillStyle = 'rgba(255,74,60,.14)'; ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = `rgba(255,74,60,${hot})`; ctx.fillRect(d === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h); ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
   }
-  if (w.kind === 'rush' || w.kind === 'dive') { // path with an arrow tip
+  if (w.kind === 'rush' || w.kind === 'dive' || w.kind === 'stepcut') { // path with an arrow tip
     const l = w.line, x2 = Math.round(w.to ?? l.x2), y2 = Math.round(l.y2), x1 = Math.round(l.x1), y1 = Math.round(l.y1), a = Math.sign(x2 - x1 || d) * 12;
     if (w.kind === 'dive') { ctx.fillStyle = `rgba(255,74,60,${.35 + .4 * p})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x2, y2, w.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 2 * w.r; ctx.globalAlpha = .2 + .25 * p; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 3; }
     ctx.strokeStyle = '#ffe0d0'; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
@@ -644,13 +646,17 @@ function drawHeavyWarn(ctx, e, time) {
 }
 export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
-  const heavy = e.heavy && !boss, windup = heavy && e.tell > 0, slump = heavy && !windup && !(e.strikeT > 0) && e.recover > 0, pw = windup ? Math.min(1, 1 - e.tell / (tellMax.get(e.warn) || e.tell || 1)) : 0;
-  if (heavy) drawHeavyWarn(ctx, e, time);
+  const heavy = e.heavy && !boss, windup = heavy && e.tell > 0, slump = !boss && e.recover > 0 && e.punishable && !(e.tell > 0) && !(e.strikeT > 0) && !(e.cutT > 0); // heavy and castle light recoveries
+  const tm = tellMax.get(e.warn) || e.tell || 1, pw = windup ? Math.min(1, (tm - e.tell) / (e.delayed ? Math.max(.1, tm - .8) : tm)) : 0; // delayed: wind-up completes 0.8 s before contact (GLINT_LEAD + DELAY_EXTRA), then holds
+  const hold = windup && e.delayed && pw >= 1 && !e.glinted, mv = !boss && !heavy && (e.move === 'stepcut' || e.move === 'counter');
+  if (heavy || (mv && e.warn)) drawHeavyWarn(ctx, e, time);
+  if (mv && e.cutT > 0 && e.cutFrom != null) { ctx.save(); ctx.globalAlpha = .3 + .4 * e.cutT / .15; ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Math.round(e.cutFrom), Math.round(y - e.h / 2)); ctx.lineTo(x, Math.round(y - e.h / 2)); ctx.stroke(); ctx.restore(); } // lunge streak
+  if (e.move === 'counter' && e.tell > 0) { const q = Math.min(1, 1 - e.tell / .45), r = Math.round(36 - 20 * q), rx = Math.round(x + (e.dir === -1 ? -1 : 1) * 24), ry = y - 40; ctx.save(); ctx.strokeStyle = '#cfeaff'; ctx.lineWidth = 3; ctx.globalAlpha = .5 + .5 * q; ctx.beginPath(); ctx.arc(rx, ry, r, 0, 7); ctx.stroke(); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(rx, ry, 20, 0, 7); ctx.stroke(); ctx.restore(); } // ring closes onto the raised shield: a pale-blue shove cue, unlike the red slash / bash
   if (heavy && e.strikeT > 0 && e.from) { // streak from the start of the rush / dive to the body
     ctx.save(); ctx.globalAlpha = .45 * (e.strikeT / (e.strikeMax || .35)) + .15; ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = e.heavyKind === 'dive' ? 16 : 22; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(Math.round(e.from.x), Math.round(e.from.y - e.h / 2)); ctx.lineTo(x, Math.round(y - e.h / 2)); ctx.stroke(); ctx.restore();
   }
-  if (windup) { ctx.save(); ctx.globalAlpha = .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
+  if (windup) { ctx.save(); ctx.globalAlpha = hold && !calm ? .5 + .2 * Math.sin(time * 40) : .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
   if (windup && e.type === 'bat') { const ay = Math.round(y + 14 + (calm ? 0 : Math.sin(time * 12) * 3)); ctx.save(); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 10, ay); ctx.lineTo(x + 10, ay); ctx.lineTo(x, ay + 14); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } // down arrow under the bat: it is about to drop
   if (slump) { ctx.save(); ctx.globalAlpha = calm ? .7 : .55 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 28, e.h / 2 + 5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke(); ctx.restore(); } // gold shimmer: open to punish
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? 72 : 33);
@@ -667,8 +673,12 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     if (e.ward > 0) { const r = Math.min(1, e.ward / 30); ctx.strokeStyle = `rgba(159,216,255,${.35 + .65 * r})`; ctx.lineWidth = 1 + 2 * r; ctx.beginPath(); ctx.arc(x, y - 30, Math.round(40 + 10 * r), 0, 7); ctx.stroke(); }
     ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1);
+  if (hold && !calm) ctx.translate(Math.round(Math.sin(time * 70) * 1.5), 0); // held wind-up trembles
   if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
   else if (slump) { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward
+  else if (e.stepT > 0) ctx.rotate(-.22); // stepcut backstep: leans away
+  else if (e.cutT > 0) ctx.rotate(.3); // stepcut lunge: all weight forward
+  else if (mv && e.move === 'stepcut' && e.tell > 0) { ctx.rotate(.1); ctx.scale(1, .94); } // crouched behind the cocked blade
   const white = e.flash > 0 ? '#fff0d0' : null;
   if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
   else if (e.type === 'bat') bat(ctx, e, time, white);
@@ -678,8 +688,15 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.type === 'priest') priest(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
+  if (e.riposte && e.stun > 0) { // posture broken: gold crack down the body and a pulsing outline until the riposte lands
+    ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-8, -e.h); ctx.lineTo(0, -e.h * .75); ctx.lineTo(-7, -e.h * .55); ctx.lineTo(3, -e.h * .35); ctx.lineTo(-3, -e.h * .1); ctx.stroke();
+    ctx.globalAlpha = calm ? .8 : .5 + .4 * Math.sin(time * 16); ctx.strokeStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(0, -e.h / 2, 24, e.h / 2 + 4, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  if (e.glint > 0) { const g = GLINT_TIP[e.type] || [10, -50], k = e.glint / .1, r = Math.round(10 + 16 * k); // release cue: one bright star on the weapon, 0.1 s
+    rect(ctx, '#ffffff', g[0] - r, g[1] - 1, 2 * r, 2); rect(ctx, '#ffffff', g[0] - 1, g[1] - r, 2, 2 * r); line(ctx, '#ffffff', g[0] - r * .6, g[1] - r * .6, g[0] + r * .6, g[1] + r * .6, 1); line(ctx, '#ffffff', g[0] - r * .6, g[1] + r * .6, g[0] + r * .6, g[1] - r * .6, 1); circle(ctx, '#ffffff', g[0], g[1], 4); }
   ctx.restore();
 }
+const GLINT_TIP = { skeleton: [0, -85], shield: [24, -40], knight: [55, -59], spear: [110, -30], bat: [0, -14] }; // weapon tip in local (facing +x) coordinates
 export function drawPortal(ctx, x = 0, y = FLOOR, time = 0, open = false) {
   ctx.save(); ctx.translate(Math.round(x), Math.round(y));
   const p = palettes[4];
