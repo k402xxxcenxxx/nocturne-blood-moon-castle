@@ -599,7 +599,7 @@ function drawBossWarn(ctx, e, time) {
     ctx.strokeStyle = edge; ctx.lineWidth = pu ? 3 : 2; ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
   };
   ctx.save();
-  if (w.kind === 'slash' || w.kind === 'slam') fillBox(w.box);
+  if (w.kind === 'slash' || w.kind === 'slam' || w.kind === 'sweep' || w.kind === 'seize' || w.kind === 'backhand') fillBox(w.box); // the Warden's moves reuse the King's box fill (dedicated poses come from art)
   if (w.kind === 'charge') {
     fillBox(w.box); const l = w.line; ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 2; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d;
     ctx.beginPath(); ctx.moveTo(Math.round(l.x1), Math.round(l.y1)); ctx.lineTo(Math.round(l.x2), Math.round(l.y2)); ctx.stroke(); ctx.setLineDash([]);

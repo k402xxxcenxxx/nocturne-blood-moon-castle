@@ -1,4 +1,4 @@
-import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE } from './core.js';
+import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, WARDEN_FLOOR } from './core.js';
 import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
@@ -129,7 +129,7 @@ function handleEvent(e) {
       break;
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
-      if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
+      if (e.boss) { rumble(9, .4); toast(t(e.warden ? 'toast.wardenDown' : 'toast.bossDown')); }
       break;
     case 'eliteKill': lastEliteAffix = e.affix; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
@@ -176,6 +176,16 @@ function handleEvent(e) {
       burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3);
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
+    case 'wardenPhase': audio.play('roar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); break;
+    case 'toll': // the Gate Toll: blood torn out of the hero (placeholder feedback; dedicated art and audio come from their roles)
+      audio.play('hurt'); audio.play('heavyHit'); damageFlash = .35; rumble(9, .3); hitCount = 0; comboTime = 0; audio.setHeartbeat(false);
+      flashNumber({ ...e, amount: t('float.toll', { n: Math.round(e.amount) }) }, '#d8445a'); burst(e.x, e.y, '#a93959', 26, 220); break;
+    case 'armorChip': audio.play('block', .9); flashNumber({ ...e, amount: t('float.armorChip') }, '#9aa3b5'); burst(e.x, e.y, '#cfd6e6', 8, 170); break;
+    case 'armorBreak': audio.play('guardBreak', 1.2); rumble(9, .3); if (settings.shake) whiteFlash = .06; flashNumber({ ...e, amount: t('float.armorBreak') }, '#ffd36e'); burst(e.x, e.y, '#8e99a8', 18, 260, 0, 4); burst(e.x, e.y, '#ffd36e', 14, 220); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .4, max: .4, color: '#ffd36e', r: 120 }); break;
+    case 'armorRestore': burst(e.x, e.y, '#8e99a8', 10, 120); break;
+    case 'bloodPool': burst(e.x, e.y - 4, '#a93959', 8, 90, 0, 3); break;
+    case 'poolTaken': audio.play('chestHeal', .6); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
+    case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; break; // metric for the #44 playtest; the result screen may show it later
     case 'enemyHeavy': audio.play('heavyWarn'); break;
     case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
@@ -189,7 +199,7 @@ function handleEvent(e) {
     case 'enemySwing':
       if (e.heavy) audio.play('heavyWhoosh'); else
       if (e.kind === 'spear') audio.play('thrust');
-      else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
+      else if (e.boss) { const s = { slash: 'bossSlash', sweep: 'bossSlash', backhand: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
@@ -236,7 +246,7 @@ function handleEvent(e) {
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
     case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
-    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = ''; openVigil(); break;
+    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
     case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
@@ -246,7 +256,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': deathHeavy = !!e.heavy; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -307,6 +317,7 @@ function synergyLine(id) {
   const partners = game.synergyPartners(id);
   return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
 }
+let deathToll = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
@@ -317,7 +328,7 @@ function openVigil() { // rest point: one weapon card each, choosing one starts 
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? 'castle.toVigil' : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : deathToll ? 'castle.deadToll' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? 'castle.toVigil' : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -436,13 +447,13 @@ function updateHud() {
   if (!castle) $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
   $('souls').textContent = game.souls;
   const guards = game.guardStatus();
-  const bossStage = game.stage === 4; // only the king is required there, so no guard counter
+  const bossStage = game.stage === 4 || (game.mode === 'castle' && game.floor === WARDEN_FLOOR); // only the king (or the Warden) is required there, so no guard counter
   $('enemy-count').textContent = bossStage ? '' : t('hud.guards', { n: guards.n, total: guards.total });
   $('enemy-count').hidden = bossStage;
-  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? 'objective.boss' : 'objective.fight');
+  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? (game.mode === 'castle' ? 'objective.warden' : 'objective.boss') : 'objective.fight');
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
   $('boss-hud').hidden = !boss || game.state === 'title';
-  if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
+  if (boss) { $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`; const label = $('boss-hud').firstElementChild, name = t(boss.warden ? 'enemy.warden' : 'boss.name'); if (label.textContent !== name) label.textContent = name; }
   document.querySelector('[data-control="magic"]').classList.toggle('unavailable', castle ? p.blood < SKILL_MIN : !p.lunatic && p.mp < p.magicCost);
   for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
@@ -598,6 +609,10 @@ function render(dt) {
     }
     for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
+    for (const pool of game.pools) { // blood pool: dark ring and a crimson puddle that dims in its last second
+      ctx.save(); ctx.globalAlpha = Math.min(1, pool.life) * (pool.life < 1 && settings.shake ? .6 + .4 * Math.sin(worldTime * 18) : 1); ctx.fillStyle = '#8c2b46'; ctx.strokeStyle = '#e0584c'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(Math.round(pool.x), Math.round(pool.y - 2), 34, 7, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
     for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
@@ -612,6 +627,11 @@ function render(dt) {
       if (e.type !== 'boss' && e.hp < e.maxHp) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
+      }
+      if (e.warden && e.hp > 0) { // super armor gauge under the feet: steel while armored, dim while locked after a break, gold during the break stun
+        const bw = 72, bx = Math.round(e.x - bw / 2), by = Math.round(e.y + 5), broken = e.superArmor <= 0;
+        ctx.fillStyle = broken ? '#fff0b0' : '#13111b'; ctx.fillRect(bx - 1, by - 1, bw + 2, 6); ctx.fillStyle = '#13111b'; ctx.fillRect(bx, by, bw, 4);
+        ctx.fillStyle = broken ? (!settings.shake || (worldTime * 12 | 0) % 2 ? '#fff0b0' : '#ffd36e') : e.armorLock > 0 ? '#6b7385' : '#aab4c8'; ctx.fillRect(bx + 1, by + 1, broken ? bw - 2 : Math.round((bw - 2) * e.superArmor / e.superArmorMax), 2);
       }
       const brk = e.riposte && e.stun > 0; // posture bar: only below max (or flashing while broken, until the riposte lands)
       if (e.maxPoise && (brk || e.poise < e.maxPoise) && (game.mode === 'castle' || e.type === 'knight' || e.type === 'shield' || e.type === 'boss') && e.type !== 'bat') {
@@ -630,7 +650,7 @@ function render(dt) {
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
-      if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
+      if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && (e.type !== 'boss' || e.warden), mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
+import { Game, FLOOR, WARDEN_FLOOR, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2708,15 +2708,6 @@ test('castle: relic picks come after floors 3, 6 and 9 only, from the slice pool
   assert.equal(player.blood, 120);
 });
 
-test('castle: after floor 9 the run ends at the slice-end placeholder', () => {
-  const { game, events } = castle(42, 9);
-  game.finishStage();
-  assert.equal(game.state, 'upgrade');
-  game.chooseRelic(game.choices[0].id);
-  assert.equal(game.state, 'sliceEnd');
-  assert.ok(events.some(e => e.type === 'sliceEnd'));
-});
-
 test('castle: dying returns to the Vigil at 100 blood with no relics, then floor 1 again', () => {
   const { game, player, events } = castle(42, 5);
   game.relics.push('edge'); player.damage *= 1.25;
@@ -3208,4 +3199,259 @@ test('castle poke: one answer per poke (a landing poke arms exactly one tell)', 
   advance(game, 1.2); assert.equal(tells(), 1, 'no second tell from the same poke');
   e.cd = 99; e.token = ''; player.x = e.x - 100; player.dir = 1; game.hitSet = new Set(); player.combo = 1; player.move = ''; game.hitTargets();
   advance(game, .3); assert.equal(tells(), 2, 'a second landing poke draws a second tell despite the cooldown');
+});
+
+// --- The Gate Warden (floor 10, #50 section 5) ---
+function warden(wx = 1000, hx = 940) {
+  const t = castle(42, WARDEN_FLOOR), b = t.game.spawnWarden(wx);
+  Object.assign(t.player, { x: hx }); Object.assign(b, { engaged: true, cd: 99, dir: -1 }); // cd 99: it never picks a move by itself
+  return { ...t, b };
+}
+const hit = (game, b, n = 10) => game.damageEnemy(b, n, 1, false, false, false, 17);
+
+test('warden: floor 10 is the Warden alone in the boss arena, with its base stats and fresh fight stats', () => {
+  const { game } = castle(42, 9);
+  game.finishStage(); game.chooseRelic(game.choices[0].id);
+  assert.equal(game.floor, WARDEN_FLOOR); assert.equal(game.state, 'playing');
+  assert.equal(game.enemies.length, 1);
+  const b = game.enemies[0];
+  assert.ok(b.warden && b.required);
+  assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [520, 75, ARMOR_MAX, 100]);
+  assert.equal(game.worldWidth, STAGES[4].width); assert.equal(game.platforms.length, 2);
+  assert.deepEqual(game.fightStats, { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 });
+  assert.equal(game.loadFloor(50), false, 'the Fallen King floor is a stub');
+});
+
+test('warden: normal and endless runs never spawn it', () => {
+  const g = new Game(() => {}, 7); g.loadStage(4);
+  const king = g.enemies.find(e => e.type === 'boss');
+  assert.ok(king && !king.warden && king.maxHp === 900);
+  const { game } = castle(42, 3);
+  assert.ok(!game.enemies.some(e => e.warden) && game.fightStats === null);
+});
+
+test('warden gauge: normal hits change nothing, Eclipse chips 25 and four break it, a frenzy hit breaks at once', () => {
+  const { game, player, events, b } = warden();
+  hit(game, b);
+  assert.equal(b.superArmor, 100);
+  for (let i = 0; i < 3; i++) { player.magicCd = 0; game.magic(); }
+  assert.equal(b.superArmor, 25);
+  assert.equal(events.filter(e => e.type === 'armorChip').length, 3);
+  assert.equal(events.find(e => e.type === 'armorChip').value, 25);
+  player.magicCd = 0; game.magic();
+  assert.equal(b.superArmor, 0); assert.ok(events.some(e => e.type === 'armorBreak'));
+  const t2 = warden(); t2.player.frenzy = true; t2.player.blood = 150;
+  hit(t2.game, t2.b);
+  assert.equal(t2.b.superArmor, 0); assert.ok(t2.events.some(e => e.type === 'armorBreak'));
+  assert.equal(t2.game.fightStats.breaks, 1);
+});
+
+test('warden break: cancels the move, knocks it 140 px back, stuns 1.8 s at x1.5 damage, then refills and locks for 2.5 s', () => {
+  const { game, player, events, b } = warden(1000, 900);
+  player.invulnerable = 99; // the Warden may act again between the stun and the lock
+  game.wardenStart(b, 'slam');
+  assert.ok(b.tell > 0 && b.warn);
+  player.frenzy = true; player.blood = 150;
+  const x0 = b.x, hp0 = b.hp;
+  hit(game, b, 10);
+  assert.equal(b.tell, 0); assert.equal(b.warn, null); assert.equal(b.move, ''); assert.equal(b.heavy, false);
+  assert.equal(b.hp, hp0 - 10, 'the breaking hit is not yet x1.5');
+  assert.ok(Math.abs(b.stun - BREAK_STUN) < 1e-9);
+  advance(game, .01); hit(game, b, 10);
+  assert.equal(b.hp, hp0 - 10 - 15, 'x1.5 during the stun');
+  advance(game, .6);
+  assert.ok(Math.abs(b.x - x0 - 140) < 10, `knocked back ~140 px (${b.x - x0})`);
+  assert.equal(b.superArmor, 0);
+  advance(game, BREAK_STUN); b.cd = 99;
+  assert.equal(b.superArmor, ARMOR_MAX); assert.ok(b.armorLock > 0 && b.armorLock <= ARMOR_LOCK);
+  assert.ok(events.some(e => e.type === 'armorRestore'));
+  hit(game, b); // frenzy hit inside the lock
+  assert.equal(b.superArmor, ARMOR_MAX, 'no break while locked');
+  player.magicCd = 0; game.magic(); assert.equal(b.superArmor, ARMOR_MAX, 'no chip while locked');
+  advance(game, ARMOR_LOCK + .1); player.frenzy = true;
+  hit(game, b);
+  assert.equal(b.superArmor, 0, 'breakable again after the lock');
+});
+
+test('warden: a hit never flinches, staggers or interrupts a tell, and gives no blood while armored', () => {
+  const { game, player, b } = warden(1000, 940);
+  b.dir = 1; game.wardenStart(b, 'sweep');
+  const tell = b.tell; player.x = 960; player.dir = 1; player.blood = 100; player.attackCd = 0;
+  game.attack(); // swing costs 2 and the hit pays nothing
+  assert.ok(b.hp < 520); assert.equal(b.stun, 0); assert.ok(b.tell > 0 && b.tell <= tell); assert.equal(b.poise, 1);
+  assert.equal(player.blood, 98);
+});
+
+test('warden blood: hits during a heavy recovery pay even while armored, and so do break-stun hits', () => {
+  const { game, player, b } = warden(1000, 960);
+  Object.assign(player, { dir: 1, blood: 100, attackCd: 0, x: 960 });
+  Object.assign(b, { heavy: true, heavyKind: 'slam', recover: 1, punishable: true });
+  game.attack();
+  assert.ok(player.blood > 98, `paid during a heavy recovery (${player.blood})`);
+  const t = warden(1000, 960);
+  Object.assign(t.player, { dir: 1, blood: 100, attackCd: 0 });
+  Object.assign(t.b, { recover: 1, punishable: true }); // a light recovery is not a heavy one
+  t.game.attack();
+  assert.equal(t.player.blood, 98);
+  const s = warden(1000, 960);
+  Object.assign(s.player, { dir: 1, blood: 100, attackCd: 0 }); s.game.armorBreak(s.b);
+  s.game.attack();
+  assert.ok(s.player.blood > 98, 'paid during the break stun');
+});
+
+test('warden toll: takes all blood above 100 (30 at 100 or less), refills the gauge by that amount and ends a frenzy', () => {
+  const { game, player, events, b } = warden(1000, 1060);
+  b.dir = 1; b.superArmor = 20; player.blood = 180; player.frenzy = true;
+  game.wardenStart(b, 'seize');
+  assert.ok(b.tell > 0 && b.heavy);
+  advance(game, 1.2);
+  assert.equal(player.blood, 100); assert.equal(player.frenzy, false);
+  const toll = events.find(e => e.type === 'toll'); assert.ok(toll.amount > 60 && toll.amount <= 80, 'everything above 100 (some burned off first)');
+  assert.ok(Math.abs(b.superArmor - (20 + toll.amount)) < 1e-9);
+  assert.ok(player.x > 1060 && player.invulnerable > 0, 'thrown back and briefly invulnerable');
+  const t2 = warden(1000, 1060); t2.b.dir = 1; t2.b.superArmor = 10; t2.player.blood = 100;
+  t2.game.wardenStart(t2.b, 'seize'); advance(t2.game, 1.2);
+  assert.equal(t2.player.blood, 70); assert.equal(t2.b.superArmor, 40);
+  const t3 = warden(1000, 1060); t3.b.dir = 1; t3.player.blood = 150; t3.game.wardenStart(t3.b, 'seize'); advance(t3.game, 1.2);
+  assert.equal(t3.b.superArmor, 100, 'the gauge caps at 100');
+  assert.equal(t3.game.fightStats.taken, 50);
+});
+
+test('warden toll: a jump clears the seize, a dash avoids it, and a toll at low blood kills with its own cause', () => {
+  const air = warden(1000, 1060); air.b.dir = 1; air.player.blood = 150;
+  air.game.wardenStart(air.b, 'seize'); advance(air.game, .9);
+  air.game.jump(); advance(air.game, .25); assert.equal(air.player.grounded, false);
+  advance(air.game, .06); // contact while the hero is airborne
+  assert.equal(air.player.blood, 150); assert.ok(!air.events.some(e => e.type === 'toll'));
+  const low = warden(1000, 1060); low.b.dir = 1; low.player.blood = 20;
+  low.game.wardenStart(low.b, 'seize'); advance(low.game, 1.2);
+  assert.equal(low.game.state, 'dead');
+  assert.equal(low.events.find(e => e.type === 'death').cause, 'toll');
+  assert.equal(low.events.find(e => e.type === 'toll').amount, 20);
+});
+
+test('warden pools: a slam leaves two pools at +-200 (max 2, 4 s), taken by touch while grounded for an unhalved +14', () => {
+  const { game, player, events, b } = warden(1000, 1300);
+  b.dir = 1; game.wardenStart(b, 'slam'); advance(game, 1);
+  const pools = events.filter(e => e.type === 'bloodPool');
+  assert.deepEqual(pools.map(p => p.x).sort((a, c) => a - c), [800, 1200]);
+  assert.equal(game.pools.length, 2);
+  game.wardenStart(b, 'slam'); b.recover = 0; advance(game, 1);
+  assert.equal(game.pools.length, 2, 'at most two on the field');
+  player.frenzy = true; player.blood = 150; player.x = 1200; player.grounded = true;
+  const before = player.blood; game.updatePools(0);
+  assert.equal(player.blood, before + POOL_GAIN, 'frenzy does not halve pool blood');
+  assert.ok(events.some(e => e.type === 'poolTaken' && e.amount === POOL_GAIN));
+  game.pools = [{ x: 400, y: FLOOR, life: 4, max: 4 }]; player.x = 400; player.grounded = false;
+  game.updatePools(0); assert.equal(game.pools.length, 1, 'not taken while airborne');
+  game.updatePools(5); assert.equal(game.pools.length, 0, 'pools expire');
+});
+
+test('warden habit memory: two matching answers out of the last three pick the documented branch', () => {
+  const { game, b } = warden(1000, 940);
+  b.habit = ['jumped', 'crossed', 'jumped'];
+  assert.equal(game.wardenPick(b, 100).move, 'slam'); assert.deepEqual(b.habit, [], 'a read is spent');
+  b.habit = ['jumped', 'jumped'];
+  const far = game.wardenPick(b, 250); assert.deepEqual([far.move, far.delay], ['charge', true]);
+  b.habit = ['crossed', 'stood', 'crossed'];
+  assert.equal(game.wardenPick(b, 100).move, 'sweep'); assert.equal(b.chain, 'backhand');
+  b.habit = ['crossed', 'crossed']; assert.equal(game.wardenPick(b, 250).move, 'charge'); assert.equal(b.chain, 'backhand');
+  b.habit = ['retreated', 'retreated', 'stood']; b.lastMove = 'charge';
+  assert.equal(game.wardenPick(b, 100).move, 'charge');
+  b.habit = ['jumped', 'crossed', 'retreated']; b.lastMove = '';
+  assert.ok(['sweep', 'slam', 'seize'].includes(game.wardenPick(b, 100).move), 'no read: the band pool');
+  assert.equal(b.read, '');
+});
+
+test('warden habit memory records how the hero answered each heavy, and a crossed read ends the sweep with a backhand', () => {
+  const { game, player, b } = warden(1000, 940);
+  for (let i = 0; i < 2; i++) {
+    b.recover = 0; b.heavy = false; b.dir = 1; Object.assign(player, { x: 1060, y: FLOOR - 150, grounded: false, vy: 0 });
+    game.wardenStart(b, 'slam'); game.wardenStrike(b);
+  }
+  assert.deepEqual(b.habit, ['jumped', 'jumped']);
+  b.recover = 0; b.dir = 1; Object.assign(player, { x: 700, y: FLOOR, grounded: true });
+  game.wardenStart(b, 'slam'); game.wardenStrike(b);
+  assert.deepEqual(b.habit.slice(-1), ['crossed']);
+  game.projectiles = []; b.recover = 0; b.habit = ['crossed', 'crossed']; b.cd = 0; b.dir = 1; player.x = 1100; player.grounded = true;
+  game.moveWarden(b, 1 / 120);
+  assert.equal(b.move, 'sweep'); assert.equal(b.chain, 'backhand');
+  advance(game, .7);
+  assert.equal(b.move, 'backhand'); assert.ok(b.tell > 0 && b.warn.box.x < b.x - 8 && b.warn.kind === 'backhand', 'the box is behind it');
+});
+
+test('warden phase 2 at 50% health: 1.1 s pause, an event, and pools move out to +-260', () => {
+  const { game, events, b } = warden(1000, 940);
+  hit(game, b, 259); assert.equal(b.bossPhase, 1);
+  hit(game, b, 2);
+  assert.equal(b.bossPhase, 2); assert.ok(Math.abs(b.pause - 1.1) < 1e-9);
+  assert.equal(events.filter(e => e.type === 'wardenPhase').length, 1);
+  b.dir = 1; game.wardenStart(b, 'slam'); game.wardenStrike(b);
+  assert.deepEqual(game.pools.map(p => p.x).sort((a, c) => a - c), [740, 1260]);
+});
+
+test('warden: every attack shows a tell, and heavies glint 0.4 s before contact (delayed ones too)', () => {
+  for (const [move, delay] of [['sweep'], ['backhand'], ['slam'], ['charge'], ['seize'], ['slam', true], ['charge', true]]) {
+    const { game, events, b } = warden(1000, 700);
+    b.dir = 1; game.wardenStart(b, move, delay);
+    const tell = b.tell;
+    assert.ok(tell > 0 && b.warn && b.warn.kind === move, `${move} has a tell and an exposed area`);
+    assert.equal(events.some(e => e.type === (b.heavy ? 'enemyHeavy' : 'enemyTell')), true);
+    let glintAt = null, swingAt = null;
+    for (let t = 0; t < 3 && swingAt === null; t += 1 / 120) {
+      game.update(1 / 120, {});
+      for (const e of events) { if (e.type === 'enemyGlint' && glintAt === null) glintAt = game.time; if (e.type === 'enemySwing' && swingAt === null) swingAt = game.time; }
+    }
+    assert.ok(swingAt !== null, `${move} strikes`);
+    if (b.heavy || ['slam', 'charge', 'seize'].includes(move)) assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, `${move} glints ${GLINT_LEAD} s before contact`);
+    else assert.equal(glintAt, null, `${move} is light: no glint`);
+    if (delay) assert.ok(tell > (move === 'slam' ? .95 : .9), 'delayed tell is longer');
+  }
+});
+
+test('warden never starts an attack from off screen: it walks in first', () => {
+  const { game, b } = warden(2000, 1200);
+  b.cd = 0;
+  advance(game, .2);
+  assert.equal(b.tell, 0, 'hero 800 px away: no tell');
+  assert.ok(b.x < 2000, 'it walks toward the hero');
+});
+
+test('warden: after the kill the second Vigil keeps relics, restores blood 100 and ends frenzy, then the slice ends', () => {
+  const { game, player, events } = castle(42, 9);
+  game.finishStage(); game.choices = RELICS.filter(r => r.id === 'edge'); game.chooseRelic('edge');
+  const b = game.enemies[0], dmg = player.damage;
+  Object.assign(player, { blood: 180, frenzy: true }); player.debt = 30;
+  game.damageEnemy(b, 9999, 1, false, false);
+  assert.equal(b.hp, 0);
+  const stats = events.find(e => e.type === 'fightStats'); assert.ok(stats && stats.won === true);
+  advance(game, 1.8);
+  assert.equal(game.state, 'rest'); assert.equal(game.vigil, 2);
+  assert.equal(player.blood, 100); assert.equal(player.frenzy, false); assert.equal(player.debt, 0);
+  assert.deepEqual(game.relics, ['edge']);
+  assert.equal(game.setWeapon('twin'), true);
+  assert.equal(player.weapon, 'twin'); assert.equal(player.damage, 17 * 1.25, 'relics stack on the new weapon base'); assert.ok(dmg !== player.damage);
+  assert.equal(game.descend(), true);
+  assert.equal(game.state, 'sliceEnd'); assert.ok(events.some(e => e.type === 'sliceEnd'));
+});
+
+test('warden: dying on floor 10 emits the fight stats and returns to the first Vigil without relics', () => {
+  const { game, player, events } = castle(42, WARDEN_FLOOR);
+  game.relics.push('edge'); player.blood = 50;
+  game.hurt(500, 1, false, true);
+  assert.equal(game.state, 'dead');
+  assert.equal(events.filter(e => e.type === 'fightStats').length, 1);
+  assert.equal(events.find(e => e.type === 'fightStats').won, false);
+  game.enterRest();
+  assert.equal(game.state, 'rest'); assert.equal(game.vigil, 1); assert.deepEqual(game.relics, []);
+  game.setWeapon('heavy'); game.descend(); assert.equal(game.floor, 1);
+});
+
+test('warden fight stats count blood gained and taken, time since it woke, breaks and frenzies', () => {
+  const { game, player, b } = warden(1000, 940);
+  advance(game, .5); assert.ok(Math.abs(game.fightStats.time - .5) < .02);
+  player.blood = 190; game.gainBlood(10);
+  assert.equal(game.fightStats.gained, 10); assert.equal(game.fightStats.frenzies, 1);
+  game.hurt(20, 1); assert.equal(game.fightStats.taken, 20);
+  game.armorBreak(b); assert.equal(game.fightStats.breaks, 1);
 });
