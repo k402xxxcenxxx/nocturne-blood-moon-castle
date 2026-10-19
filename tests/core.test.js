@@ -3173,18 +3173,39 @@ test('castle mash (QA 50 PR 1): a fresh skeleton in spear reach starts a tell or
   assert.ok(tells > 0 || player.blood < 100, `no tell and no damage taken (hp ${Math.round(e.hp)}, blood ${Math.round(player.blood)})`);
 });
 
-test('castle poke (QA 50 PR 1 re-check): a stationary hero poked from 90 px is not hit by the answer to the poke (seed 11)', () => {
-  // Regression: a provoked skeleton may start a heavy cleave (box 10-125 px) instead of the light slash, so the playtest scenario's whiffing answer
-  // becomes a 100-damage hit on a hero who stands still. Seed 11 at 90 px reproduces it at 1.14 s.
+test('castle poke: the answer to a poke from 90 px never hits a stationary hero without a readable tell', () => {
+  // A provoked skeleton may answer with its heavy cleave (box 10-125 px). That is fine only when it is fully telegraphed: enemyHeavy at least 0.85 s
+  // and enemyGlint 0.4 s before the hit. Seed 11 at 90 px reproduces the cleave answer.
   const events = [];
-  const game = new Game(event => events.push(event), 11, 'castle');
+  let steps = 0;
+  const game = new Game(event => events.push({ ...event, at: steps }), 11, 'castle');
   game.start(); game.setWeapon('spear'); game.descend(); game.loadFloor(1);
   game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
   const player = game.player; player.blood = 100;
   game.spawnEnemy('skeleton', player.x + 90, game.stage);
   const e = game.enemies.at(-1); e.dir = -1; e.cd = 0; e.poiseHit = 0;
-  game.update(1 / 120, { attack: true });
-  for (let i = 0; i < 1.5 * 120; i++) { game.traps = []; game.update(1 / 120, {}); }
+  const tick = input => { steps++; game.update(1 / 120, input); };
+  tick({ attack: true });
+  for (let i = 0; i < 1.5 * 120; i++) { game.traps = []; tick({}); }
   const hits = events.filter(ev => ev.type === 'hurt');
-  assert.equal(hits.length, 0, `the answer to the poke hit the stationary hero (blood ${Math.round(player.blood)})`);
+  assert.ok(hits.every(h => h.heavy), 'no light hit on a stationary hero');
+  for (const h of hits) {
+    const heavy = events.filter(ev => ev.type === 'enemyHeavy' && ev.at <= h.at).at(-1), glint = events.filter(ev => ev.type === 'enemyGlint' && ev.at <= h.at).at(-1);
+    assert.ok(heavy && (h.at - heavy.at) / 120 >= .85 - 1e-9, 'a heavy tell of at least 0.85 s came first');
+    assert.ok(glint && Math.abs((h.at - glint.at) / 120 - .4) <= 1 / 120 + 1e-9, 'the glint came 0.4 s before the hit');
+  }
+});
+
+test('castle poke: one answer per poke (a landing poke arms exactly one tell)', () => {
+  const { game, player, events } = castle(42, 1);
+  game.rand = () => .99; // no extra rolls
+  const e = enemy(game, player.x + 130, { hp: 1e6 }); e.cd = 0; e.heavyCd = 99; e.dir = -1; e.maxPoise = e.poise = 1e6;
+  const tells = () => events.filter(ev => ev.type === 'enemyTell' && ev.enemy === 'skeleton').length;
+  game.update(1 / 120, { attack: true }); // one spear poke lands at 130 px
+  assert.ok(e.provoke > 0, 'armed');
+  advance(game, .3);
+  assert.equal(tells(), 1); assert.equal(e.provoke, 0, 'the tell start spends the arming');
+  advance(game, 1.2); assert.equal(tells(), 1, 'no second tell from the same poke');
+  e.cd = 99; e.token = ''; player.x = e.x - 100; player.dir = 1; game.hitSet = new Set(); player.combo = 1; player.move = ''; game.hitTargets();
+  advance(game, .3); assert.equal(tells(), 2, 'a second landing poke draws a second tell despite the cooldown');
 });

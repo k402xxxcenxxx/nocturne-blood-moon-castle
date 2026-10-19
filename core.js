@@ -349,7 +349,7 @@ export class Game {
     const boss = type === 'boss';
     const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     return this.enemies.at(-1);
   }
   update(dt, input = {}) {
@@ -621,7 +621,7 @@ export class Game {
     const armored = e.armor > 0 || (winding && !eclipse); // post-stagger armor: damage lands, but no poise damage, flinch or knockback
     if (e.hp > 0 && (castle ? e.armor <= 0 : !armored) && poiseDamage > 0) {
       e.poise -= poiseDamage * (blocked ? .25 : 1) * (castle && winding ? .5 : 1) * (e.punishable ? 2 : 1);
-      e.poiseHit = POISE_REGEN_DELAY;
+      e.poiseHit = POISE_REGEN_DELAY; e.provoke = POISE_REGEN_DELAY;
     }
     const broken = e.hp > 0 && e.poise <= 0;
     // The boss deliberately keeps its warning but still takes a 0.08 s hit stun (see the stun line below).
@@ -907,7 +907,7 @@ export class Game {
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const castle = this.mode === 'castle' && e.type !== 'boss';
     if (castle) {
-      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt);
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt);
       if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
       if (e.stun <= 0) e.riposte = false;
     }
@@ -991,15 +991,15 @@ export class Game {
     }
     if (e.affix === 'swift' && e.tell > 0 && !(tellBefore > 0)) e.tell = Math.max(e.heavy ? .7 : .3, e.tell * .8); // Swift: shorter warnings, never under 0.3 s (heavy 0.7 s)
   }
-  // Castle skeleton / shield bearer that took posture damage in the last 1.5 s: it answers a poke at once (no spawn or attack cooldown parking it in the hold
+  // Castle skeleton / shield bearer that took posture damage in the last 1.5 s: one answer per posture hit. It answers a poke at once (no spawn or attack cooldown parking it in the hold
   // ring, inside the hero's reach) and may start its light tell from PROVOKED_REACH, so a hero who pokes from a distance always meets a tell.
-  provoked(e) { return this.mode === 'castle' && !!HOLD_RING[e.type] && e.poiseHit > 0 && e.recover <= 0; }
+  provoked(e) { return this.mode === 'castle' && !!HOLD_RING[e.type] && e.provoke > 0 && e.recover <= 0; }
   ready(e) { return e.cd <= 0 || this.provoked(e); }
   tokensFree() { return ATTACK_TOKENS - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
   // A token is taken when a tell (or the stepcut backstep) starts and released once the whole attack, recovery included, is over or cancelled.
   syncToken(e) {
     if (!e.token && !e.blessRadius && (e.tell > 0 || e.stepT > 0)) {
-      e.token = e.heavy ? 'heavy' : 'light'; e.wait = 0;
+      e.token = e.heavy ? 'heavy' : 'light'; e.wait = 0; e.provoke = 0; // every tell start (light, heavy, stepcut, counter) spends the answer
       if (!e.heavy) this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: e.type, kind: e.move || LIGHT_KIND[e.type], dir: e.dir });
     } else if (e.token && !this.attacking(e) && !(e.recover > 0)) { e.token = ''; this.gaps.push(TOKEN_GAP); }
   }

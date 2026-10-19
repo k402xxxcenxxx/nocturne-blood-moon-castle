@@ -130,8 +130,9 @@ try {
     await q(page, () => window.__qa.act(() => window.__qa.g.attack()));
     await q(page, () => window.__qa.step(0.3));
     assert.equal((await snap(page)).blood - before, 3, 'punish hit should net +3 (cost 2, hit 3, punish 2)');
-    await q(page, () => window.__qa.step(1.3));
+    assert.ok(await q(page, () => window.__qa.until('e.recover <= 0 && e.tell > 0 && !e.heavy', 2)) >= 0, 'the punish should draw one provoked answer once the cleave recovery ends');
     assert.equal((await snap(page)).punishable, false);
+    assert.ok(await q(page, () => window.__qa.until('e.tell <= 0 && e.recover <= 0 && !e.punishable', 3)) >= 0, 'the provoked answer should end');
     const b2 = (await snap(page)).blood;
     await q(page, () => window.__qa.act(() => window.__qa.g.attack()));
     await q(page, () => window.__qa.step(0.3));
