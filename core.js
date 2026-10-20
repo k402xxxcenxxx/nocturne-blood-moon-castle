@@ -82,7 +82,7 @@ const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
   skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .1, reads: { whiff: .8, dashSpent: .5 } },
-  bat: { kind: 'dive', tell: .9, recover: 1, base: .15, reads: { airborne: .6, frenzy: .5 } },
+  bat: { kind: 'dive', tell: .9, recover: 1, base: .5, reads: { airborne: .6, frenzy: .5 } },
   shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
   knight: { kind: 'greatswing', tell: 1, recover: 1.2, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
@@ -96,17 +96,18 @@ const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140
 const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5 }; // castle light-attack recovery (standing still, punishable); the priest and mage join with their kits
 const LIGHT_CD = { skeleton: 1 }; // castle light-attack cooldown overrides (s); others keep the stage-based cooldown
 const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
-const TRIGGER = { bat: 50, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
+const TRIGGER = { bat: 170, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
 const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35 }; // castle re-face delay outside attacks
 // Castle kits of the spearman, bat and knight (#50 PR 2). Seconds and px; playtest starting points.
 const SWEEP_RANGE = 80, SWEEP_TELL = .5, SWEEP_RECOVER = .5, SWEEP_BACKOFF = 120; // spearman: a hero inside 80 draws the low sweep; without a token it backs off to 120
+const SWOOP_TELL = .45, BAT_RING = 150, BAT_DART = .25, BAT_DART_FROM = 30, BAT_DART_STOP = 10; // bat: hovers 150-170 px out without a token; a swoop from farther than 30 px first darts to 10 px in 0.25 s (tell 0.7 s)
 const CROSS_TIME = .5, CROSS_FROM = 140, CROSS_BEHIND = 60, CROSS_CD = 4, CROSS_CHANCE = .7; // bat crossover: flies over a hero who faces it within 140 and lands 60 px behind
 const STRING_RANGE = 150, STRING_TELL = .5, STRING_RECOVER = .8, OVERHEAD_STEP = 40; // knight string: after the slash lands, a hero within 150 in front draws the overhead, one behind draws the turnswipe
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
 const DELAY_CHANCE = floor => floor >= 8 ? .5 : floor >= 5 ? .3 : 0;
-export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 128 } };
+export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 120 } };
 const SLICE_EXCLUDED = ['vital', 'leech', 'mana', 'arcane', 'lunaticMoon', 'nightwalk']; // relics that only touch HP, MP or magic cost
 export const SLICE_POOL = RELICS.filter(r => !SLICE_EXCLUDED.includes(r.id)).map(r => r.id);
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -424,7 +425,7 @@ export class Game {
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
-    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0 }); // bat crossover timers
+    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0 }); // bat crossover and dart timers
     return e;
   }
   update(dt, input = {}) {
@@ -1059,6 +1060,7 @@ export class Game {
     if (!(e.tell > 0) && !(e.travel > 0) && distance > (e.type === 'boss' ? 750 : 590)) { e.vx = 0; return; } // a started warning always counts down
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
+      if (e.dartT > 0 && !e.heavy) { const prevX = e.x; e.dartT = Math.max(0, e.dartT - dt); e.x = e.dartTo + (e.dartFrom - e.dartTo) * e.dartT / BAT_DART; e.vx = (e.x - prevX) / dt; } // bat dart: to a point fixed at tell start
       if (e.heavyKind === 'dive') e.y += (e.warn.hover - e.y) * Math.min(1, dt * 8); // the bat rises and hovers during the tell
       if (castle && e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { // release cue: the same 0.4 s before contact for every heavy, delayed or not
         e.glinted = true; e.glint = .1;
@@ -1074,8 +1076,16 @@ export class Game {
       if (castle && this.startCross(e, distance)) e.vx = 0; // the bat flies over the hero (no hitbox, no token)
       else {
         e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
-        e.vx = e.dir * e.speed; e.x += e.vx * dt;
-        if (distance < (castle ? 50 : 30) && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = castle ? .45 : .36; e.cd = 1.3; }
+        if (!castle) {
+          e.vx = e.dir * e.speed; e.x += e.vx * dt;
+          if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .36; e.cd = 1.3; }
+        } else if (distance < TRIGGER.bat && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { // swoop; from outside BAT_DART_FROM it first darts in during the tell
+          const dart = distance > BAT_DART_FROM, side = Math.sign(e.x - p.x) || 1;
+          Object.assign(e, { tell: SWOOP_TELL + (dart ? BAT_DART : 0), cd: 1.3, vx: 0, dartT: dart ? BAT_DART : 0, dartFrom: e.x, dartTo: clamp(p.x + side * BAT_DART_STOP, 30, this.worldWidth - 40) });
+        } else { // hover ring outside every sword's reach while waiting for a token or the cooldown
+          e.vx = !this.ready(e) || this.tokensFree() <= 0 ? (distance < BAT_RING ? -face * e.speed : distance > BAT_RING + 20 ? e.dir * e.speed : 0) : e.dir * e.speed;
+          e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
+        }
       }
     } else if (e.type === 'mage') {
       if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
@@ -1678,7 +1688,7 @@ export class Game {
     const h = HEAVY[e.type], p = this.player;
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.rollT > 0 || e.turn > 0 || e.reface > 0 || e.heavy) return false;
     const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
-    const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
+    const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= BAT_RING + 40 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
     if (this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
     const box = (from, to, height) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - height, w: to - from, h: height });

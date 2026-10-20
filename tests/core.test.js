@@ -4162,8 +4162,24 @@ test('castle bat: swoop has a 0.45 s tell with hyper armor, then flutters up for
   assert.ok(Math.abs(nb.tell - .36) < .02, 'normal mode keeps the 0.36 s swoop');
 });
 
+test('castle bat: from up to 170 px the swoop first darts to 10 px of where the hero stood (0.25 s of a 0.7 s tell); walking out answers it; without a token it hovers 150-170 px out', () => {
+  const { game, player, e, events } = lightFoe('bat', 120);
+  e.y = player.y - 30; player.blood = 150; player.dir = -1; // facing away: no crossover
+  const x0 = player.x; advance(game, .02);
+  assert.ok(e.tell > .65 && e.tell < .7 && e.dartT > 0 && e.token === 'light' && tellsOf(events, 'swoop').length === 1, 'one tell covers the dart');
+  advance(game, .25);
+  assert.ok(Math.abs(e.x - (x0 + 10)) < 1 && e.dartT === 0 && e.tell > .4, `darted to a point fixed at tell start (${e.x - x0})`);
+  player.x -= 60; advance(game, .5);
+  assert.equal(swings(events).length, 1); assert.equal(player.blood, 150, 'walked out of the 55 px swoop');
+  const r = lightFoe('bat', 60); r.e.y = r.player.y - 30; r.player.dir = -1;
+  const a = enemy(r.game, r.player.x - 300), b = enemy(r.game, r.player.x - 330);
+  Object.assign(a, { token: 'light', tell: 9, cd: 1e9 }); Object.assign(b, { token: 'light', tell: 9, cd: 1e9 }); // both tokens taken
+  advance(r.game, 1.2); const gap = r.e.x - r.player.x;
+  assert.ok(gap >= 148 && gap <= 172 && r.e.tell === 0, `no token: hovers outside sword reach (${gap})`);
+});
+
 test('castle bat: crossover flies over a hero who faces it within 140, ends behind them, takes no token and shows its end point', () => {
-  const setup = (dir = 1, gap = 110) => { const c = castle(42, 4); c.game.rand = () => .3; c.player.dir = dir; const e = enemy(c.game, c.player.x + dir * gap, { type: 'bat' }); e.y = c.player.y - 40; e.dir = -dir; e.cd = 0; return { ...c, e }; };
+  const setup = (dir = 1, gap = 110) => { const c = castle(42, 4); c.game.rand = () => .5; c.player.dir = dir; const e = enemy(c.game, c.player.x + dir * gap, { type: 'bat' }); e.y = c.player.y - 40; e.dir = -dir; e.cd = 0; return { ...c, e }; };
   const { game, player, e, events } = setup();
   const side = Math.sign(e.x - player.x);
   advance(game, .02);
@@ -4183,7 +4199,7 @@ test('castle bat: crossover flies over a hero who faces it within 140, ends behi
 
 test('castle bat: a crossed bat may swoop from behind, with a normal tell', () => {
   const { game, player, e, events } = castle(42, 4);
-  game.rand = () => .3; player.dir = 1; player.invulnerable = 9;
+  game.rand = () => .5; player.dir = 1; player.invulnerable = 9;
   const b = enemy(game, player.x + 110, { type: 'bat' }); b.y = player.y - 30; b.dir = -1; b.cd = 0;
   advance(game, 1.2);
   assert.ok(events.some(ev => ev.type === 'enemyCross') && tellsOf(events, 'swoop').length >= 1, 'swoop after the crossover');
