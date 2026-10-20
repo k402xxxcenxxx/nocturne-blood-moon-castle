@@ -71,6 +71,12 @@ const WARDEN_MOVES = { // tell and recovery in seconds; heavy ones deal a flat H
 };
 // Warden strings: a follow-up starts at the end of a sweep, charge, slam or seize, picked by where the hero stands then; its tell is FOLLOW_TELL (heavies still glint GLINT_LEAD before contact), it is never delayed, and a pick draws at most MAX_FOLLOWS[phase] of them.
 const FOLLOW_TELL = { charge: .5, seize: .75, backhand: .5, slam: .7 }, PHASE2_RECOVER_CUT = .3, MAX_FOLLOWS = { 1: 2, 2: 3 };
+// The Fallen King, castle version (#50 section 6, floor 50): the Warden's gauge, pools and habit memory with its own moves, the Tithe and the Blood Moon. Playtest starting points.
+export const KING_FLOOR = 50, KING_HP = 1200, KING_ARMOR = 150, TITHE_DELAY = 3, TITHE_RESTORE = 25, LEDGE_TIME = 2, DESCENT_RADIUS = 120;
+const KING_MOVES = { // a 'string' is the second hit of a slash string: its branch (slash / turnslash / charge) is chosen at the glint, 0.4 s before contact
+  slash: { tell: .6, recover: .6 }, turnslash: { tell: .5, recover: .6 }, string: { tell: .85, recover: .8 }, volley: { tell: .92, recover: .9 }, ritual: { tell: 1.28, recover: 1 },
+  slam: { tell: .95, recover: 1.2, heavy: true }, charge: { tell: .9, recover: 1, heavy: true }, descent: { tell: 1.1, recover: 1.3, heavy: true },
+};
 const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
@@ -133,7 +139,7 @@ export class Game {
     this.relics = [];
     this.player = basePlayer();
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
-    this.pools = []; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
+    this.pools = []; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
     this.loadStage(0);
   }
   rand() { let t = this.randomState += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
@@ -160,7 +166,7 @@ export class Game {
   activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
     this.stage = index;
-    const castle = this.mode === 'castle', fight = castle && this.floor === WARDEN_FLOOR, spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
+    const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
     this.tier = tier; this.gaps = []; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
@@ -174,7 +180,7 @@ export class Game {
     this.pickups = [];
     this.platforms = []; this.rooms = []; this.chests = []; this.roomIndex = -1;
     this.enemies = []; this.eliteBeat = 0;
-    this.pools = []; this.vigilT = 0; this.fightOn = fight; this.fightStats = fight ? { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 } : null;
+    this.pools = []; this.vigilT = 0; this.kingT = 0; this.fightOn = fight; this.fightStats = fight ? { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 } : null;
     this.traps = []; this.obstacles = [];
     const spot = boss ? null : this.buildRooms(index);
     const regular = fight ? 0 : boss ? spec.count : total - 2; // the last two are the required guards at the gate
@@ -187,7 +193,7 @@ export class Game {
     for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / total + this.rand() * 65), tier);
     if (this.mode === 'endless' && this.floor >= ENDLESS_ELITE_FROM) for (const e of this.enemies) if (this.rand() < ENDLESS_ELITE_CHANCE) this.makeElite(e, index).bonus = true; // extra elites: no reward pick
     if (boss) {
-      if (fight) this.spawnWarden(spec.width - 700); else this.spawnEnemy('boss', spec.width - 400, index).required = true;
+      if (king) this.spawnKing(spec.width - 700); else if (fight) this.spawnWarden(spec.width - 700); else this.spawnEnemy('boss', spec.width - 400, index).required = true;
       // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes.
       this.platforms = [this.makePlatform(60, FLOOR - 110, 190, 'cathedral', 'ledge'), this.makePlatform(spec.width - 250, FLOOR - 110, 190, 'cathedral', 'ledge')];
     } else {
@@ -218,8 +224,22 @@ export class Game {
     return Array.from({ length: f >= 8 ? 7 : 6 }, (_, i) => i === 1 ? 'bat' : pool[Math.floor(this.rand() * pool.length)]);
   }
   loadFloor(n) {
-    if (n === 50) return false; // stub: the Fallen King's castle fight is the next PR
-    this.floor = n; this.loadStage(0); this.emit('stage', { stage: 0, floor: n, mode: this.mode });
+    if (n === KING_FLOOR && this.mode !== 'castle') return false; // the Fallen King's castle fight is a Castle Descent floor
+    this.floor = n; this.loadStage(n === KING_FLOOR ? 4 : 0); this.emit('stage', { stage: this.stage, floor: n, mode: this.mode });
+    return true;
+  }
+  // The slice-end screen's "Face the Fallen King": floor 50 at 100 blood with the current weapon and relics. A win or a death comes back to the slice end (no records).
+  challengeKing() {
+    if (this.state !== 'sliceEnd') return false;
+    const p = this.player;
+    this.endFrenzy(); p.blood = BLOOD_HALF; p.debt = 0;
+    this.state = 'playing'; return this.loadFloor(KING_FLOOR);
+  }
+  leaveKing(won) {
+    if (this.floor !== KING_FLOOR || (this.state !== 'playing' && this.state !== 'dead')) return false;
+    this.endFight(false); this.endFrenzy();
+    this.enemies = []; this.projectiles = []; this.pools = []; this.kingT = 0;
+    this.floor = WARDEN_FLOOR; this.state = 'sliceEnd'; this.emit('sliceEnd', { king: won ? 'won' : 'dead' });
     return true;
   }
   // Weapon base stats replace damage, attack cooldown and reach (frenzy effects are step 2). Chosen at a Vigil; the player is rebuilt so owned relics stack on the new base.
@@ -400,7 +420,8 @@ export class Game {
     const p = this.player;
     this.step = dt;
     if (this.vigilT > 0 && (this.vigilT -= dt) <= 0) { this.enterVigil(); return; }
-    if (this.fightOn && this.enemies.some(e => e.warden && e.engaged)) this.fightStats.time += dt;
+    if (this.kingT > 0 && (this.kingT -= dt) <= 0) { this.leaveKing(true); return; }
+    if (this.fightOn && this.enemies.some(e => e.armored && e.engaged)) this.fightStats.time += dt;
     this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
     if (p.frenzy) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     this.updatePlatforms(dt);
@@ -428,7 +449,7 @@ export class Game {
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
     for (const o of this.obstacles) if (p.y > o.y - o.h + 1 && p.y - p.h < o.y && Math.abs(p.x - o.x) < (p.w + o.w) / 2) p.x = o.x + (oldX < o.x ? -1 : 1) * (p.w + o.w) / 2; // solid sides
-    for (const e of this.enemies) if (e.warden && e.hp > 0 && e.travel <= 0 && p.dash <= 0 && p.y > e.y - e.h + 1 && Math.abs(p.x - e.x) < (p.w + e.w) / 2) { const half = (p.w + e.w) / 2, side = oldX < e.x ? -1 : 1, nx = e.x + side * half; p.x = clamp(nx < 25 || nx > this.worldWidth - 30 ? e.x - side * half : nx, 25, this.worldWidth - 30); } // the Warden's body blocks walking (a dash passes, a double jump clears it); at a wall the hero is pushed to the other side
+    for (const e of this.enemies) if (e.armored && e.hp > 0 && e.travel <= 0 && p.y <= e.y + 6 && p.dash <= 0 && p.y > e.y - e.h + 1 && Math.abs(p.x - e.x) < (p.w + e.w) / 2) { const half = (p.w + e.w) / 2, side = oldX < e.x ? -1 : 1, nx = e.x + side * half; p.x = clamp(nx < 25 || nx > this.worldWidth - 30 ? e.x - side * half : nx, 25, this.worldWidth - 30); } // the Warden's body blocks walking (a dash passes, a double jump clears it); at a wall the hero is pushed to the other side
     const oldY = p.y;
     p.vy += 1550 * dt;
     p.y += p.vy * dt;
@@ -466,7 +487,7 @@ export class Game {
     if (this.state !== 'playing') return;
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
-    if (!this.portalOpen && !(this.mode === 'castle' && this.floor === WARDEN_FLOOR) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
+    if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
   // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.
@@ -636,7 +657,7 @@ export class Game {
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
     if (vortex) for (const e of caught) {
-      if (e.warden && e.superArmor > 0) continue; // knockback-immune while armored
+      if (e.armored && e.superArmor > 0) continue; // knockback-immune while armored
       const from = e.x; e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
       if (e.type !== 'bat') for (const o of this.obstacles) { // stay on the near side of any solid in the way
         const half = (e.w + o.w) / 2;
@@ -653,7 +674,7 @@ export class Game {
     this.projectiles = this.projectiles.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > 230);
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
-    const warden = !!e.warden; // super armor instead of posture: full damage, never poise, flinch, knockback or interrupted tells
+    const warden = !!e.armored; // super armor instead of posture: full damage, never poise, flinch, knockback or interrupted tells
     if (warden) { poiseDamage = 0; if (e.breakStun > 0) amount = Math.round(amount * BREAK_MUL); }
     const through = this.absorb(e, amount), absorbed = amount - through;
     e.hp -= through; e.flash = .14;
@@ -707,7 +728,8 @@ export class Game {
   }
   // Boss phase change and death handling, shared by sword hits and damage-over-time / reaction damage.
   settle(e) {
-    if (e.hp > 0 && e.warden && e.bossPhase < 2 && e.hp <= e.maxHp * .5) this.wardenPhase(e);
+    if (e.hp > 0 && e.king) { const phase = e.hp <= e.maxHp * .34 ? 3 : e.hp <= e.maxHp * .67 ? 2 : 1; if (phase > e.bossPhase) this.kingPhase(e, phase); }
+    else if (e.hp > 0 && e.warden && e.bossPhase < 2 && e.hp <= e.maxHp * .5) this.wardenPhase(e);
     else if (e.hp > 0 && e.type === 'boss' && !e.warden) {
       const phase = e.hp <= e.maxHp * .34 ? 3 : e.hp <= e.maxHp * .67 ? 2 : 1;
       if (phase > e.bossPhase) this.enterPhase(e, phase);
@@ -721,8 +743,9 @@ export class Game {
         p.hp = Math.min(p.maxHp, p.hp + p.leech); p.mp = Math.min(p.maxMp, p.mp + 6);
         this.gainBlood(8);
       }
-      this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss', warden: !!e.warden });
+      this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss', warden: !!e.warden, king: !!e.king });
       if (e.warden && this.state === 'playing') { this.projectiles = []; this.pools = []; this.endFight(true); this.vigilT = 1.6; } // the Moon Gate is skipped: the second Vigil follows the kill
+      if (e.king && this.state === 'playing') { this.projectiles = []; this.pools = []; this.endFight(true); this.kingT = 1.6; } // the slice-end screen follows the kill
       if (e.required) this.emit('guards', this.guardStatus());
       if (e.affix === 'splitting') this.splitElite(e);
       if (e.elite) {
@@ -800,7 +823,7 @@ export class Game {
       if (e.frozen <= 0 && e.freezeImmune <= 0) e.frostMeter += frost + (eclipse ? 1 : 0);
       if (e.frostMeter >= 3) {
         e.frostMeter = 0;
-        if (e.freezeImmune <= 0 && e.frozen <= 0 && !e.warden) { // the boss freezes briefly, then ignores freezing for a while
+        if (e.freezeImmune <= 0 && e.frozen <= 0 && !e.armored) { // the boss freezes briefly, then ignores freezing for a while
           e.frozen = boss ? .28 : Math.min(1.5, .75 + .12 * frost);
           if (boss) e.freezeImmune = .28 + 1.8;
           this.cancelAttack(e);
@@ -889,7 +912,7 @@ export class Game {
     if (e.blessed > 0) e.speed *= 1.15;
     if (e.chill > 0) e.speed *= e.type === 'boss' ? .85 : .68;
     const prevX = e.x;
-    if (e.warden) this.moveWarden(e, dt); else this.moveEnemy(e, dt);
+    if (e.armored) this.moveWarden(e, dt); else this.moveEnemy(e, dt);
     e.speed = speed;
     if (this.mode === 'castle' && e.type !== 'boss') this.syncToken(e);
     // Hero above and a step up is in reach: hold at the platform edge instead of walking off, until the jump cooldown allows the jump.
@@ -1087,11 +1110,11 @@ export class Game {
   // --- The Gate Warden (#50 section 5): a boss with a super armor gauge, a Gate Toll and blood pools. It reuses the boss body (type 'boss', warden: true) but none of the King's moves. ---
   spawnWarden(x) {
     const e = this.spawnEnemy('boss', x, 0);
-    Object.assign(e, { warden: true, required: true, hp: 520, maxHp: 520, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false });
+    Object.assign(e, { warden: true, armored: true, required: true, hp: 520, maxHp: 520, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false });
     return e;
   }
   // Blood from a hit on the Warden: none while the gauge is up, except during a heavy's recovery (and the break stun, when the gauge is empty).
-  bloodOk(e) { return !e.warden || e.superArmor <= 0 || (e.heavy && e.recover > 0); }
+  bloodOk(e) { return !e.armored || e.superArmor <= 0 || (e.heavy && e.recover > 0); }
   // Gauge rules for one landed hit: a frenzy hit breaks it in phase 1 and chips FRENZY_CHIP in phase 2 (user decision); Eclipse chips 25; normal hits and the post-stun lock change nothing.
   armorHit(e, eclipse) {
     if (e.superArmor <= 0 || e.armorLock > 0) return;
@@ -1105,7 +1128,7 @@ export class Game {
   }
   armorBreak(e) {
     this.cancelAttack(e);
-    Object.assign(e, { superArmor: 0, stun: BREAK_STUN, breakStun: BREAK_STUN, chain: '', pause: 0, vx: (Math.sign(e.x - this.player.x) || 1) * BREAK_KNOCK * 8 }); // the stun path slides it vx / 8 = 140 px
+    Object.assign(e, { superArmor: 0, stun: BREAK_STUN, breakStun: BREAK_STUN, chain: '', force: '', pause: 0, vx: (Math.sign(e.x - this.player.x) || 1) * BREAK_KNOCK * 8 }); // the stun path slides it vx / 8 = 140 px
     if (this.fightOn) this.fightStats.breaks++;
     this.freeze = Math.max(this.freeze, .08);
     this.emit('armorBreak', { x: e.x, y: e.y - e.h * .55 });
@@ -1118,32 +1141,40 @@ export class Game {
   moveWarden(e, dt) {
     const p = this.player;
     e.flash = Math.max(0, e.flash - dt); e.cd = Math.max(0, e.cd - dt); e.armorLock = Math.max(0, e.armorLock - dt); e.glint = Math.max(0, e.glint - dt); e.pause = Math.max(0, e.pause - dt);
+    if (e.king) this.trackLedge(e, dt);
     if (e.frozen > 0) { e.vx = 0; return; }
     if (e.stun > 0) { // armor break: slides back, takes x1.5 damage, then the gauge refills and locks
       e.stun = Math.max(0, e.stun - dt); e.breakStun = e.stun;
       e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8);
-      if (e.stun <= 0) { Object.assign(e, { superArmor: ARMOR_MAX, armorLock: ARMOR_LOCK, cd: .4, vx: 0 }); this.emit('armorRestore', { x: e.x, y: e.y - e.h * .55 }); }
+      if (e.stun <= 0) { Object.assign(e, { superArmor: e.superArmorMax, armorLock: ARMOR_LOCK, cd: .4, vx: 0 }); this.emit('armorRestore', { x: e.x, y: e.y - e.h * .55 }); }
       return;
     }
     if (e.pause > 0) { e.vx = 0; return; }
     const dx = p.x - e.x, distance = Math.abs(dx);
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
-      if (e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { e.glinted = true; e.glint = .1; this.emit('enemyGlint', { x: e.x, y: e.y - e.h * .5, kind: e.move, enemy: 'warden', delayed: e.delayed }); }
-      if (e.tell <= 0) this.wardenStrike(e);
+      if (e.move === 'string' && e.tell <= GLINT_LEAD) this.kingBranch(e); // the second hit of a slash string commits at the glint
+      else if (e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { e.glinted = true; e.glint = .1; this.emit('enemyGlint', { x: e.x, y: e.y - e.h * .5, kind: e.move, enemy: e.king ? 'king' : 'warden', delayed: e.delayed }); }
+      if (e.tell > 0) return;
+      if (e.move) { if (e.king) this.kingStrike(e); else this.wardenStrike(e); }
       return;
     }
     if (e.travel > 0) { this.wardenCharge(e, dt); return; }
     if (e.recover > 0) {
       e.vx = 0;
-      if ((e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false, cd: Math.max(e.cd, .35) });
+      if ((e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false, cd: Math.max(e.cd, e.king && e.bossPhase >= 3 ? .2 : .35) }); // the Blood Moon quickens the pace
       return;
     }
+    if (e.king && e.y < FLOOR) { e.y = Math.min(FLOOR, e.y + 700 * dt); e.vx = 0; return; } // after a descent it drops back off the ledge
     e.dir = dx >= 0 ? 1 : -1;
     if (!e.engaged) { if (distance > 900) { e.vx = 0; return; } e.engaged = true; }
     const side = e.x - p.x; // nothing attacks from off screen
-    if (e.cd <= 0 && side >= -SCREEN_LEFT && side <= SCREEN_RIGHT) { const pick = this.wardenPick(e, distance); this.wardenStart(e, pick.move, pick.delay); return; }
-    e.vx = distance > 95 ? e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
+    if (e.cd <= 0 && side >= -SCREEN_LEFT && side <= SCREEN_RIGHT) {
+      if (e.king) { const pick = this.kingPick(e, distance); this.kingStart(e, pick.move, pick.delay); return; }
+      const pick = this.wardenPick(e, distance); this.wardenStart(e, pick.move, pick.delay); return;
+    }
+    if (e.king && p.frenzy && distance < 320 && e.x - e.dir * 20 > 100 && e.x - e.dir * 20 < this.worldWidth - 100) { e.vx = -e.dir * e.speed * 1.3; e.x += e.vx * dt; return; } // kites the burn: backsteps while the hero is frenzied, unless cornered
+    e.vx = distance > (e.king ? 105 : 95) ? e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
   }
   // Move choice. Habit memory first (two of the last three heavy answers match), then the Toll against an overfed hero, then the band's pool.
   wardenPick(e, distance) {
@@ -1185,6 +1216,7 @@ export class Game {
     else this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'warden', kind: move, dir: d });
   }
   wardenRecover(e, move) {
+    if (e.king) { this.kingRecover(e, move); return; }
     const cut = e.bossPhase >= 2 && WARDEN_MOVES[move].heavy ? PHASE2_RECOVER_CUT : 0;
     Object.assign(e, { warn: null, move: '', vx: 0, recover: Math.max(cut ? .9 : 0, WARDEN_MOVES[move].recover - cut), punishable: true, cd: Math.max(e.cd, .35) });
     const next = this.wardenFollow(e, move);
@@ -1231,6 +1263,7 @@ export class Game {
     if (e.travel > 0) return;
     e.x = e.chargeTo; e.vx = 0;
     if (!e.noted) this.noteAnswer(e, e.struck ? 'stood' : !p.grounded ? 'jumped' : 'retreated');
+    if (e.king && e.bossPhase >= 3 && !e.struck) this.addPool(e.x, FLOOR, true); // Blood Moon: a charge that missed bleeds where it ended
     this.wardenRecover(e, 'charge');
   }
   // The Gate Toll: all blood above 100 (30 at 100 or below) goes to the Warden's gauge. A dash or the 0.8 s of invulnerability avoids it.
@@ -1244,23 +1277,162 @@ export class Game {
     this.emit('toll', { x: p.x, y: p.y - 30, amount: taken });
     if (p.blood <= 0) this.heroDown(true, 'toll'); else this.checkFrenzy();
   }
-  // Two pools on the floor beside the Warden after a slam (+-200, phase 2 +-260); the newest MAX_POOLS stay.
+  // Two pools on the floor beside the boss after a slam (+-200, phase 2 +-260); the newest MAX_POOLS stay.
   spawnPools(e) {
     const off = e.bossPhase >= 2 ? 260 : 200;
-    for (const side of [-1, 1]) {
-      const pool = { x: clamp(e.x + side * off, 60, this.worldWidth - 60), y: FLOOR, life: POOL_LIFE, max: POOL_LIFE };
-      this.pools.push(pool);
-      this.emit('bloodPool', { x: pool.x, y: pool.y, life: POOL_LIFE });
-    }
-    this.pools = this.pools.slice(-MAX_POOLS);
+    for (const side of [-1, 1]) this.addPool(e.x + side * off, FLOOR, !!e.king);
+  }
+  // A blood pool; the King's are Tithe pools (drawn into him if left for TITHE_DELAY s). Pushed-out older pools stop draining.
+  addPool(x, y, tithe = false) {
+    const pool = { x: clamp(x, 60, this.worldWidth - 60), y, life: POOL_LIFE, max: POOL_LIFE, tithe };
+    this.pools.push(pool);
+    this.emit('bloodPool', { x: pool.x, y: pool.y, life: POOL_LIFE, tithe });
+    for (const old of this.pools.splice(0, Math.max(0, this.pools.length - MAX_POOLS))) if (old.draining) this.emit('tithe', { state: 'broken', x: old.x, y: old.y });
   }
   updatePools(dt) {
-    const p = this.player;
+    const p = this.player, king = this.enemies.find(e => e.king && e.hp > 0);
     for (const pool of this.pools) {
       pool.life -= dt;
-      if (p.grounded && p.y >= pool.y - 4 && Math.abs(p.x - pool.x) < 38) { pool.life = 0; this.addBlood(POOL_GAIN); this.emit('poolTaken', { x: pool.x, y: pool.y, amount: POOL_GAIN }); } // taken by touch while grounded; frenzy does not halve it
+      if (p.grounded && Math.abs(p.y - pool.y) <= 4 && Math.abs(p.x - pool.x) < 38) { // taken by touch while standing on its surface; frenzy does not halve it
+        pool.life = 0; this.addBlood(POOL_GAIN); this.emit('poolTaken', { x: pool.x, y: pool.y, amount: POOL_GAIN });
+        if (pool.draining) this.emit('tithe', { state: 'broken', x: pool.x, y: pool.y });
+      } else if (pool.tithe && king) { // the Tithe: an untaken pool is drawn in along a visible stream for its last second and restores armor
+        if (!pool.draining && pool.max - pool.life >= TITHE_DELAY) { pool.draining = true; this.emit('tithe', { state: 'start', x: pool.x, y: pool.y, toX: king.x, toY: king.y - king.h * .55, duration: pool.max - TITHE_DELAY }); }
+        if (pool.life <= 0 && pool.draining) {
+          const before = king.superArmor;
+          if (king.breakStun <= 0) king.superArmor = Math.min(king.superArmorMax, before + TITHE_RESTORE);
+          this.emit('tithe', { state: 'end', x: pool.x, y: pool.y, toX: king.x, toY: king.y - king.h * .55, amount: king.superArmor - before, left: king.superArmor });
+        }
+      }
     }
     this.pools = this.pools.filter(pool => pool.life > 0);
+  }
+  // --- The Fallen King, castle version (#50 section 6): the Warden's gauge, pools and habit memory, plus the slash string, volley, descent, ritual, the Tithe and the Blood Moon. ---
+  spawnKing(x) {
+    const e = this.spawnEnemy('boss', x, 4);
+    Object.assign(e, { king: true, armored: true, required: true, hp: KING_HP, maxHp: KING_HP, w: 80, h: 128, damage: 24, speed: 75, maxPoise: 0, poise: 1, superArmor: KING_ARMOR, superArmorMax: KING_ARMOR, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', force: '', engaged: false, noted: false, struck: false, opened: false, ledge: null, ledgeT: 0, ledgeOff: 0 });
+    return e;
+  }
+  // How long the hero has stood on one ledge (a 0.35 s hop off does not reset it).
+  trackLedge(e, dt) {
+    const p = this.player, on = p.grounded && p.on && p.on.kind === 'ledge' ? p.on : null;
+    if (on && on === e.ledge) { e.ledgeT += dt; e.ledgeOff = 0; }
+    else if (on) { e.ledge = on; e.ledgeT = dt; e.ledgeOff = 0; }
+    else if (e.ledge && (e.ledgeOff += dt) > .35) { e.ledge = null; e.ledgeT = 0; }
+  }
+  kingPhase(e, phase) {
+    this.cancelAttack(e);
+    Object.assign(e, { bossPhase: phase, chain: '', force: '', pause: 1.1, stun: 0, breakStun: 0, vx: 0, superArmor: e.superArmorMax, armorLock: 1.1 }); // the roar ends a break stun and restores the gauge, locked through the pause
+    this.emit('kingPhase', { phase, x: e.x, y: e.y - e.h * .5 });
+  }
+  // Move choice. A first move above 150 blood is the charge; a ledge held for LEDGE_TIME draws the descent; then habit memory (two of the last three heavy answers); a frenzied hero draws the volley; then the band's pool.
+  kingPick(e, distance) {
+    const p = this.player, ph = e.bossPhase, close = distance < 160, counts = {};
+    for (const h of e.habit.slice(-3)) counts[h] = (counts[h] || 0) + 1;
+    const read = ['crossed', 'jumped', 'retreated'].find(k => counts[k] >= 2);
+    e.chain = ''; e.force = ''; e.read = read || ''; e.follows = 0; e.action++;
+    if (!e.opened) { e.opened = true; if (p.blood > 150) return { move: 'charge' }; }
+    if (ph >= 2 && e.ledge && e.ledgeT >= LEDGE_TIME) return { move: 'descent' };
+    if (read) {
+      e.habit = [];
+      if (read === 'crossed') { e.force = 'turnslash'; if (close) { e.chain = 'string'; return { move: 'slash' }; } return { move: 'charge' }; }
+      if (read === 'jumped') return close ? { move: 'slam' } : { move: 'charge', delay: true };
+      return { move: 'charge' };
+    }
+    if (ph >= 2 && p.frenzy && this.rand() < .75) return { move: 'volley' };
+    if (ph >= 3 && e.action % 3 === 0) return { move: 'ritual' };
+    const pool = close ? (ph >= 2 ? ['slash', 'slam', 'charge'] : ['slash', 'slash', 'slam']) : distance <= 330 ? (ph >= 2 && distance > 200 ? ['charge', 'slam', 'volley'] : ['charge', 'slam']) : ph >= 2 ? ['charge', 'volley'] : ['charge'];
+    const list = pool.filter(m => m !== e.lastMove), from = list.length ? list : pool;
+    const move = from[Math.floor(this.rand() * from.length)];
+    if (move === 'slash') e.chain = 'string';
+    return { move };
+  }
+  // The exact hit area of a move, fixed when its tell starts (the string's branch builds its area at the glint).
+  kingArea(e, move) {
+    const p = this.player, d = e.dir, o = { x: e.x, y: e.y - e.h * .6 }, warn = { kind: move };
+    const front = (from, to, h) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - h, w: Math.abs(to - from), h });
+    if (move === 'slash') warn.box = front(0, 146, e.h);
+    else if (move === 'turnslash') warn.box = front(-120, -10, e.h);
+    else if (move === 'slam') { warn.box = front(0, 112, 123); warn.wave = { x1: e.x + d * 40, y1: FLOOR - 6, x2: e.x + d * 760, y2: FLOOR - 6 }; }
+    else if (move === 'charge') {
+      e.chargeTo = clamp(e.x + d * 305, 30, this.worldWidth - 40);
+      warn.line = { x1: e.x, y1: e.y - e.h * .5, x2: e.chargeTo, y2: e.y - e.h * .5 };
+      warn.box = { x: Math.min(e.x, e.chargeTo) - e.w / 2, y: e.y - e.h, w: Math.abs(e.chargeTo - e.x) + e.w, h: e.h };
+    } else if (move === 'volley') {
+      warn.base = Math.atan2(p.y - 30 - o.y, p.x - o.x);
+      warn.lines = [-.5, -.25, 0, .25, .5].map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(warn.base + a) * VOLLEY_RANGE, y2: o.y + Math.sin(warn.base + a) * VOLLEY_RANGE, angle: warn.base + a }));
+    } else if (move === 'ritual') warn.circles = [-200, 0, 200].map(dx => ({ x: p.x + dx, y: e.y, r: 56 }));
+    else if (move === 'descent') { // lands on the ledge the hero has stood on; the shadow ring marks the shockwave
+      const plat = e.ledge || p.on, land = { x: plat.x + plat.w / 2, y: plat.y, r: DESCENT_RADIUS };
+      warn.landing = land; warn.circles = [land];
+    }
+    return warn;
+  }
+  kingStart(e, move, forceDelay = false, follow = false) {
+    if (follow && move !== 'turnslash') e.dir = this.player.x >= e.x ? 1 : -1; // a string's second hit turns to the hero as its tell starts, then locks
+    const def = KING_MOVES[move], delayed = !!def.heavy && !follow && (move === 'slam' || move === 'charge') && (forceDelay || (e.bossPhase >= 2 && this.rand() < .5)); // phase 2-3: the slam and the charge are delayed half the time
+    const warn = this.kingArea(e, move), heavy = !!def.heavy;
+    Object.assign(e, { move, lastMove: move, warn, tell: follow && FOLLOW_TELL[move] ? FOLLOW_TELL[move] : def.tell + (delayed ? DELAY_EXTRA : 0), follow, heavy, heavyKind: heavy ? move : '', delayed, glinted: false, glint: 0, punishable: false, recover: 0, vx: 0, struck: false, noted: false });
+    if (heavy) this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: move, enemy: 'king', area: warn, delayed });
+    else this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'king', kind: move, dir: e.dir });
+  }
+  // The second glint of a slash string: where the hero stands now picks the hit. In front and close: slash; behind it: turnslash; far in front: charge. A crossed read forces the turnslash.
+  kingBranch(e) {
+    const p = this.player, behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(p.x - e.x);
+    const branch = e.force || (behind ? (gap <= 220 ? 'turnslash' : '') : gap <= 200 ? 'slash' : 'charge');
+    e.force = '';
+    if (!branch) { Object.assign(e, { tell: 0, move: '', warn: null, recover: KING_MOVES.string.recover, punishable: true, cd: Math.max(e.cd, .35) }); return; } // out of reach behind it: the string ends
+    const def = KING_MOVES[branch], warn = this.kingArea(e, branch), heavy = !!def.heavy;
+    Object.assign(e, { move: branch, warn, heavy, heavyKind: heavy ? branch : '', glinted: true, glint: .1 });
+    this.emit('enemyGlint', { x: e.x, y: e.y - e.h * .5, kind: branch, enemy: 'king', delayed: false, branch: true });
+    if (heavy) this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: branch, enemy: 'king', area: warn, delayed: false, branch: true });
+    else this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'king', kind: branch, dir: e.dir, branch: true });
+  }
+  kingRecover(e, move) {
+    const def = KING_MOVES[move], cut = e.bossPhase >= 2 && def.heavy ? PHASE2_RECOVER_CUT : 0;
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: Math.max(cut ? .9 : 0, def.recover - cut), punishable: true, cd: Math.max(e.cd, .35) });
+    const next = this.kingFollow(e, move);
+    if (next) { e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.kingStart(e, next, false, true); }
+  }
+  // A slash opens the string's second hit; a crossed read's charge ends in the turnslash when the hero is right behind it. Visible state only; nothing starts once the hero is dead or off screen.
+  kingFollow(e, move) {
+    const p = this.player, side = e.x - p.x;
+    if (this.state !== 'playing' || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
+    if (move === 'slash' && e.chain === 'string') { e.chain = ''; return 'string'; }
+    const behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(side);
+    if (move === 'charge' && e.force === 'turnslash') { e.force = ''; if (behind && gap <= 220) return 'turnslash'; }
+    if (e.follows >= MAX_FOLLOWS[Math.min(2, e.bossPhase)] + 1 || e.chain) return '';
+    if (move === 'slam') return gap <= 330 ? 'charge' : ''; // the floor wave pins the hero to a jump; the charge meets the landing
+    if (move === 'charge') return behind && gap <= 330 ? 'charge' : ''; // the return charge, as the Warden's
+    return '';
+  }
+  kingStrike(e) {
+    const p = this.player, w = e.warn, move = e.move, d = e.dir;
+    e.tell = 0;
+    const hit = !!w.box && p.x + p.w / 2 > w.box.x && p.x - p.w / 2 < w.box.x + w.box.w && p.y > w.box.y && p.y - p.h < w.box.y + w.box.h;
+    const seen = !p.grounded ? 'jumped' : (p.x - e.x) * d < 0 ? 'crossed' : hit ? 'stood' : 'retreated';
+    this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: d, boss: true, kind: move, heavy: e.heavy, enemy: 'king', area: w });
+    if (move === 'charge') { e.travel = .5; return; }
+    if (move === 'slash') { if (hit) this.hurt(e.damage, d); }
+    else if (move === 'turnslash') { if (hit) this.hurt(e.damage, -d); }
+    else if (move === 'slam') {
+      this.noteAnswer(e, seen);
+      if (hit) this.hurt(HEAVY_DAMAGE, d, false, true);
+      this.projectiles.push({ x: w.wave.x1, y: w.wave.y1, vx: d * 240, vy: 0, r: 14, life: 3, damage: HEAVY_DAMAGE, heavy: true, ground: true });
+      if (e.bossPhase < 3) this.spawnPools(e); // Blood Moon: slams make no pools, a missed one sheds a pool at its contact point
+      else if (!hit) this.addPool(e.x + d * 100, FLOOR, true);
+    } else if (move === 'volley') {
+      for (const l of w.lines) this.projectiles.push({ x: l.x1, y: l.y1, vx: Math.cos(l.angle) * 265, vy: Math.sin(l.angle) * 265, r: 9, life: (VOLLEY_RANGE - 9) / 265, damage: e.damage });
+    } else if (move === 'ritual') { // ground-centred discs: a grounded hero inside one is hit, a gap or a high jump is safe
+      if (w.circles.some(c => Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r)) this.hurt(e.damage * 1.35, Math.sign(p.x - e.x) || 1);
+    } else { // descent: lands on the ledge; a hero on that surface (up to 70 px above it) is caught by the shockwave
+      const land = w.landing, caught = Math.abs(p.x - land.x) < land.r && p.y > land.y - 70 && p.y < land.y + 20;
+      e.x = land.x; e.y = land.y; e.ledgeT = 0;
+      this.emit('descent', { x: land.x, y: land.y, r: land.r, hit: caught });
+      if (caught) this.hurt(HEAVY_DAMAGE, Math.sign(p.x - land.x) || 1, false, true);
+      else if (e.bossPhase >= 3) this.addPool(land.x + d * 60, land.y, true);
+    }
+    if (this.state === 'playing' || this.state === 'dead') this.kingRecover(e, move);
   }
   // Boss move choice: never the same move twice in a row; null-like '' means walk closer.
   bossPick(e, distance) {

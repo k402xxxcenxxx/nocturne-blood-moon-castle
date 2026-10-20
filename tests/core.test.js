@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, WARDEN_FLOOR, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
+import { Game, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3219,7 +3219,7 @@ test('warden: floor 10 is the Warden alone in the boss arena, with its base stat
   assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [520, 75, ARMOR_MAX, 100]);
   assert.equal(game.worldWidth, STAGES[4].width); assert.equal(game.platforms.length, 2);
   assert.deepEqual(game.fightStats, { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 });
-  assert.equal(game.loadFloor(50), false, 'the Fallen King floor is a stub');
+  assert.equal(new Game(() => {}, 1).loadFloor(KING_FLOOR), false, 'only Castle Descent has the castle King floor');
 });
 
 test('warden: normal and endless runs never spawn it', () => {
@@ -3611,4 +3611,283 @@ test('warden: Vortex Eclipse does not pull it while armored, and its kill is the
   assert.equal(b.x, 1000, 'armored: not pulled');
   game.portalX = player.x; advance(game, .1);
   assert.equal(game.portalOpen, false, 'no Moon Gate on the fight floor');
+});
+
+// --- The Fallen King, castle version (floor 50, #50 section 6) ---
+function kingFight(kx = 1400, hx = 1300, phase = 1) {
+  const t = castle(42, KING_FLOOR), b = t.game.spawnKing(kx);
+  Object.assign(t.player, { x: hx }); Object.assign(b, { engaged: true, cd: 99, dir: -1, opened: true, bossPhase: phase }); // cd 99: it never picks a move by itself
+  return { ...t, b };
+}
+const kHit = (game, b, n = 10) => game.damageEnemy(b, n, 1, false, false, false, 17);
+const ledge = game => game.makePlatform(1000, FLOOR - 110, 190, 'cathedral', 'ledge');
+
+test('king: floor 50 is the King alone in the boss arena with his stats, castle only; the normal-run King is unchanged', () => {
+  const { game } = castle(42, KING_FLOOR), raw = new Game(() => {}, 3, 'castle'); raw.loadFloor(KING_FLOOR);
+  assert.equal(game.floor, KING_FLOOR); assert.equal(raw.enemies.length, 1);
+  const b = raw.enemies[0];
+  assert.ok(b.king && b.armored && b.required && !b.warden);
+  assert.deepEqual([b.maxHp, b.superArmor, b.superArmorMax, b.w, b.h], [KING_HP, 150, 150, 80, 128]);
+  assert.equal(game.worldWidth, STAGES[4].width);
+  assert.equal(raw.platforms.length, 2, 'two ledges'); assert.equal(raw.stage, 4);
+  assert.deepEqual(game.fightStats, { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 });
+  const normal = new Game(() => {}, 7); normal.loadStage(4);
+  const old = normal.enemies.find(e => e.type === 'boss');
+  assert.ok(old && !old.king && !old.armored && old.maxHp === 900 && old.superArmor === undefined);
+  const gate = new Game(() => {}, 3, 'castle'); gate.loadFloor(WARDEN_FLOOR); assert.ok(gate.enemies[0].warden && !gate.enemies[0].king);
+});
+
+test('king gauge: 150, normal hits nothing, Eclipse -25, a phase 1 frenzy hit breaks; phases 2 and 3 chip 34', () => {
+  const { game, player, events, b } = kingFight();
+  kHit(game, b); assert.equal(b.superArmor, KING_ARMOR); player.blood = 190;
+  for (let i = 0; i < 5; i++) { player.magicCd = 0; game.magic(); }
+  assert.equal(b.superArmor, 25); assert.equal(events.find(e => e.type === 'armorChip').value, 25);
+  player.magicCd = 0; game.magic(); assert.equal(b.superArmor, 0); assert.ok(events.some(e => e.type === 'armorBreak'));
+  const f = kingFight(); f.player.frenzy = true; f.player.blood = 150; kHit(f.game, f.b);
+  assert.equal(f.b.superArmor, 0); assert.ok(f.events.some(e => e.type === 'armorBreak'));
+  for (const phase of [2, 3]) {
+    const c = kingFight(1400, 1300, phase); c.player.frenzy = true; c.player.blood = 190;
+    kHit(c.game, c.b);
+    assert.equal(c.b.superArmor, KING_ARMOR - FRENZY_CHIP, `phase ${phase} chips`); assert.equal(c.events.filter(e => e.type === 'armorChip').at(-1).value, FRENZY_CHIP);
+    for (let i = 0; i < 3; i++) kHit(c.game, c.b);
+    assert.equal(c.b.superArmor, 150 - 34 * 4); assert.ok(!c.events.some(e => e.type === 'armorBreak'));
+    kHit(c.game, c.b); assert.equal(c.b.superArmor, 0); assert.equal(c.events.filter(e => e.type === 'armorBreak').length, 1, 'five chips break it');
+  }
+});
+
+test('king break: cancels the move, stuns 1.8 s at x1.5, never flinches or knocks back while armored, refills to 150 and locks', () => {
+  const { game, player, b } = kingFight(1400, 1300);
+  player.invulnerable = 99; game.kingStart(b, 'slam');
+  const x0 = b.x; player.dir = 1; player.x = 1340; hit(game, b, 5); assert.equal(b.x, x0, 'no knockback'); assert.ok(b.tell > 0, 'no interrupted tell'); assert.equal(b.stun, 0);
+  player.frenzy = true; player.blood = 150; hit(game, b, 10);
+  assert.equal(b.tell, 0); assert.equal(b.warn, null); assert.ok(Math.abs(b.stun - BREAK_STUN) < 1e-9);
+  const hp = b.hp; advance(game, .01); hit(game, b, 10); assert.equal(b.hp, hp - 15, 'x1.5 in the stun');
+  advance(game, BREAK_STUN + .1); b.cd = 99;
+  assert.equal(b.superArmor, KING_ARMOR); assert.ok(b.armorLock > 0 && b.armorLock <= ARMOR_LOCK);
+});
+
+test('king phases at 67% and 34%: kingPhase, a 1.1 s pause, the gauge refilled and locked; a big hit can skip to phase 3', () => {
+  const { game, events, b } = kingFight();
+  b.superArmor = 40;
+  hit(game, b, Math.ceil(KING_HP * .33) - 1); assert.equal(b.bossPhase, 1);
+  hit(game, b, 2);
+  assert.equal(b.bossPhase, 2); assert.equal(events.filter(e => e.type === 'kingPhase').length, 1); assert.equal(events.find(e => e.type === 'kingPhase').phase, 2);
+  assert.ok(Math.abs(b.pause - 1.1) < 1e-9 && b.superArmor === KING_ARMOR && b.armorLock > 0);
+  hit(game, b, Math.ceil(KING_HP * .33)); assert.equal(b.bossPhase, 3); assert.equal(events.filter(e => e.type === 'kingPhase').at(-1).phase, 3);
+  const skip = kingFight(); hit(skip.game, skip.b, Math.ceil(KING_HP * .7)); assert.equal(skip.b.bossPhase, 3); assert.equal(skip.events.filter(e => e.type === 'kingPhase').length, 1);
+  assert.ok(!events.some(e => e.type === 'bossPhase' || e.type === 'wardenPhase'), 'its own event');
+});
+
+test('king Tithe: an untaken pool is drawn in after 3 s along a stream and restores 25 armor after 1 s more', () => {
+  const { game, events, b } = kingFight();
+  b.superArmor = 60; game.addPool(600, FLOOR, true);
+  advance(game, 2.9); assert.ok(!events.some(e => e.type === 'tithe'));
+  advance(game, .2);
+  const start = events.find(e => e.type === 'tithe'); assert.equal(start.state, 'start'); assert.equal(start.x, 600); assert.ok(Math.abs(start.duration - 1) < 1e-9 && start.toX === b.x);
+  assert.equal(b.superArmor, 60);
+  advance(game, 1);
+  const end = events.find(e => e.type === 'tithe' && e.state === 'end'); assert.ok(end); assert.equal(end.amount, TITHE_RESTORE);
+  assert.equal(b.superArmor, 60 + TITHE_RESTORE); assert.equal(game.pools.length, 0);
+  b.superArmor = 140; game.addPool(600, FLOOR, true); advance(game, 4.1); assert.equal(b.superArmor, KING_ARMOR, 'capped at the gauge');
+});
+
+test('king Tithe: taking the pool while it drains interrupts it (blood +14, no armor); a plain pool never drains', () => {
+  const { game, player, events, b } = kingFight(1400, 700);
+  b.superArmor = 60; player.blood = 100; game.addPool(1000, FLOOR, true); player.invulnerable = 99;
+  advance(game, 3.3); assert.ok(events.some(e => e.type === 'tithe' && e.state === 'start'));
+  player.x = 1000; advance(game, .05);
+  assert.equal(player.blood, 100 + POOL_PAY); assert.ok(events.some(e => e.type === 'tithe' && e.state === 'broken')); assert.ok(!events.some(e => e.type === 'tithe' && e.state === 'end'));
+  advance(game, 1.5); assert.equal(b.superArmor, 60);
+  game.addPool(1000, FLOOR - 110, false); player.x = 300; advance(game, 4.2); assert.equal(events.filter(e => e.type === 'tithe').length, 2, 'only the first pool streamed (start, broken)');
+  const w = warden(1000, 700); game.pools.length; w.game.spawnPools(w.b); advance(w.game, 3.5); assert.ok(!w.events.some(e => e.type === 'tithe'), 'the Warden has no Tithe');
+});
+
+test('king Tithe: a pool on a ledge is only taken from that ledge, never from the floor beneath it', () => {
+  const { game, player } = kingFight(1400, 1095);
+  game.addPool(1095, FLOOR - 110, true); player.invulnerable = 99;
+  advance(game, .1); assert.equal(game.pools.length, 1, 'a hero on the floor below does not take it');
+  game.platforms = [ledge(game)]; player.y = FLOOR - 110; advance(game, .1);
+  assert.equal(game.pools.length, 0); assert.equal(player.blood, 100 + POOL_PAY);
+});
+
+test('king slam: phases 1 and 2 leave two pools (+-200, +-260) with a floor wave; Blood Moon makes none unless it misses', () => {
+  for (const [phase, off] of [[1, 200], [2, 260]]) {
+    const { game, b } = kingFight(1400, 1300, phase); b.dir = -1; game.kingStart(b, 'slam'); game.kingStrike(b);
+    assert.deepEqual(game.pools.map(q => q.x).sort((a, c) => a - c), [1400 - off, 1400 + off]); assert.ok(game.pools.every(q => q.tithe));
+    assert.equal(game.projectiles.filter(q => q.ground).length, 1);
+  }
+  const hit3 = kingFight(1400, 1340, 3); hit3.player.blood = 150; hit3.b.dir = -1; hit3.game.kingStart(hit3.b, 'slam'); hit3.game.kingStrike(hit3.b);
+  assert.equal(hit3.player.blood, 50); assert.equal(hit3.game.pools.length, 0, 'a slam that hits sheds nothing');
+  const miss = kingFight(1400, 1100, 3); miss.b.dir = -1; miss.game.kingStart(miss.b, 'slam'); miss.game.kingStrike(miss.b);
+  assert.equal(miss.game.pools.length, 1, 'a missed slam sheds one pool'); assert.equal(miss.game.pools[0].x, 1400 - 100); assert.ok(miss.events.some(e => e.type === 'bloodPool'));
+});
+
+test('king Blood Moon: a charge that misses sheds a pool where it ends; one that hits does not; light moves never shed; phase 2 never sheds', () => {
+  const miss = kingFight(1400, 1000, 3); miss.player.invulnerable = 99; miss.b.dir = -1; miss.game.kingStart(miss.b, 'charge'); advance(miss.game, 1.5);
+  assert.equal(miss.game.pools.length, 1); assert.ok(Math.abs(miss.game.pools[0].x - miss.b.chargeTo) < 1);
+  const hitIt = kingFight(1400, 1250, 3); hitIt.player.blood = 190; hitIt.b.dir = -1; hitIt.game.kingStart(hitIt.b, 'charge'); advance(hitIt.game, 1.5);
+  assert.equal(hitIt.game.pools.length, 0, 'the charge hurt the hero');
+  const slash = kingFight(1400, 1100, 3); slash.b.dir = -1; slash.game.kingStart(slash.b, 'slash'); slash.game.kingStrike(slash.b); assert.equal(slash.game.pools.length, 0);
+  const p2 = kingFight(1400, 1000, 2); p2.player.invulnerable = 99; p2.b.dir = -1; p2.game.kingStart(p2.b, 'charge'); advance(p2.game, 1.5); assert.equal(p2.game.pools.length, 0);
+});
+
+test('king descent: only from phase 2, after the hero stood on a ledge for 2 s; lands on that ledge, shockwave r 120, long tell', () => {
+  const { game, player, events, b } = kingFight(1500, 1095, 2);
+  game.platforms = [ledge(game)]; player.y = FLOOR - 110; player.invulnerable = 99;
+  advance(game, LEDGE_TIME - .3); assert.ok(b.ledgeT > 1.5 && b.ledgeT < LEDGE_TIME);
+  assert.notEqual(game.kingPick(b, 400).move, 'descent', 'not before 2 s');
+  advance(game, .4); assert.ok(b.ledgeT >= LEDGE_TIME);
+  const p1 = kingFight(1500, 1095, 1); p1.game.platforms = [ledge(p1.game)]; p1.player.y = FLOOR - 110; advance(p1.game, 2.2);
+  assert.notEqual(p1.game.kingPick(p1.b, 400).move, 'descent', 'phase 1 has no descent');
+  b.cd = 0; advance(game, .02);
+  assert.equal(b.move, 'descent'); assert.ok(b.tell >= 1.0 && b.heavy, `tell ${b.tell} is a heavy tell`);
+  assert.deepEqual([b.warn.landing.x, b.warn.landing.y, b.warn.landing.r], [1095, FLOOR - 110, DESCENT_RADIUS]);
+  assert.equal(b.warn.circles[0].r, DESCENT_RADIUS, 'the shadow ring');
+  player.x = 1500; player.y = FLOOR; player.vy = 0; player.invulnerable = 0; // the hero leaves the ledge before the landing
+  advance(game, 1.3);
+  const land = events.find(e => e.type === 'descent'); assert.ok(land); assert.deepEqual([land.x, land.y, land.r, land.hit], [1095, FLOOR - 110, DESCENT_RADIUS, false]);
+  assert.equal(player.blood, 100); assert.equal(b.y, FLOOR - 110, 'on the ledge'); assert.equal(b.ledgeT, 0);
+  advance(game, 1.6); assert.equal(b.y, FLOOR, 'drops back to the floor');
+});
+
+test('king descent: the shockwave hits a hero still on the ledge; a dash, a high jump and the floor beneath are safe', () => {
+  const land = (setup) => {
+    const t = kingFight(1500, 1095, 2); t.game.platforms = [ledge(t.game)]; Object.assign(t.player, { y: FLOOR - 110, blood: 150 });
+    t.b.ledge = t.game.platforms[0]; t.b.ledgeT = 5; t.game.kingStart(t.b, 'descent'); setup?.(t); t.game.kingStrike(t.b); return t;
+  };
+  const stay = land(); assert.equal(stay.player.blood, 150 - HEAVY_DAMAGE); assert.ok(stay.events.find(e => e.type === 'descent').hit);
+  const dash = land(t => { t.player.invulnerable = .2; }); assert.equal(dash.player.blood, 150, 'i-frames');
+  const jump = land(t => { t.player.y = FLOOR - 110 - 100; t.player.grounded = false; }); assert.equal(jump.player.blood, 150); assert.equal(jump.events.find(e => e.type === 'descent').hit, false);
+  const below = land(t => { Object.assign(t.player, { x: 1095, y: FLOOR }); }); assert.equal(below.player.blood, 150);
+  const edge = land(t => { t.player.x = 1095 + DESCENT_RADIUS + 5; }); assert.equal(edge.player.blood, 150, 'just outside the ring');
+  const phase3 = land(t => { t.b.bossPhase = 3; t.player.x = 1600; }); assert.equal(phase3.game.pools.length, 1, 'Blood Moon: a missed landing sheds a pool'); assert.equal(phase3.game.pools[0].y, FLOOR - 110);
+});
+
+test('king slash string: the second glint branches by where the hero stands: front slash, behind turnslash, far charge', () => {
+  const branch = (heroAfter, force = '') => {
+    const t = kingFight(1400, 1300); t.player.invulnerable = 99; t.b.chain = 'string'; t.b.force = force;
+    t.game.kingStart(t.b, 'slash'); advance(t.game, .7);
+    assert.equal(t.b.move, 'string', 'the slash opens the string'); assert.ok(t.b.tell > .4 && t.b.tell <= .85);
+    assert.equal(t.b.warn.box, undefined, 'no area before the glint');
+    t.player.x = heroAfter;
+    let at = null;
+    for (let i = 0; i < 200 && t.b.move === 'string'; i++) t.game.update(1 / 120, {});
+    at = t.b.tell;
+    return { ...t, at };
+  };
+  const front = branch(1300); assert.equal(front.b.move, 'slash'); assert.ok(front.at <= GLINT_LEAD && front.at > GLINT_LEAD - .02, 'branches at the glint'); assert.ok(!front.b.heavy);
+  assert.ok(front.events.some(e => e.type === 'enemyGlint' && e.branch && e.kind === 'slash'));
+  const behind = branch(1480); assert.equal(behind.b.move, 'turnslash'); assert.ok(behind.b.warn.box.x > behind.b.x - 1, 'the box is behind it (it faces left)'); assert.ok(behind.events.some(e => e.type === 'enemyGlint' && e.kind === 'turnslash'));
+  const far = branch(900); assert.equal(far.b.move, 'charge'); assert.ok(far.b.heavy && far.b.warn.line); assert.ok(far.events.some(e => e.type === 'enemyHeavy' && e.branch && e.kind === 'charge'));
+  const forced = branch(1300, 'turnslash'); assert.equal(forced.b.move, 'turnslash', 'a crossed read forces the turnslash');
+  const out = branch(1900); assert.equal(out.b.move, ''); assert.equal(out.b.tell, 0); assert.ok(out.b.recover > 0, 'out of reach behind it: the string ends');
+  // the hit lands exactly where the branch was drawn: contact 0.4 s after the glint
+  const t = branch(1300); const hp0 = t.player.blood; t.player.invulnerable = 0; advance(t.game, .45); assert.ok(t.player.blood < hp0 || t.player.invulnerable > 0, 'the slash lands');
+});
+
+test('king habit memory: two matching heavy answers pick the documented branch, a crossed read forces the turnslash', () => {
+  const { game, b } = kingFight(1400, 1300); b.opened = true;
+  b.habit = ['jumped', 'jumped']; assert.equal(game.kingPick(b, 100).move, 'slam'); assert.deepEqual(b.habit, []);
+  b.habit = ['jumped', 'jumped']; const far = game.kingPick(b, 250); assert.deepEqual([far.move, far.delay], ['charge', true]);
+  b.habit = ['crossed', 'stood', 'crossed']; const c = game.kingPick(b, 100); assert.equal(c.move, 'slash'); assert.equal(b.force, 'turnslash'); assert.equal(b.chain, 'string');
+  b.habit = ['retreated', 'retreated']; assert.equal(game.kingPick(b, 100).move, 'charge');
+  const s = kingFight(1400, 1300); s.player.invulnerable = 99; s.b.dir = -1;
+  s.game.kingStart(s.b, 'slam'); s.game.kingStrike(s.b); s.game.kingStart(s.b, 'slam'); s.player.x = 1500; s.game.kingStrike(s.b);
+  assert.deepEqual(s.b.habit.slice(0, 1), ['stood']); assert.equal(s.b.habit.length, 2, 'each slam records how it was answered');
+});
+
+test('king intelligence: above 150 blood he opens with a charge (once); a frenzied hero draws the volley and he backsteps', () => {
+  const { game, player, b } = kingFight(1400, 1300, 1); b.opened = false; player.blood = 160;
+  assert.equal(game.kingPick(b, 100).move, 'charge'); assert.equal(b.opened, true);
+  b.lastMove = ''; for (let i = 0; i < 20; i++) assert.notEqual(game.kingPick(b, 100).move, 'charge', 'close phase 1 never rolls a charge, so only the opener was forced');
+  const picks = (frenzy) => { const t = kingFight(1400, 1300, 2); t.player.frenzy = frenzy; t.player.blood = frenzy ? 150 : 100; let v = 0; for (let i = 0; i < 100; i++) { t.b.lastMove = ''; t.b.habit = []; if (t.game.kingPick(t.b, 250).move === 'volley') v++; } return v; };
+  assert.ok(picks(true) >= 70, 'frenzy prefers the volley'); assert.ok(picks(false) < 50);
+  const k = kingFight(1400, 1300, 1); k.player.frenzy = true; k.player.blood = 150; k.b.cd = 99; advance(k.game, .5);
+  assert.ok(k.b.x > 1400, `backsteps away from the frenzied hero (${k.b.x})`);
+  const w = kingFight(1400, 1300, 1); w.b.cd = 99; w.player.x = 1000; advance(w.game, .5); assert.ok(w.b.x < 1400, 'otherwise he walks in');
+  const corner = kingFight(1400, 1300, 1); corner.b.x = corner.game.worldWidth - 90; corner.player.x = corner.b.x - 100; corner.player.frenzy = true; corner.player.blood = 150; corner.b.cd = 99; advance(corner.game, .5);
+  assert.ok(corner.b.x <= corner.game.worldWidth - 90 + 1, 'cornered he stops backing off');
+});
+
+test('king: every move shows a tell and an exposed area; heavies glint 0.4 s before contact (delayed ones too); delays only on slam and charge in phase 2+', () => {
+  for (const [move, delay] of [['slash'], ['turnslash'], ['slam'], ['charge'], ['volley'], ['ritual'], ['descent'], ['slam', true], ['charge', true]]) {
+    const { game, player, events, b } = kingFight(1400, 1000, 2);
+    player.invulnerable = 99; b.dir = -1; b.chain = ''; b.ledge = game.platforms[0] || game.makePlatform(1000, FLOOR - 110, 190, 'cathedral', 'ledge'); game.platforms = [b.ledge];
+    game.kingStart(b, move, delay);
+    const tell = b.tell, heavy = b.heavy;
+    assert.ok(tell >= .45 && b.warn && b.warn.kind === move, `${move} has a tell (${tell}) and an exposed area`);
+    if (heavy) assert.ok(tell >= .85, `${move} heavy tell is at least 0.85 s`);
+    assert.ok(tell <= 2, 'never above 2 s');
+    assert.equal(events.some(e => e.type === (heavy ? 'enemyHeavy' : 'enemyTell') && e.kind === move && e.enemy === 'king'), true);
+    let glintAt = null, swingAt = null;
+    for (let t = 0; t < 3 && swingAt === null; t += 1 / 120) {
+      game.update(1 / 120, {});
+      for (const e of events) { if (e.type === 'enemyGlint' && glintAt === null) glintAt = game.time; if (e.type === 'enemySwing' && swingAt === null) swingAt = game.time; }
+    }
+    assert.ok(swingAt !== null, `${move} strikes`);
+    if (heavy) assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, `${move} glints ${GLINT_LEAD} s before contact`);
+    else assert.equal(glintAt, null, `${move} is light: no glint`);
+    if (delay) assert.ok(tell > (move === 'slam' ? .95 : .9), 'delayed tell is longer');
+  }
+  const p1 = kingFight(1400, 1000, 1); let delayed = 0; for (let i = 0; i < 40; i++) { p1.b.recover = 0; p1.game.kingStart(p1.b, i % 2 ? 'slam' : 'charge'); if (p1.b.delayed) delayed++; } assert.equal(delayed, 0, 'no delays in phase 1');
+  const p2 = kingFight(1400, 1000, 2); delayed = 0; for (let i = 0; i < 60; i++) { p2.game.kingStart(p2.b, 'slam'); if (p2.b.delayed) delayed++; } assert.ok(delayed > 15 && delayed < 45, 'about half in phase 2');
+});
+
+test('king strings: a slam is followed by a charge within 330 px, a charge by a return charge when the hero is behind; capped per pick', () => {
+  const a = kingFight(1400, 1250, 1); a.player.invulnerable = 99; a.b.dir = -1; a.game.kingStart(a.b, 'slam'); a.game.kingStrike(a.b);
+  assert.equal(a.b.move, 'charge'); assert.ok(a.b.follow && Math.abs(a.b.tell - .5) < 1e-9 && a.b.heavy);
+  const far = kingFight(1400, 900, 1); far.player.invulnerable = 99; far.b.dir = -1; far.game.kingStart(far.b, 'slam'); far.game.kingStrike(far.b);
+  assert.equal(far.b.move, '', 'out of 330 px: the slam ends the string');
+  const r = kingFight(1400, 1200, 2); r.player.invulnerable = 99; r.b.dir = 1; r.player.x = 1100; // hero behind the end of a charge to the right
+  r.player.x = 1300; r.b.x = 1500; r.b.dir = 1; r.b.follows = 0; r.game.kingRecover(r.b, 'charge'); assert.equal(r.b.move, 'charge', 'the return charge');
+  r.b.follows = 9; r.b.move = ''; r.b.tell = 0; r.game.kingRecover(r.b, 'charge'); assert.equal(r.b.move, '', 'capped');
+  const dead = kingFight(1400, 1340, 1); dead.player.blood = 10; dead.b.dir = -1; dead.game.kingStart(dead.b, 'slam'); dead.game.kingStrike(dead.b);
+  assert.equal(dead.game.state, 'dead'); assert.equal(dead.b.tell > 0 && dead.b.follow, false, 'no follow-up once the hero is dead');
+});
+
+test('king: never starts a tell from off screen; engaged walking closes in; the body blocks walking but not from the floor under a ledge', () => {
+  const { game, b } = kingFight(2400, 1200, 1); b.cd = 0; advance(game, .2);
+  assert.equal(b.tell, 0, '1200 px away: no tell'); assert.ok(b.x < 2400);
+  const w = kingFight(1000, 900, 1); advance(w.game, 1, { right: true }); assert.ok(w.player.x <= 1000 - 54 + 1, `blocked at the body (${w.player.x})`);
+  const u = kingFight(1000, 900, 1); u.b.y = FLOOR - 110; u.b.recover = 5; u.player.x = 990; u.b.cd = 99; advance(u.game, .3); assert.equal(u.player.x, 990, 'a hero under the ledge is not pushed');
+});
+
+test('king kill: fightStats won, then 1.6 s later the slice-end screen; the floor is the slice again', () => {
+  const { game, player, events, b } = kingFight(1400, 1300);
+  Object.assign(player, { blood: 180, frenzy: true }); game.pools.push({ x: 600, y: FLOOR, life: 4, max: 4, tithe: true });
+  game.damageEnemy(b, 99999, 1, false, false);
+  assert.equal(b.hp, 0); assert.equal(events.find(e => e.type === 'kill').king, true);
+  const stats = events.find(e => e.type === 'fightStats'); assert.ok(stats && stats.won === true); assert.equal(game.pools.length, 0);
+  assert.equal(game.state, 'playing'); advance(game, 1.7);
+  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, WARDEN_FLOOR);
+  assert.deepEqual(events.filter(e => e.type === 'sliceEnd').map(e => e.king), ['won']);
+});
+
+test('king flow: slice end -> Face the Fallen King (floor 50, 100 blood, same weapon and relics) -> death -> slice end -> again, no records', () => {
+  const events = [];
+  const game = new Game(e => events.push(e), 42, 'castle');
+  game.start(); game.setWeapon('twin'); game.descend(); game.loadFloor(WARDEN_FLOOR);
+  game.relics.push('edge'); RELICS.find(r => r.id === 'edge').apply(game.player); game.setWeapon('twin');
+  assert.equal(game.challengeKing(), false, 'not before the slice end');
+  game.state = 'playing'; game.damageEnemy(game.enemies[0], 99999, 1, false, false); advance(game, 1.7);
+  assert.equal(game.state, 'rest'); assert.equal(game.vigil, 2); game.player.blood = 180; game.player.frenzy = true;
+  assert.equal(game.setWeapon('spear'), true); game.descend(); assert.equal(game.state, 'sliceEnd');
+  assert.equal(game.challengeKing(), true);
+  assert.equal(game.state, 'playing'); assert.equal(game.floor, KING_FLOOR); assert.equal(game.player.blood, 100); assert.equal(game.player.frenzy, false);
+  assert.equal(game.player.weapon, 'spear'); assert.deepEqual(game.relics, ['edge']);
+  assert.ok(game.enemies[0].king); assert.equal(events.filter(e => e.type === 'stage').at(-1).floor, KING_FLOOR);
+  game.player.invulnerable = 0; game.hurt(500, 1, false, true);
+  assert.equal(game.state, 'dead'); assert.equal(events.filter(e => e.type === 'fightStats').at(-1).won, false);
+  assert.equal(game.leaveKing(false), true);
+  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, WARDEN_FLOOR); assert.equal(events.filter(e => e.type === 'sliceEnd').at(-1).king, 'dead');
+  assert.equal(game.challengeKing(), true); assert.equal(game.player.blood, 100); assert.equal(game.enemies[0].hp, KING_HP, 'a fresh King');
+  assert.equal(game.leaveKing(true), true, 'leaving mid-fight is allowed from the playing state');
+  assert.equal(game.leaveKing(true), false, 'only from the King floor');
+});
+
+test('king: loadFloor(50) jumps straight to him in castle mode (?test), the Moon Gate never opens, pause and picks freeze the new timers', () => {
+  const { game, player, b } = kingFight(1400, 1300);
+  game.addPool(600, FLOOR, true); game.pools[0].life = 3.5; b.superArmor = 100;
+  game.state = 'paused'; advance(game, 3); assert.equal(game.pools[0].life, 3.5, 'paused: the Tithe waits');
+  game.state = 'playing'; game.portalX = player.x; advance(game, .1); assert.equal(game.portalOpen, false);
 });

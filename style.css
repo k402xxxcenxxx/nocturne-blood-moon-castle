@@ -938,15 +938,12 @@ kbd {
   padding:1px;
   position:relative;
 }
-/* notches every 25: one Eclipse chip each, a frenzy chip is 34 */
+/* a notch per Eclipse chip (25 points; --notch is set from the gauge size: 25% on the Warden's 100, 16.7% on the King's 150) */
 .armor-gauge b::after {
   content:"";
   position:absolute;
   inset:0;
-  background:
-    linear-gradient(#12111a,#12111a) 25% 0/1px 100% no-repeat,
-    linear-gradient(#12111a,#12111a) 50% 0/1px 100% no-repeat,
-    linear-gradient(#12111a,#12111a) 75% 0/1px 100% no-repeat;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(var(--notch,25%) - 1px),#12111a calc(var(--notch,25%) - 1px) var(--notch,25%));
 }
 .armor-gauge em {
   display:block;
@@ -2563,3 +2560,8 @@ b[data-i18n] {
     max-width:820px;
   }
 }
+
+.throne-note { font-size:12px; color:#b9a9a4; margin:10px 0 0; }
+.throne-button { border-color:#9a7b3c; color:#f0d7a0; }
+.modal-buttons .primary-button,.modal-buttons .secondary-button { display:inline-flex; align-items:center; justify-content:center; gap:12px; }
+.modal-buttons .primary-button svg,.modal-buttons .secondary-button svg { flex:none; width:20px; height:20px; margin:0; vertical-align:middle; }

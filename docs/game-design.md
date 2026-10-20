@@ -219,8 +219,8 @@ Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45; th
 
 - **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
 - **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).
-- **Floor 10, the Gate Warden** (#50 section 5, `loadFloor(10)`): floor 9's pick leads to floor 10, the Warden alone in the boss arena layout (width 2800, two ledges, Gate art, HUD "Floor 10 / 10"). `loadFloor(50)` (the Fallen King) is a stub that returns false. See "The Gate Warden" below.
-- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then sets state `sliceEnd` and emits `sliceEnd`. Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
+- **Floor 10, the Gate Warden** (#50 section 5, `loadFloor(10)`): floor 9's pick leads to floor 10, the Warden alone in the boss arena layout (width 2800, two ledges, Gate art, HUD "Floor 10 / 10"). `loadFloor(50)` is the Fallen King (castle only; returns false in the normal and endless modes). See "The Gate Warden" and "The Fallen King, castle version" below.
+- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then sets state `sliceEnd` and emits `sliceEnd` (the slice-end screen offers "Face the Fallen King", see below). Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
 
 ### The Gate Warden (floor 10)
 
@@ -261,6 +261,41 @@ Every heavy glints `GLINT_LEAD` (0.4 s) before contact; a delayed heavy (phase 2
   In one-life runs from floor 1 (`--run`, 100 seeds): the expert clears 73 of 100, dying only on floors 2-9 (0 Warden deaths in 73 arrivals); the average clears 56 of 100, with 13 Warden deaths in 69 arrivals (all charge follow-ups). #58 run target: average full-run clear at most 5%; it is about 56% now, a gap expected to close with #50 PRs 2-3 (floors 1-9) plus Warden tuning.
 
 Differences from #44: the Warden has the #50 moveset instead of the King's slash, slam and charge, two phases, and the Toll; the weapon frenzies do not exist yet, so "frenzy hits break the armor" uses the shared Blood Frenzy (and only breaks at once in phase 1, see the gauge); frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
+
+### The Fallen King, castle version (floor 50)
+
+#50 section 6. A `boss`-type enemy flagged `king: true, armored: true` (the Warden also has `armored: true`; `armored` marks the super armor gauge, `warden` / `king` the fight). It is the castle's floor-50 big boss in the boss arena layout (stage 4 art, two ledges, `loadFloor(50)` on `?test`). The normal run's King (`mode === 'normal'`, 900 HP, poise) is untouched: a state-hash comparison against the previous `core.js` is identical for normal and endless play on every stage, and for castle floors 1-10 up to the new additive fields.
+
+- **Access**: the slice-end screen (after the Warden and the second Vigil) has a "Face the Fallen King" button (`castle.throne`) that calls `challengeKing()`: floor 50 at 100 blood, frenzy ended, debt cleared, the weapon chosen at the second Vigil and the block's relics. A win (`kill` {king: true}, `fightStats`, then 1.6 s) or a death comes back to the slice-end screen (`leaveKing(won)`: `floor` returns to 10 and `sliceEnd` {king: 'won' | 'dead'} is emitted). No records, no save. The slice-end screen offers another try.
+- **Body**: 1200 HP, 80 x 128, speed 75, super armor gauge 150, lights 24 (the old King hit for 22, the Warden for 16), heavies a flat 100. Same gauge rules as the Warden: normal hits do nothing, Eclipse -25, a phase 1 frenzy hit breaks it, **phases 2 and 3 chip `FRENZY_CHIP` 34** (the user's Warden decision applied to both later phases; phase 3 is no different, so five frenzy hits break it); break = cancel + 140 px + 1.8 s stun at x1.5 + refill to 150 + 2.5 s lock. Knockback immune while armored (Vortex does not pull it), cannot be frozen, never flinches. Its body blocks walking when the hero is at or above its feet (a hero on the floor under a ledge landing is not pushed). Engagement 900 px; tells only on screen (-320 / +560).
+- **Phases** at 67% and 34% (`kingPhase` {phase, x, y}; a big hit may skip to 3): cancels the move, 1.1 s pause, the gauge refilled and locked through the pause, banner `boss.castlePhase2` / `boss.castlePhase3`.
+- **Moves** (`KING_MOVES`; every heavy glints `GLINT_LEAD` 0.4 s before contact; phase 2 and 3 heavy recoveries are 0.3 s shorter, floor 0.9 s):
+
+| Move | Kind | Tell | Hit area | Recovery |
+| --- | --- | --- | --- | --- |
+| `slash` | light, opens the string | 0.6 | 146 in front, body height | 0.6, but a string follows |
+| `string` then `slash` / `turnslash` / `charge` | the second hit | 0.85 total, neutral until the glint | **chosen at the second glint, 0.4 s before contact**: hero in front within 200 -> `slash`; behind within 220 -> `turnslash`; far in front -> `charge`; behind farther -> the string ends (recovery 0.8). The area is drawn at the glint (`enemyGlint` {branch: true}, then `enemyTell` / `enemyHeavy` {branch: true}) | the branch's own |
+| `turnslash` | light, own pose | 0.5 | 10-120 behind it | 0.6 |
+| `slam` | heavy | 0.95 | 112 x 123 in front plus a 100-damage floor wave (jump it); two pools at +-200 (phase 2: +-260), none in phase 3 | 1.2 |
+| `charge` | heavy | 0.9 | 305 px path, body height (double jump or dash) | 1.0 |
+| `volley` (phase 2+) | light | 0.92 | five drawn lines (-0.5..0.5 rad, 420 px, orbs at 265 px/s, aimed once at tell start); walk into a gap or dash | 0.9 |
+| `descent` (phase 2+) | heavy | 1.1 | lands on the ledge the hero has stood on for `LEDGE_TIME` 2 s; shadow ring r `DESCENT_RADIUS` 120 drawn on the landing spot (`warn.landing`, `warn.circles`); hits a hero within 120 px who is up to 70 px above that surface (a hero who left the ledge, jumped high or is on the floor beneath is safe) | 1.3, then he drops back to the floor |
+| `ritual` (phase 3, every third pick) | light | 1.28 | three ground discs r 56 at hero x -200, 0, +200 (x1.35) | 1.0 |
+
+  Delayed variants: `slam` and `charge` in phases 2 and 3 at 50% (+0.4 s hold, glint unchanged), or a `jumped` habit read. Follow-ups reuse the Warden's string rules: after a `slam` within 330 px a `charge` (tell 0.5); after a `charge` with the hero behind within 330 px a return `charge`; at most `MAX_FOLLOWS` + 1 per pick (3 in phase 1, 4 later). A slash always opens the 2-hit string. No follow-up once the hero is dead or off screen.
+- **Tithe** (signature): a pool the King made (`tithe: true`) that is not taken within `TITHE_DELAY` 3 s is drawn into him along a visible blood stream for its last second; each pool that completes restores `TITHE_RESTORE` 25 armor (not during a break stun; capped at 150). Taking the pool while it drains interrupts it (blood +14, nothing restored). `tithe` {state: 'start' | 'end' | 'broken', x, y, toX, toY, duration | amount, left}. Pools (+14, 4 s, at most 2: the newest; an older one pushed out while draining emits `broken`) are taken only from the surface they lie on (a ledge pool needs the ledge).
+- **Blood Moon** (phase 3): slams stop making pools; every heavy that misses the hero sheds a pool at its contact point: a slam 100 px ahead, a charge where it ends, a descent 60 px beside the landing. A heavy that hits sheds nothing; light moves never shed. Dodging is income; `bloodPool` {x, y, life, tithe}.
+- **Intelligence**: the Warden's habit memory on `slam` and `charge` answers (`jumped` x2 -> slam close / delayed charge far; `crossed` x2 -> a slash whose second hit is forced to `turnslash`, or a charge that ends in one; `retreated` x2 -> charge); the ledge timer (`trackLedge`: 2 s on one ledge, a 0.35 s hop off keeps it) draws the descent first; **above 150 blood his first move is a charge**; **while the hero is in frenzy** a phase 2+ pick is a volley 75% of the time and he **backsteps** away at 1.3x speed within 320 px unless cornered; otherwise the band pool: close slash / slam (phase 2+ adds charge), mid charge / slam (+ volley beyond 200 in phase 2+), far charge (+ volley). Never the same move twice in a row, except the frenzy volley. Nothing reads input.
+- **Answers without a dash**: slash walk back; turnslash walk away; the string's charge branch double jump; slam walk out and jump the wave; charge double jump; volley walk into a gap; descent walk off the ledge; ritual walk into a gap between the discs. Twin Blades and Spear frenzies use the same.
+- **Events** (new): `kingPhase`, `tithe`, `descent` {x, y, r, hit}, `sliceEnd` {king}; `kill` gains `king`; `enemyHeavy` / `enemyTell` / `enemyGlint` / `enemySwing` carry `enemy: 'king'`.
+- **Bot** (`node tools/bot-run.mjs --seeds 40 --floors 50 --weapon <w> --skill expert|average`; floor 50 starts straight on the King with 100 blood): the Warden's policy plus the volley (walk into a gap, then dodge orbs in flight), the ritual discs, leaving a ledge before a descent, and floor pools before the Tithe. Clear % over 40 seeds (almost every average death is a charge string):
+
+  | Bot | Greatsword | Twin Blades | Spear |
+  | --- | --- | --- | --- |
+  | expert | 100% | 100% | 100% |
+  | average | 18% | 3% | 15% |
+
+  Targets for this challenge: expert at least 50%, average at most 20%. The expert is a ceiling (it reads exact boxes and reacts in 0.18 s), so a human expert is expected well below it. Over 200 seeds: expert 98-100%, average 17% / 4% / 9%.
 
 ## Playtest verdicts
 

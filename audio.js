@@ -184,7 +184,8 @@ export class AudioSystem {
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
-      tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70] };
+      tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
+      kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -608,6 +609,124 @@ export class AudioSystem {
         [0.1, 0.3, 0.55].forEach((dl, i) => tone('noise', 2400 - i * 500, 0.06, 0.12, 600, dl));
         break;
       }
+      // Fallen King cues (castle floor 50): regal and crimson (bell, brass-like saws, plate and cloth), against the Warden's stone and iron. Tells are fixed pitch.
+      case 'kingTellSlash': // opening slash: blade drawn, a short metallic ring over a dry scrape
+        tone('noise', 4200, 0.16, 0.1, 1800);
+        tone('triangle', 1040, 0.22, 0.07, 1000);
+        tone('sine', 2090, 0.16, 0.025, 2060);
+        break;
+      case 'kingTellString': // string second hit, still neutral: a low held hum with a cloth rustle, no pitch to read
+        tone('triangle', 233, 0.3, 0.07, 233);
+        tone('noise', 1200, 0.25, 0.05, 900);
+        break;
+      case 'kingTellTurn': // turnslash: the spin, a whoosh that rises then falls with two answering tones
+        tone('noise', 1500, 0.3, 0.11, 3200);
+        tone('noise', 3200, 0.2, 0.08, 700, 0.14);
+        tone('triangle', 520, 0.15, 0.07, 780);
+        tone('triangle', 780, 0.15, 0.07, 440, 0.15);
+        break;
+      case 'kingTellSlam': // slam: a dark bell struck once, inharmonic partials
+        [196, 293.66, 531].forEach((f, i) => tone('sine', f, 0.5 - i * 0.12, 0.13 - i * 0.03, f * 0.99));
+        tone('sine', 98, 0.4, 0.2, 90);
+        break;
+      case 'kingTellCharge': // charge: brass-like growl climbing, with wind pulled in
+        tone('sawtooth', 90, 0.4, 0.09, 230);
+        tone('sawtooth', 94, 0.4, 0.07, 240);
+        tone('noise', 700, 0.4, 0.09, 2800);
+        break;
+      case 'kingTellDescent': // descent: a thin rising cry and cloth flutter, he is leaving the floor
+        tone('sine', 330, 0.5, 0.1, 990);
+        tone('triangle', 660, 0.5, 0.04, 1500);
+        [0, 0.08, 0.16, 0.24, 0.32].forEach((dl, i) => tone('noise', 2400 + i * 300, 0.04, 0.07, 1400, dl));
+        break;
+      case 'kingTellVolley': // volley: five quick rising hollow blips, one per orb
+        [0, 0.04, 0.08, 0.12, 0.16].forEach((dl, i) => tone('sine', 660 + i * 110, 0.07, 0.08, 800 + i * 110, dl));
+        tone('noise', 3600, 0.1, 0.05, 1600);
+        break;
+      case 'kingTellRitual': // ritual: three low pulses of a choir (one per disc), slow and dark
+        [0, 0.17, 0.34].forEach((dl, i) => {
+          tone('sawtooth', 147 + i * 25, 0.22, 0.06, undefined, dl);
+          tone('sine', 294 + i * 50, 0.2, 0.04, undefined, dl);
+        });
+        tone('noise', 900, 0.5, 0.05, 2000);
+        break;
+      case 'kingCommit': // string branch chosen at the second glint: a low double knock under the shared shing, nothing above 700 Hz
+        tone('sine', 150, 0.12, 0.26, 90, 0.07);
+        tone('triangle', 300, 0.1, 0.1, 200, 0.07);
+        tone('sine', 190, 0.14, 0.22, 110, 0.15);
+        break;
+      case 'kingCharge': // charge release: plate-clad rush, rising whoosh with a brassy drive (not the Warden's silence)
+        tone('noise', 900, 0.45, 0.22, 3800);
+        tone('sawtooth', 80, 0.45, 0.1, 210);
+        tone('triangle', 400, 0.3, 0.06, 900);
+        break;
+      case 'kingLeap': // descent leap: cloth and wind, a rising whoosh that cuts off
+        tone('noise', 1200, 0.3, 0.2, 5200);
+        tone('triangle', 200, 0.28, 0.08, 520);
+        break;
+      case 'kingLand': { // descent landing: a heavy plate crash with a low boom and a dark bell ring-out; his own, apart from bossSlam
+        const d = 0.96 + Math.random() * 0.08;
+        tone('sine', 60 * d, 0.55, 0.5, 24, 0.1);
+        tone('noise', 3200, 0.3, 0.3, 200, 0.1);
+        tone('noise', 6500, 0.08, 0.16, 1500, 0.1);
+        tone('sine', 196, 0.6, 0.1, 190, 0.12);
+        tone('sine', 311, 0.45, 0.05, 305, 0.12);
+        break;
+      }
+      case 'kingVolley': // volley release: five bright hisses fanned out, a soft red thump
+        [0, 0.03, 0.06, 0.09, 0.12].forEach((dl, i) => tone('noise', 6200 - i * 500, 0.07, 0.1, 2000, dl));
+        tone('sine', 100, 0.18, 0.28, 48);
+        break;
+      case 'kingRitual': // ritual discs erupt: sharp crack, three staggered booms, choir tail
+        [0, 0.06, 0.12].forEach((dl, i) => {
+          tone('sine', 70 - i * 6, 0.4, 0.3, 28, dl);
+          tone('noise', 4000 - i * 700, 0.14, 0.17, 300, dl);
+        });
+        notes([146.83, 220], 0.05, 0.05);
+        break;
+      case 'kingStep': { // footfall: plate clink over a muffled thud; lighter and more metallic than the Warden's stone
+        if (ctx.currentTime - (this._lastStep ?? -1) < 0.08) return;
+        this._lastStep = ctx.currentTime;
+        const d = 0.9 + Math.random() * 0.2;
+        tone('sine', 78 * d, 0.16, 0.26, 36);
+        tone('noise', 3000 * d, 0.05, 0.09, 1400);
+        tone('square', 1100 * d, 0.04, 0.02, 900);
+        break;
+      }
+      case 'kingSkid': // charge ends: metal dragged across stone, a bright rasp dying into a thud
+        tone('noise', 4200, 0.35, 0.18, 600);
+        tone('square', 900, 0.3, 0.03, 300);
+        tone('sine', 64, 0.25, 0.26, 30, 0.08);
+        break;
+      case 'kingRoar': { // phase 2 (1) and 3 (1.3): brass-like swell and fall over a tolled bell, not stone; 3 adds a dissonant upper voice
+        const d = 0.97 + Math.random() * 0.06;
+        tone('sawtooth', 110 * d, 1.2, 0.14, 55);
+        tone('sawtooth', 165 * d, 1.1, 0.07, 82);
+        tone('sine', 52, 1.3, 0.4, 26);
+        tone('noise', 1600, 1, 0.16, 200);
+        [0, 0.35].forEach(dl => [196, 293.66, 415.3].forEach((f, i) => tone('sine', f, 0.7, 0.07 - i * 0.015, f * 0.99, 0.1 + dl)));
+        if (amount > 1.2) tone('sawtooth', 233 * d, 1, 0.06, 117);
+        break;
+      }
+      case 'kingTitheStart': // Tithe stream starts: a thin wet pull rising toward him
+        tone('noise', 700, 0.5, 0.1, 2400);
+        tone('sine', 140, 0.5, 0.1, 260);
+        break;
+      case 'kingTitheEnd': // pool swallowed: two low gulps, then plate tightening with a short metal ring
+        [0, 0.1].forEach((dl, i) => tone('sine', 190 - i * 40, 0.12, 0.2, 80, dl));
+        tone('noise', 2600, 0.2, 0.12, 700, 0.18);
+        tone('triangle', 620, 0.25, 0.07, 600, 0.2);
+        tone('sine', 70, 0.2, 0.26, 34, 0.2);
+        break;
+      case 'kingTitheCut': // stream cut by the hero: a quick snip, noise falling and a dropped tone
+        tone('noise', 5000, 0.08, 0.15, 800);
+        tone('sine', 420, 0.12, 0.1, 140);
+        break;
+      case 'kingMoonPool': // Blood Moon pool: low red chime that wavers, an ominous sting over the splash
+        tone('sine', 98, 0.7, 0.2, 94);
+        tone('sine', 146.83, 0.7, 0.1, 140);
+        tone('sine', 311, 0.5, 0.04, 300, 0.05);
+        break;
       case 'glint': // THE timing cue, 0.4 s before a heavy lands: fixed pitch (no detune), rising bright swish into two high partials
         tone('noise', 3000, 0.16, 0.2, 9000);
         tone('sine', 4186, 0.24, 0.17, 4100);

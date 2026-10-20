@@ -42,7 +42,17 @@ function wardenHit(w, px, py) {
     if (ahead < -50 || ahead > Math.abs(w.chargeTo - w.x) + 50) return Infinity;
     return (striking ? 0 : w.tell) + Math.max(0, ahead - 50) / CHARGE_SPEED;
   }
-  return w.tell > 0 && a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
+  if (!(w.tell > 0)) return Infinity;
+  if (a.kind === 'volley') { // the Fallen King's five drawn lines: sample each orb's flight after release
+    for (const l of a.lines) for (let s = 0; s <= 1.6; s += .04) {
+      const bx = l.x1 + Math.cos(l.angle) * 265 * s, by = l.y1 + Math.sin(l.angle) * 265 * s;
+      if (Math.abs(bx - px) < 23 && by > py - 58 && by < py + 4) return w.tell + s;
+    }
+    return Infinity;
+  }
+  if (a.kind === 'ritual') return a.circles.some(c => Math.abs(px - c.x) < c.r + 14 && py > w.y - c.r) ? w.tell : Infinity; // ground discs: a gap between them is safe
+  if (a.kind === 'descent') { const l = a.landing; return Math.abs(px - l.x) < l.r + 14 && py > l.y - 70 && py < l.y + 20 ? w.tell : Infinity; } // shockwave on the ledge surface
+  return a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
 }
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
 
@@ -149,9 +159,13 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       }
       else {
         let best = null; // walk out on this side of the body if there is time
-        if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) {
-          const x = p.x + away * d;
-          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) best = { dir: away };
+        if (kind === 'descent') { // leave the ledge before the landing: walk off the nearer edge (the fall takes it out of the shockwave)
+          const l = w.warn.landing, plat = game.platforms.find(pl => pl.y === l.y), edge = plat ? (p.x < plat.x + plat.w / 2 ? -1 : 1) : -Math.sign(p.x - l.x) || 1;
+          if (p.grounded) { o.dir = edge; o.urgent = true; }
+        }
+        else if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) for (const sd of kind === 'volley' || kind === 'ritual' ? [away, toward] : [away]) { // lines and circles have gaps on both sides
+          const x = p.x + sd * d;
+          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) { best = { dir: sd }; break; }
         }
         if (best) { o.dir = flip(w, best.dir); o.urgent = true; }
         else if (kind === 'charge' && (!w.follow || (p.dashCd > 0 && p.dashCd > t - .1))) {
@@ -173,13 +187,22 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       if (!b.ground) continue;
       for (let s = 0; s <= .5; s += .02) if (Math.abs(b.x + b.vx * s - p.x) < 14 + b.r) { danger = Math.min(danger, s); if (s <= .3 + jit(b) && p.grounded) { o.jump = true; o.urgent = true; } break; }
     }
+    const orbs = game.projectiles.filter(b => !b.ground && now - (info.get(b)?.since ?? now) >= skill.reaction); // the King's volley after release: walk into a gap, else dash
+    const orbT = (b, x) => { for (let s = 0; s <= .6; s += .02) { const by = b.y + b.vy * s; if (Math.abs(b.x + b.vx * s - x) < 14 + b.r && by > p.y - 58 && by < p.y + 4) return s; } return Infinity; };
+    const orbNow = Math.min(Infinity, ...orbs.map(b => orbT(b, p.x)));
+    if (orbNow < Infinity) {
+      danger = Math.min(danger, orbNow);
+      let go = 0;
+      for (let d = 10; d <= 200 && !go; d += 10) for (const sd of [away, toward]) { const x = p.x + sd * d; if (x > 40 && x < W - 40 && d / speed < orbNow - .05 && orbs.every(b => orbT(b, x) === Infinity)) { go = sd; break; } }
+      if (go) { o.dir = go; o.urgent = true; } else if (orbNow <= .12 + lock + jit(orbs[0]) && dashReady) { o.dash = true; o.urgent = true; o.dir = toward; }
+    }
     if (danger > .45) {
       const dx = w.x - p.x, face = Math.sign(dx) || p.dir, gap = Math.abs(dx);
       const open = w.superArmor <= 0 || (w.heavy && w.recover > 0); // blood-paying windows: break stun, heavy recovery
       if (open && !wasOpen) rollGreedy(now);
       wasOpen = open;
       const breakable = p.frenzy && w.superArmor > 0 && w.armorLock <= 0;
-      const pool = game.pools.filter(q => (q.x - w.x) * (p.x - w.x) > 0 || Math.abs(q.x - w.x) > 60).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).find(q => Math.abs(q.x - p.x) / speed < q.life - .1);
+      const pool = game.pools.filter(q => (q.x - w.x) * (p.x - w.x) > 0 || Math.abs(q.x - w.x) > 60).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).find(q => q.y >= FLOOR - 5 && Math.abs(q.x - p.x) / speed < q.life - .1); // floor pools only: take them before the King's Tithe draws them in
       let goal = null, tol = 12;
       if ((open || breakable) && gap < 330) {
         const spacing = Math.max(50, p.reach - 22);
@@ -194,7 +217,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     return o;
   }
   function decide(game, now) {
-    const warden = game.enemies.find(e => e.warden && e.hp > 0);
+    const warden = game.enemies.find(e => e.armored && e.hp > 0);
     if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
