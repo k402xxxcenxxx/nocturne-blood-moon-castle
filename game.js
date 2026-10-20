@@ -115,7 +115,7 @@ function handleEvent(e) {
     }
     case 'swing': if (game.frenzyOf('twin')) { trails.push({ ...game.player, life: .16, invulnerable: 0 }); burst(e.x, e.y - 30, '#b6e8ff', 3, 90, game.player.dir, 2); }
       if (e.cost > 0 && settings.shake) $('blood-meter').animate([{ filter: 'brightness(2.2)' }, { filter: 'none' }], 200); // swing cost tick
-      if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
+      if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play(game.frenzyOf('twin') ? 'twinTick' : 'swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
       if (e.punish) audio.play('guardBreak', .9); // opening punished
@@ -136,7 +136,7 @@ function handleEvent(e) {
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
-      audio.play('hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
+      audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
         if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
         flashNumber({ ...e, amount: `+${e.amount}` }, e.debt >= BLOOD_HALF ? '#ff3a4d' : '#aab4c8'); burst(e.x, e.y, '#8d97aa', 8, 90); break;
@@ -145,7 +145,7 @@ function handleEvent(e) {
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
     case 'jump': audio.play('jump', e.double ? .65 : .45); burst(e.x, e.y - 4, e.double ? '#b8adcf' : '#9a8c77', e.double ? 15 : 7, 75); break;
     case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, y: e.y - 20, size: 23, amount: t('float.perfect') }, '#e8ecf8'); break;
-    case 'dash': audio.play('dash'); burst(e.x, e.y - 25, e.assault ? '#e6d4ff' : '#afa2cf', e.assault ? 16 : 10, e.assault ? 200 : 130, e.assault ? -game.player.dir : 0); break;
+    case 'dash': audio.play(e.assault ? 'assault' : 'dash'); burst(e.x, e.y - 25, e.assault ? '#e6d4ff' : '#afa2cf', e.assault ? 16 : 10, e.assault ? 200 : 130, e.assault ? -game.player.dir : 0); break;
     case 'magic':
       if (game.stacks('vortex')) audio.play('vortex');
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
@@ -276,13 +276,13 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
+    case 'frenzy': audio.play('frenzy', 1); audio.play('frenzy_' + e.weapon); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .5, max: .5, color: FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', r: 150 }); burst(e.x, e.y - 30, FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', 16, 200, 0, 3); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
-    case 'debt': audio.play('heavyHit'); damageFlash = .4; rumble(10, .35); flashNumber({ x: e.x, y: e.y, size: 26, amount: `−${e.amount}` }, '#ed7e88'); // blood debt paid at the frenzy's end: the numbness breaks, the pain arrives all at once
+    case 'debt': audio.play(game.player.blood <= 0 ? 'debtLethal' : 'debtPaid'); damageFlash = .4; rumble(10, .35); flashNumber({ x: e.x, y: e.y, size: 26, amount: `−${e.amount}` }, '#ed7e88'); // blood debt paid at the frenzy's end: the numbness breaks, the pain arrives all at once
       effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#ff3a4d', r: 110 }); burst(e.x, e.y - 30, '#a93959', 26, 260); break;
     case 'assaultHit':
-      if (e.blocked) { audio.play('block', .8); rumble(3, .1); burst(e.x, e.y, '#cfd6e6', 8, 200, e.dir, 3); effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: e.dir, color: '#9aa3b5', s: .7 }); } // blocked: small grey spark, no blood
-      else { rumble(5, .14); burst(e.x, e.y, '#e6d4ff', 14, 240, e.dir, 3); burst(e.x, e.y, '#bf6078', 8, 150); effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: e.dir, color: '#e6d4ff', s: 1.5 }); }
+      if (e.blocked) { audio.play('assaultBlock'); rumble(3, .1); burst(e.x, e.y, '#cfd6e6', 8, 200, e.dir, 3); effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: e.dir, color: '#9aa3b5', s: .7 }); } // blocked: small grey spark, no blood
+      else { audio.play('assaultHit'); rumble(5, .14); burst(e.x, e.y, '#e6d4ff', 14, 240, e.dir, 3); burst(e.x, e.y, '#bf6078', 8, 150); effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: e.dir, color: '#e6d4ff', s: 1.5 }); }
       break;
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
     case 'rest': vigilNo = e.vigil; audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
@@ -806,12 +806,16 @@ function watchHold() { // delayed-heavy hold loop: on only while a delayed heavy
   if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = true; break; }
   audio.setHold(hold);
 }
+function watchLethal() { // lethal-debt tone: same rule as the HUD band; no allocation
+  const p = game.player;
+  audio.setLethal(game.state === 'playing' && game.mode === 'castle' && p.debt > 0 && p.debt >= Math.min(p.blood, BLOOD_HALF));
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   if (ai) aiModal(dt);
   const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
-  watchBlood(); watchHold();
+  watchBlood(); watchHold(); watchLethal();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
