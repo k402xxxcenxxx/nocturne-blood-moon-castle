@@ -177,17 +177,17 @@ function handleEvent(e) {
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
     case 'wardenPhase': audio.play('wardenRoar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); burst(e.x, e.y, '#ff7a52', 24, 200, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: '#ff5a44', r: 200 }); break; // phase 2: ember seams light up (art.js)
-    case 'kingPhase': audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase); toast(t('boss.castlePhase' + e.phase)); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
+    case 'kingPhase': audio.play('kingRoar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase); toast(t('boss.castlePhase' + e.phase)); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: e.phase >= 3 ? '#ff3a4c' : '#ffb04a', r: 220 }); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .7, max: .7, color: e.phase >= 3 ? '#ff5a6a' : '#ffd08a', r: 130 }); if (e.phase >= 3 && settings.shake) whiteFlash = .06; break; // phase 2: the crown ignites; phase 3: the Blood Moon look (art.js) and a red tint over the arena (render)
     case 'tithe': // the King drinks an untaken pool along a blood ribbon that follows him (drawEffects); taking the pool cuts it
-      if (e.state === 'start') { effects.push({ type: 'tithe', x: e.x, y: e.y - 6, x2: e.toX, y2: e.toY, king: game.enemies.find(o => o.king && o.hp > 0), life: e.duration, max: e.duration }); audio.play('tollDrain', .5); }
+      if (e.state === 'start') { effects.push({ type: 'tithe', x: e.x, y: e.y - 6, x2: e.toX, y2: e.toY, king: game.enemies.find(o => o.king && o.hp > 0), life: e.duration, max: e.duration }); audio.play('kingTitheStart', .8); }
       else if (e.state === 'end') {
-        audio.play('armorForm', .7); flashNumber({ x: e.toX ?? e.x, y: e.toY - 40, amount: `+${Math.round(e.amount)}` }, '#aab4c8'); burst(e.x, e.y - 6, '#a93959', 8, 110);
+        audio.play('kingTitheEnd', .9); flashNumber({ x: e.toX ?? e.x, y: e.toY - 40, amount: `+${Math.round(e.amount)}` }, '#aab4c8'); burst(e.x, e.y - 6, '#a93959', 8, 110);
         effects.push({ type: 'ringIn', x: e.toX, y: e.toY, life: .45, max: .45, color: '#d8445a', r: 90 }); effects.push({ type: 'ringIn', x: e.toX, y: e.toY, life: .5, max: .5, color: '#aab4c8', r: 110, delay: .15 }); // he swallows the blood, then the shell tightens
-      } else { for (const fx of effects) if (fx.type === 'tithe' && Math.abs(fx.x - e.x) < 2) { fx.cut = true; fx.life = Math.min(fx.life, .25); fx.max = .25; } burst(e.x, e.y - 6, '#a93959', 6, 100); }
+      } else { audio.play('kingTitheCut', .8); for (const fx of effects) if (fx.type === 'tithe' && Math.abs(fx.x - e.x) < 2) { fx.cut = true; fx.life = Math.min(fx.life, .25); fx.max = .25; } burst(e.x, e.y - 6, '#a93959', 6, 100); }
       break;
     case 'descent': { // the landing shockwave (r 120): dust rings, cracks along the ledge both ways, rubble and the red radius ring
-      audio.play('bossSlam', 1); rumble(10, .35); burst(e.x, e.y, '#9a8c77', 22, 240); burst(e.x, e.y, '#e4dccb', 8, 170, 0, 3);
+      audio.play('kingLand', 1); rumble(10, .35); burst(e.x, e.y, '#9a8c77', 22, 240); burst(e.x, e.y, '#e4dccb', 8, 170, 0, 3);
       effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.r, life: .5, max: .5 }); effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.r * .6, life: .35, max: .35 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 4, life: .45, max: .45, color: e.hit ? '#ffffff' : '#e75c50', r: e.r });
       for (const sd of [-1, 1]) { const pts = []; for (let i = 0, x = e.x, y = e.y; i < 5; i++) { pts.push([x, y]); x += sd * (18 + Math.random() * 14); y = e.y - 1 + (Math.random() * 5 | 0); } effects.push({ type: 'crack', pts, life: 1, max: 1 }); }
       break;
@@ -203,13 +203,16 @@ function handleEvent(e) {
       { const plates = []; for (let i = 0; i < 16; i++) plates.push({ a: i / 16 * Math.PI * 2 + Math.random() * .4, d: 50 + Math.random() * 70, s: 5 + (Math.random() * 7 | 0), r: Math.random() * 6 }); effects.push({ type: 'shards', x: e.x, y: e.y, radius: 70, shards: plates, life: .7, max: .7, c1: '#aab4c8', c2: '#586070' }); } // the shell bursts into stone plates
       break;
     case 'armorRestore': audio.play('armorForm', .8); burst(e.x, e.y, '#8e99a8', 10, 120); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .45, max: .45, color: '#aab4c8', r: 80 }); break; // the shell closes round the Warden again
-    case 'bloodPool': audio.play('poolSplash', .8); if (e.tithe && game.enemies.some(o => o.king && o.hp > 0 && o.bossPhase >= 3)) effects.push({ type: 'moonPool', x: e.x, y: e.y, life: .6, max: .6 }); // Blood Moon: a missed heavy sheds a pool, with a red moon rising off it
+    case 'bloodPool': audio.play('poolSplash', .8); if (e.tithe && game.enemies.some(o => o.king && o.hp > 0 && o.bossPhase >= 3)) { audio.play('kingMoonPool', .8); effects.push({ type: 'moonPool', x: e.x, y: e.y, life: .6, max: .6 }); } // Blood Moon: a missed heavy sheds a pool, with a red moon rising off it
      burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
     case 'poolTaken': audio.play('poolGulp', 1); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; break; // metric for the #44 playtest; the result screen shows a compact line
-    case 'enemyHeavy': audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
-    case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
+    case 'enemyHeavy':
+      if (e.enemy === 'king') { if (!e.branch) audio.play('heavyWarn'); const c = { slam: 'kingTellSlam', charge: 'kingTellCharge', descent: 'kingTellDescent' }[e.kind]; if (c) audio.play(c, .8); break; } // a string's charge branch already has glint + commit
+      audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
+    case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
+      if (e.enemy === 'king') { audio.play({ slash: 'kingTellSlash', string: 'kingTellString', turnslash: 'kingTellTurn', volley: 'kingTellVolley', ritual: 'kingTellRitual' }[e.kind] || 'tellGeneric', 1); break; }
       const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
       audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
     }
@@ -218,11 +221,11 @@ function handleEvent(e) {
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#fff0b0', r: 90 }); break;
     case 'enemySwing':
+      if (e.enemy === 'king') { kingSwing(e); break; }
       if (e.heavy) audio.play('heavyWhoosh'); else
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', sweep: 'bossSlash', backhand: 'bossSlash', turnslash: 'bossSlash', slam: 'bossSlam', descent: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
       if (e.enemy === 'warden') { wardenSwing(e); break; }
-      if (e.enemy === 'king') { kingSwing(e); break; }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
@@ -654,23 +657,24 @@ function wardenSwing(e) { // contact visuals per Warden move; each reads differe
 }
 function kingSwing(e) { // contact visuals per King move; the castle King only (the old boss keeps the generic slash)
   const d = e.dir === -1 ? -1 : 1, fx = e.x + d * 100;
-  if (e.kind === 'slash') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: d, life: .3, max: .3, boss: true, big: true }); rumble(4, .12); }
-  else if (e.kind === 'turnslash') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -d, life: .3, max: .3, boss: true, big: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 40, life: .3, max: .3, color: '#c58bff', r: 70 }); rumble(4, .12); } // the arc behind him plus a spin ring
+  if (e.kind === 'slash') { audio.play('bossSlash', .9); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: d, life: .3, max: .3, boss: true, big: true }); rumble(4, .12); }
+  else if (e.kind === 'turnslash') { audio.play('bossSlash', .9); effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -d, life: .3, max: .3, boss: true, big: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 40, life: .3, max: .3, color: '#c58bff', r: 70 }); rumble(4, .12); } // the arc behind him plus a spin ring
   else if (e.kind === 'slam') {
-    rumble(12, .35); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
+    audio.play('heavyWhoosh'); audio.play('bossSlam', .9); rumble(12, .35); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
     const pts = []; for (let i = 0, x = fx, y = FLOOR; i < 7; i++) { pts.push([x, y]); x += d * (22 + Math.random() * 16); y = FLOOR - 1 + (Math.random() * 6 | 0); }
     effects.push({ type: 'crack', pts, life: 1.2, max: 1.2 }); burst(fx, FLOOR - 4, '#9a8c77', 18, 240, 0, 3); burst(fx, FLOOR - 4, '#e4dccb', 8, 160);
-  } else if (e.kind === 'charge') { rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
-  else if (e.kind === 'volley') { burst(e.x, e.y, '#ff6a7c', 14, 200); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#ff6a7c', r: 60 }); } // five orbs leave the chest sigil
-  else if (e.kind === 'ritual') { burst(e.x, e.y + 20, '#c58bff', 12, 160); rumble(3, .1); }
+  } else if (e.kind === 'charge') { audio.play('heavyWhoosh', .7); audio.play('kingCharge', .9); rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
+  else if (e.kind === 'descent') audio.play('kingLeap', .9); // the landing is the 'descent' event
+  else if (e.kind === 'volley') { audio.play('kingVolley', .9); burst(e.x, e.y, '#ff6a7c', 14, 200); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#ff6a7c', r: 60 }); } // five orbs leave the chest sigil
+  else if (e.kind === 'ritual') { audio.play('kingRitual', .9); burst(e.x, e.y + 20, '#c58bff', 12, 160); rumble(3, .1); }
 }
 let wardenX = null, wardenStep = 0, wardenRun = false; // footfall shake: one thud per stride of the Warden's own movement (walking 56 px, charging 90 px), only near the hero and with the shake setting on
 function wardenSteps(e) {
   if (wardenX === null || e.stun > 0 || e.pause > 0 || Math.abs(e.x - wardenX) > 60) { wardenX = e.x; return; }
-  const run = e.travel > 0; if (wardenRun && !run && Math.abs(e.x - game.player.x) <= 700) audio.play('wardenSkid', .9); wardenRun = run; wardenStep += Math.abs(e.x - wardenX); wardenX = e.x;
+  const run = e.travel > 0; if (wardenRun && !run && Math.abs(e.x - game.player.x) <= 700) audio.play(e.king ? 'kingSkid' : 'wardenSkid', .9); wardenRun = run; wardenStep += Math.abs(e.x - wardenX); wardenX = e.x;
   if (wardenStep < (run ? 90 : 56)) return;
   wardenStep = 0; if (Math.abs(e.x - game.player.x) > 700) return;
-  audio.play('wardenStep', run ? 1.3 : .8); rumble(run ? 4 : 2, .09); burst(e.x + e.dir * 14, e.y - 2, '#9a8c77', run ? 4 : 2, 70, 0, 3);
+  audio.play(e.king ? 'kingStep' : 'wardenStep', run ? 1.3 : .8); rumble(run ? 4 : 2, .09); burst(e.x + e.dir * 14, e.y - 2, '#9a8c77', run ? 4 : 2, 70, 0, 3);
 }
 function render(dt) {
   const title = game.state === 'title', p = game.player;
