@@ -436,7 +436,7 @@ export class Game {
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    if (direction && p.dash <= 0 && !(p.attack > 0 && this.frenzyOf('twin'))) p.dir = direction; // twin frenzy: facing holds during a swing, so you can walk backwards while attacking
+    if (direction && p.dash <= 0 && !this.frenzyOf('twin')) p.dir = direction; // twin frenzy: movement never turns the facing (only the swing-start seek does), so you can walk backwards while attacking
     if (input.jump) this.jump();
     this.heldDir = direction;
     if (input.dash) this.dash();

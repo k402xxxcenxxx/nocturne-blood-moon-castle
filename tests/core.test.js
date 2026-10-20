@@ -3965,6 +3965,15 @@ test('frenzy twin: cooldown is x0.6 on top, full speed while attacking, facing t
   assert.equal(far.player.dir, -1, 'nothing within 260 keeps the facing');
 });
 
+test('frenzy twin: holding walk-back keeps facing and swings landing; with no enemy in range facing never changes', () => {
+  const { game, player, events } = frenzied('twin');
+  player.x = 600; player.dir = 1; const e = calm(enemy(game, 680)); e.hp = e.maxHp = 1e6;
+  for (let i = 0; i < 240; i++) { game.update(1 / 120, { left: true }); player.x = 600; assert.equal(player.dir, 1); }
+  assert.ok(events.filter(x => x.type === 'swing').length >= 3 && events.some(x => x.type === 'hit'), 'swings keep landing');
+  const far = frenzied('twin'); far.player.dir = 1; advance(far.game, .5, { left: true });
+  assert.equal(far.player.dir, 1, 'no enemy in range: walking does not turn the hero');
+});
+
 test('frenzy twin: dash is ignored and not buffered, jump and plunge still work', () => {
   const { game, player, events } = frenzied('twin');
   game.update(1 / 120, { dash: true }); assert.equal(player.dash, 0); assert.equal(player.dashBuf, 0); assert.ok(!events.some(e => e.type === 'dash'));
