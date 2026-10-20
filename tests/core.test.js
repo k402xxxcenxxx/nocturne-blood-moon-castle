@@ -3119,8 +3119,8 @@ test('castle shield: two blocked hits within 1 s trigger a counter shove (tell, 
   const x = player.x; advance(game, .5);
   assert.ok(events.some(ev => ev.type === 'enemySwing' && ev.kind === 'counter'));
   assert.ok(player.blood < 150 && x - player.x >= 110, `hero shoved ${x - player.x}`);
-  { const n = lightFoe('shield', 50); Object.assign(n.player, { frenzy: true, weapon: 'heavy', blood: 150, x: 600 }); Object.assign(n.e, { x: 650, dir: -1, move: 'counter', warn: { box: { x: 500, w: 200 } } });
-    const nx = n.player.x; n.game.enemyAttack?.(n.e); assert.ok(Math.abs(n.player.x - nx) < 1, 'numb hero is not shoved'); }
+  { const n = lightFoe('shield', 50); Object.assign(n.player, { frenzy: true, weapon: 'heavy', blood: 150, x: 600 }); Object.assign(n.e, { x: 650, dir: -1, move: 'counter', warn: { box: { x: 500, y: FLOOR - 100, w: 200, h: 120 } } });
+    const nx = n.player.x; n.game.enemyAttack(n.e); assert.ok(n.player.debt > 0, 'the hit landed'); assert.ok(Math.abs(n.player.x - nx) < 1, 'numb hero is not shoved'); }
   assert.ok(e.recover > 0 && e.punishable);
   const { game: g, e: s } = lightFoe('shield', 50);
   g.damageEnemy(s, 5, 1, false, false, true, 5); advance(g, 1.2); g.damageEnemy(s, 5, 1, false, false, true, 5);
@@ -4082,6 +4082,7 @@ test('warden kill: the burn freezes and the debt is not paid in the 1.6 s window
   game.damageEnemy(b, 9999, 1, false, false);
   const k = player.blood; advance(game, 1.0);
   assert.equal(game.state, 'playing'); assert.ok(player.frenzy && player.blood === k && player.debt === 120, `frozen ${k} ${player.blood} ${player.debt}`);
+  assert.equal(game.debtLethal(), false, 'the win forgives the debt');
   advance(game, 1.0);
   assert.equal(game.state, 'rest'); assert.equal(game.vigil, 2); assert.equal(player.debt, 0);
 });
@@ -4092,6 +4093,7 @@ test('king kill: the burn freezes and the debt is not paid in the window; the sl
   game.damageEnemy(b, 99999, 1, false, false);
   const k = player.blood; advance(game, 1.0);
   assert.equal(game.state, 'playing'); assert.ok(player.frenzy && player.blood === k && player.debt === 120, `frozen ${k} ${player.blood} ${player.debt}`);
+  assert.equal(game.debtLethal(), false, 'the win forgives the debt');
   advance(game, 1.0);
   assert.equal(game.state, 'sliceEnd'); assert.ok(events.some(e => e.type === 'sliceEnd' && e.king === 'won'));
 });

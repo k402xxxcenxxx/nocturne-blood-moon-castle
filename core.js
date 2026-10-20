@@ -307,7 +307,7 @@ export class Game {
   }
   bossDown() { return this.vigilT > 0 || this.kingT > 0; } // the 1.6 s after the Warden or King dies: burn frozen, debt not paid
   // True when the debt would kill at the worst moment the player can pick: Eclipse ends the frenzy below 100 and pays from the blood left. Used by every lethal cue, so it may warn early, never late.
-  debtLethal() { const p = this.player; return p.debt > 0 && p.debt >= Math.min(p.blood >= SKILL_MIN ? p.blood - SKILL_COST : p.blood, BLOOD_HALF); }
+  debtLethal() { const p = this.player; return p.debt > 0 && !this.bossDown() && p.debt >= Math.min(p.blood >= SKILL_MIN ? p.blood - SKILL_COST : p.blood, BLOOD_HALF); }
   // True while this weapon's frenzy effect is on (castle only; frenzy exists only there).
   frenzyOf(weapon) { const p = this.player; return p.frenzy && p.weapon === weapon && this.mode === 'castle'; }
   // Frenzy ends once blood is back at the life half (burn, damage or the skill).
