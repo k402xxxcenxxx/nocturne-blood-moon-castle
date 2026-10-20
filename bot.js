@@ -74,11 +74,13 @@ function hitTime(e, px, py) {
     }
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
   }
-  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton: tell, then a 0.15 s lunge
+  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
+  if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
   if (e.move === 'counter' && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // castle shield shove
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
+  if (e.type === 'knight' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // castle knight slash and turnswipe: the drawn box
   if (e.type === 'bat') return dx < 55 && dy < 58 ? e.tell : Infinity;
   if (e.type === 'spear') return e.thrustBox && rectHit(px, py, e.thrustBox) ? e.tell : Infinity;
   if (e.type === 'shield') return dx < 70 && (px - e.x) * e.dir >= 0 && dy < 77 ? e.tell : Infinity;
@@ -264,6 +266,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           if (d / speed < t - .05 && safeSpot(x) && threats.every(th => th.e ? hitTime(th.e, x, p.y) === Infinity : Math.abs(th.b.x + th.b.vx * th.t - x) > 14 + th.b.r)) { best = { dir: s }; break; }
         }
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
+        else if (e && e.move === 'sweep' && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep is 30 px tall: no room to walk out, so jump it
       }
     }
     // --- offence and navigation when nothing is about to land

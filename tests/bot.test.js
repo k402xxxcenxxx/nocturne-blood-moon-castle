@@ -138,3 +138,21 @@ test('the expert bot beats the Fallen King on floor 50 (all weapons, a few seeds
     assert.ok(bot.presses.length <= MAX_PRESSES_PER_SECOND);
   }
 });
+
+test('the expert bot answers the PR 2 moves (sweep, knight string, bat swoop) within human limits', () => {
+  for (const [type, gap, floor, kinds] of [['spear', 60, 3, ['sweep']], ['knight', 50, 7, ['slash', 'overhead', 'turnswipe']], ['bat', 25, 4, ['swoop']]]) {
+    const game = castle(3); game.loadFloor(floor);
+    const p = game.player, seen = new Set();
+    game.onEvent = ev => { if (ev.type === 'enemySwing' && ev.kind) seen.add(ev.kind); };
+    game.enemies = []; game.traps = []; game.obstacles = []; game.platforms = [];
+    game.rand = () => .99; // no heavy rolls: only the light kits
+    game.spawnEnemy(type, p.x + gap, 0);
+    const e = game.enemies[0];
+    Object.assign(e, { hp: 1e6, maxHp: 1e6, dir: -1, cd: 0 }); if (type === 'bat') e.y = p.y - 30;
+    p.invulnerable = 0; p.blood = 150;
+    const bot = createBot({ skill: 'expert', seed: 5 });
+    for (let t = 0; t < 8; t += DT) game.update(DT, bot.input(game));
+    assert.ok(kinds.some(k => seen.has(k)), `${type}: the move happened (${[...seen]})`);
+    assert.ok(p.blood >= 150 - 4, `${type}: the bot took ${150 - p.blood} blood`);
+  }
+});
