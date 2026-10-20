@@ -63,6 +63,7 @@ const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
 // Castle Descent (mode 'castle', #44): one blood meter replaces HP and MP.
 export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
+export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon frenzies (#61)
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 const WARDEN_MOVES = { // tell and recovery in seconds; heavy ones deal a flat HEAVY_DAMAGE and glint GLINT_LEAD before contact
@@ -139,7 +140,7 @@ export class Game {
     this.relics = [];
     this.player = basePlayer();
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
-    this.pools = []; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
+    this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
     this.loadStage(0);
   }
   rand() { let t = this.randomState += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
@@ -293,14 +294,24 @@ export class Game {
     this.fightOn = false;
     this.emit('fightStats', { won, ...this.fightStats });
   }
-  endFrenzy() {
-    const p = this.player;
+  // pay = the frenzy ran out (burn, skill or dash cost): the Greatsword's blood debt comes due at once and kills at 100 or more. Death, a Vigil and a floor reset clear it unpaid.
+  endFrenzy(pay = false) {
+    const p = this.player, debt = pay && !this.bossDown() ? Math.round(p.debt) : 0; // a boss kill forgives the debt
     if (!p.frenzy) return;
     p.frenzy = false; p.debt = 0;
-    this.emit('frenzyEnd', { weapon: p.weapon, debt: 0 });
+    this.emit('frenzyEnd', { weapon: p.weapon, debt });
+    if (debt <= 0) return;
+    p.blood = Math.max(0, p.blood - debt);
+    this.emit('debt', { amount: debt, x: p.x, y: p.y - 30 });
+    if (p.blood <= 0) this.heroDown(false, 'debt');
   }
+  bossDown() { return this.vigilT > 0 || this.kingT > 0; } // the 1.6 s after the Warden or King dies: burn frozen, debt not paid
+  // True when the debt would kill at the worst moment the player can pick: Eclipse ends the frenzy below 100 and pays from the blood left. Used by every lethal cue, so it may warn early, never late.
+  debtLethal() { const p = this.player; return p.debt > 0 && !this.bossDown() && p.debt >= Math.min(p.blood >= SKILL_MIN ? p.blood - SKILL_COST : p.blood, BLOOD_HALF); }
+  // True while this weapon's frenzy effect is on (castle only; frenzy exists only there).
+  frenzyOf(weapon) { const p = this.player; return p.frenzy && p.weapon === weapon && this.mode === 'castle'; }
   // Frenzy ends once blood is back at the life half (burn, damage or the skill).
-  checkFrenzy() { const p = this.player; if (p.frenzy && p.blood <= BLOOD_HALF) this.endFrenzy(); }
+  checkFrenzy() { const p = this.player; if (p.frenzy && p.blood <= BLOOD_HALF) this.endFrenzy(true); }
   // Elite stats and a random affix (a shield bearer is never Warded).
   makeElite(e, index) {
     const mult = index === 0 ? 2.6 : e.type === 'shield' ? 1.8 : 2.2; // elite health multiplier
@@ -423,12 +434,12 @@ export class Game {
     if (this.kingT > 0 && (this.kingT -= dt) <= 0) { this.leaveKing(true); return; }
     if (this.fightOn && this.enemies.some(e => e.armored && e.engaged)) this.fightStats.time += dt;
     this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
-    if (p.frenzy) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
+    if (p.frenzy && !this.bossDown()) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    if (direction && p.dash <= 0) p.dir = direction;
+    if (direction && p.dash <= 0 && !this.frenzyOf('twin')) p.dir = direction; // twin frenzy: movement never turns the facing (only the swing-start seek does), so you can walk backwards while attacking
     if (input.jump) this.jump();
     this.heldDir = direction;
     if (input.dash) this.dash();
@@ -437,6 +448,8 @@ export class Game {
     if (p.dash > 0) { p.thrustWindow = Math.max(p.thrustWindow, .65); if (p.buffer > 0) p.buffer = .16; } // both timers run from the end of the dash
     if (p.buffer > 0 && p.attackCd <= 0 && p.dash <= 0 && !p.plunge) this.attack();
     if (input.attack) this.attack();
+    else if (this.frenzyOf('twin') && p.grounded && p.attackCd <= 0 && p.attack <= 0 && p.dash <= 0 && !p.plunge) { p.thrustWindow = 0; this.attack(); } // Unstoppable combo: grounded swings start on their own
+    if (p.dash > 0 && this.assaulted) this.assault();
     if (p.plunge === 1 && (p.plungeT -= dt) <= 0) p.plunge = 2;
     if (p.plunge === 1) p.vy = 0; // hang for the wind-up
     if (p.plunge === 2) p.vy = Math.max(p.vy, 800);
@@ -444,7 +457,7 @@ export class Game {
     if (p.plunge === 3) p.vx = 0;
     else if (p.dash > 0) p.vx = p.dir * 730;
     else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
-    else p.vx = direction * p.speed * (p.attack > 0 ? .65 : 1);
+    else p.vx = direction * p.speed * (p.attack > 0 && !this.frenzyOf('twin') ? .65 : 1);
     if (p.on && p.grounded && this.platforms.includes(p.on)) { p.x += p.on.dx || 0; p.y = p.on.y; } // a moving platform carries its rider
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
@@ -526,12 +539,16 @@ export class Game {
     this.emit('jump', { x: p.x, y: p.y, double: p.jumps === 2 });
   }
   dash(fromBuffer = false) {
-    const p = this.player;
-    if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played
-    p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = .15; p.perfectUsed = false;
-    p.dash = .18; p.dashCd = p.dashCooldown; p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap
+    const p = this.player, assault = this.frenzyOf('spear');
+    if (this.frenzyOf('twin')) { p.dashBuf = 0; return; } // Unstoppable combo: dash is ignored and never buffered
+    if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26 || (assault && p.dash > 0)) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played; an assault dash is one at a time
+    p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = assault ? 0 : .15; p.perfectUsed = assault;
+    p.dash = .18; p.dashCd = assault ? 0 : p.dashCooldown;
+    if (!assault) p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap; an assault has none
     p.vy = Math.min(p.vy, 0);
-    this.emit('dash', { x: p.x, y: p.y, dir: p.dir });
+    this.emit('dash', { x: p.x, y: p.y, dir: p.dir, assault });
+    this.assaulted = assault ? new Set() : null;
+    if (assault) { p.blood = Math.max(BLOOD_HALF, p.blood - ASSAULT_BURN); this.checkFrenzy(); } // the extra burn can end the frenzy; this dash still finishes as an assault
   }
   attack() {
     const p = this.player;
@@ -545,7 +562,11 @@ export class Game {
       this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge', cost });
       return;
     }
-    const thrust = p.thrustWindow > 0;
+    const twin = this.frenzyOf('twin'), thrust = p.thrustWindow > 0;
+    if (twin) { // faces the nearest living enemy within 260 at each swing start; none in range keeps the facing
+      const t = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= TWIN_SEEK && e.x !== p.x).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      if (t) p.dir = Math.sign(t.x - p.x);
+    }
     if (thrust && !this.heldDir) { // auto-face a living enemy within 200 (facing side first, else nearest) when no direction is held
       const near = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - p.x) <= 200).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x));
       const t = near.find(e => (e.x - p.x) * p.dir > 0) || near[0]; // prefer the facing side
@@ -555,7 +576,8 @@ export class Game {
     else { p.combo = p.comboWindow > 0 ? p.combo % 3 + 1 : 1; p.comboWindow = .8; }
     p.move = thrust ? 'thrust' : '';
     p.whiff = HEAVY_WHIFF; // cleared by the first enemy the swing hits
-    p.attack = p.attackLen = .24; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed); // never shorter than the swing animation
+    const quick = twin ? TWIN_FRENZY_CD : 1; // the swing itself speeds up too, or the 0.24 s floor would swallow the cooldown
+    p.attack = p.attackLen = .24 * quick; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed * quick); // never shorter than the swing animation
     this.hitSet = new Set(); this.flameUsed = this.chainUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo', cost });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
@@ -614,6 +636,23 @@ export class Game {
       p.mp = Math.min(p.maxMp, p.mp + 2);
       if (this.bloodOk(e)) this.gainBlood((blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
+    }
+  }
+  // Spear frenzy: the dashing hero hits every enemy it overlaps once per dash (1.0 x damage, heavy knockback, 35 poise); a sword hit for blood, statuses and armor break. A shield front stops the dash.
+  assault() {
+    const p = this.player;
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || this.assaulted.has(e) || Math.abs(e.x - p.x) > (e.w + p.w) / 2 + 8 || e.y < p.y - p.h || e.y - e.h > p.y) continue;
+      this.assaulted.add(e);
+      const crit = this.rand() < p.crit, punish = this.punishing(e), rip = this.takeRiposte(e), amount = Math.round(p.damage * p.swordMul * (crit ? 2 : 1) * (rip ? RIPOSTE_MUL : 1));
+      const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
+      p.whiff = 0;
+      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, true, blocked, POISE_DAMAGE.thrust);
+      p.mp = Math.min(p.maxMp, p.mp + 2);
+      if (this.bloodOk(e)) this.gainBlood(blocked ? 1 : 3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+      if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
+      this.emit('assaultHit', { x: e.x, y: e.y - e.h * .55, dir: p.dir, blocked });
+      if (blocked) p.dash = 0;
     }
   }
   // Castle: the first sword hit on an enemy stunned by a posture break is a riposte (x1.5 damage, +5 blood); the flag is spent by that hit.
@@ -1270,11 +1309,12 @@ export class Game {
   wardenToll(e) {
     const p = this.player;
     if (p.invulnerable > 0) { this.perfectDodge(); return; }
-    const taken = Math.min(p.blood, p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE);
-    p.blood -= taken; e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
-    p.invulnerable = .8; p.x = clamp(p.x + e.dir * 120, 25, this.worldWidth - 30); this.freeze = .06;
+    const taken = Math.min(p.blood, p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
+    if (numb) p.debt += Math.round(taken); else p.blood -= taken; // debt stays whole so the HUD, lethal cue and payment agree
+    e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
+    p.invulnerable = .8; if (!numb) p.x = clamp(p.x + e.dir * 120, 25, this.worldWidth - 30); this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += taken;
-    this.emit('toll', { x: p.x, y: p.y - 30, amount: taken });
+    this.emit('toll', { x: p.x, y: p.y - 30, amount: taken, debt: numb });
     if (p.blood <= 0) this.heroDown(true, 'toll'); else this.checkFrenzy();
   }
   // Two pools on the floor beside the boss after a slam (+-200, phase 2 +-260); the newest MAX_POOLS stay.
@@ -1516,7 +1556,7 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'counter' });
       if (this.heavyHits(e, w.box)) {
         this.hurt(dmg, e.dir);
-        if (was <= 0 && this.state === 'playing') { p.x = clamp(p.x + e.dir * 100, 25, this.worldWidth - 30); this.keepBeside(p, from); } // hurt pushes 20; the shove makes it 120
+        if (was <= 0 && this.state === 'playing' && !this.frenzyOf('heavy')) { p.x = clamp(p.x + e.dir * 100, 25, this.worldWidth - 30); this.keepBeside(p, from); } // hurt pushes 20; the shove makes it 120
       }
       e.action++;
       return;
@@ -1633,12 +1673,14 @@ export class Game {
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
     const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
     const castle = this.mode === 'castle';
-    if (castle) p.blood = Math.max(0, p.blood - actual); else p.hp = Math.max(0, p.hp - actual);
+    const numb = this.frenzyOf('heavy'); // Numb to pain: damage becomes debt, no knockback
+    if (numb) p.debt += actual; else if (castle) p.blood = Math.max(0, p.blood - actual); else p.hp = Math.max(0, p.hp - actual);
     p.invulnerable = .8;
-    p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
+    if (!numb) p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += actual;
-    this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual, heavy });
+    this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual, heavy, debt: numb ? p.debt : 0 });
+    if (numb) return;
     if (castle ? p.blood === 0 : p.hp === 0) this.heroDown(heavy); else this.checkFrenzy();
   }
   heroDown(heavy, cause = '') {

@@ -12,6 +12,7 @@ export class AudioSystem {
     this._phase = 1;
     this._beating = false; // frenzy heartbeat wanted; the timer only runs while audible
     this._beatTimer = null;
+    this._lethal = false; // lethal-debt warning wanted
   }
 
   async unlock() {
@@ -47,6 +48,7 @@ export class AudioSystem {
     this.muted = Boolean(value);
     this._syncBeat();
     this._syncHold();
+    this._syncLethal();
     if (this.context) {
       this._master.gain.setTargetAtTime(this.muted ? 0 : 0.6, this.context.currentTime, 0.025);
     }
@@ -115,8 +117,30 @@ export class AudioSystem {
     };
   }
 
+  // Lethal-debt warning: a quiet fixed-pitch low tone while the pending debt would kill. game.js flips it on edges; it dies on pause, mute and suspend.
+  setLethal(on) { on = Boolean(on); if (on === this._lethal) return; this._lethal = on; this._syncLethal(); }
+
+  _syncLethal() {
+    const active = this._lethal && this.context?.state === 'running' && !this._paused && !this.muted;
+    if (!active) { this._lethalStop?.(); this._lethalStop = null; return; }
+    if (this._lethalStop) return;
+    const ctx = this.context, now = ctx.currentTime;
+    const a = ctx.createOscillator(), b = ctx.createOscillator(), out = ctx.createGain();
+    a.type = 'sine'; a.frequency.value = 110; b.type = 'triangle'; b.frequency.value = 165;
+    out.gain.setValueAtTime(0.0001, now); out.gain.exponentialRampToValueAtTime(0.05, now + 0.1);
+    a.connect(out); b.connect(out); out.connect(this._master);
+    a.start(); b.start();
+    this._lethalStop = () => {
+      const end = ctx.currentTime;
+      out.gain.cancelScheduledValues(end); out.gain.setTargetAtTime(0.0001, end, 0.015);
+      for (const node of [a, b]) { try { node.stop(end + 0.1); } catch { /* Already stopped. */ } }
+      setTimeout(() => { for (const node of [a, b, out]) node.disconnect(); }, 150);
+    };
+  }
+
   suspend() {
     this._paused = true;
+    this._syncLethal();
     this._syncMusic();
     this._syncBeat();
     this._syncHold();
@@ -133,6 +157,7 @@ export class AudioSystem {
       this._syncMusic();
       this._syncBeat();
       this._syncHold();
+      this._syncLethal();
       return this.context.state === 'running';
     } catch { return false; }
   }
@@ -185,7 +210,8 @@ export class AudioSystem {
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
-      kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120] };
+      kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
+      numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -388,6 +414,53 @@ export class AudioSystem {
         tone('noise', 1200, 0.7, 0.2, 160);
         tone('noise', 5000, 0.08, 0.16, 1200);
         break;
+      // Weapon frenzy variants (#61), layered over 'frenzy'; fixed-pitch where they warn, quiet otherwise.
+      case 'frenzy_heavy': tone('sine', 40, 0.9, 0.2, 24); tone('noise', 500, 0.5, 0.1, 120); break; // heavier, duller
+      case 'frenzy_twin': [0, 0.05, 0.1].forEach((dl, i) => tone('noise', 6500 + i * 800, 0.07, 0.09, 2500, dl)); break; // fast blade hiss
+      case 'frenzy_spear': tone('triangle', 520, 0.3, 0.06, 1200); tone('noise', 4500, 0.2, 0.08, 1200); break; // rising lance whine
+      case 'twinTick': { // twin auto swing: short, soft, 3-step round robin; throttled so a fast rhythm stays pleasant
+        if (ctx.currentTime - (this._lastTwin ?? -1) < 0.07) return;
+        this._lastTwin = ctx.currentTime;
+        const k = [0.97, 1, 1.03][this._twinStep = ((this._twinStep ?? 0) + 1) % 3];
+        tone('noise', 4600 * k, 0.07, 0.11, 1300);
+        tone('triangle', 330 * k, 0.05, 0.04, 160);
+        break;
+      }
+      case 'numbHit': // Greatsword frenzy hit taken: muffled dull thud, no bite, nothing high
+        tone('sine', 70, 0.22, 0.3, 40);
+        tone('noise', 450, 0.18, 0.18, 120);
+        break;
+      case 'debtPaid': // the numbness breaks: sharp gasp, then a heavy low thud
+        tone('noise', 1800, 0.3, 0.2, 500);
+        tone('sine', 60, 0.55, 0.45, 24, 0.06);
+        tone('sawtooth', 95, 0.3, 0.08, 40, 0.06);
+        tone('triangle', 240, 0.2, 0.1, 100, 0.06);
+        break;
+      case 'debtLethal': // as debtPaid, then the tone falls away and nothing answers
+        tone('noise', 1800, 0.3, 0.2, 500);
+        tone('sine', 60, 0.8, 0.45, 20, 0.06);
+        tone('triangle', 240, 0.25, 0.1, 100, 0.06);
+        tone('sine', 220, 0.9, 0.1, 55, 0.15);
+        break;
+      case 'assault': // spear frenzy dash: longer, lower whoosh with a bright lance edge
+        tone('noise', 5200, 0.26, 0.2, 380);
+        tone('triangle', 1100, 0.14, 0.07, 360);
+        tone('sine', 220, 0.2, 0.1, 70);
+        break;
+      case 'assaultHit': { // lance lands: sharp pierce over a thud
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 5000, 0.08, 0.3, 900);
+        tone('sine', 110 * d, 0.2, 0.4, 40);
+        tone('triangle', 1500 * d, 0.1, 0.1, 500);
+        break;
+      }
+      case 'assaultBlock': { // blocked lance: distinct heavy clang, lower and longer than 'block'
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 4200, 0.05, 0.14, 1500);
+        tone('sine', 150 * d, 0.14, 0.2, 90);
+        [820, 1330, 2210].forEach((f, i) => tone('triangle', f * d, 0.28 - i * 0.06, 0.08, f * d * 0.99));
+        break;
+      }
       case 'frenzyEnd': // exhale: breath falling away, a sinking tone
         tone('noise', 1500, 0.7, 0.14, 180);
         tone('sine', 150, 0.6, 0.2, 48);

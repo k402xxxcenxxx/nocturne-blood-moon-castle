@@ -820,8 +820,46 @@ kbd {
 @media (prefers-reduced-motion:reduce) {
   .vitals.frenzy .health { animation:none; box-shadow:0 0 8px #ff3a4d; border-color:#ff8a8a; }
 }
-.magic-button.unavailable {
+.magic-button.unavailable, .dash-button.unavailable {
   opacity:.35;
+}
+.dash-button.assault {
+  box-shadow:0 0 0 3px #e6d4ff, 0 0 12px #c9a6ff;
+  border-style:dashed;
+}
+.debt-band {
+  position:absolute;
+  top:2px;
+  bottom:2px;
+  pointer-events:none;
+  box-sizing:border-box;
+  border:1px solid #cfd6e6;
+  background:repeating-linear-gradient(135deg,#8d97aa 0 4px,#3c4354 4px 8px);
+}
+.debt-band[hidden] { display:none; }
+.health.lethal {
+  box-shadow:0 0 12px #ff1f3a;
+}
+.health.lethal .debt-band {
+  border-color:#ffd0d6;
+  background:repeating-linear-gradient(135deg,#ff1f3a 0 4px,#4a0610 4px 8px);
+}
+.vitals.castle .mana-label {
+  font-size:10px;
+  letter-spacing:0;
+  white-space:nowrap;
+  gap:6px;
+}
+.debt-text {
+  white-space:nowrap;
+  color:#cfd6e6;
+  font-weight:700;
+}
+.debt-text.lethal {
+  color:#ff6a7c;
+}
+.debt-text.lethal::before {
+  content:"\2620\00a0";
 }
 .action-button.cooldown {
   opacity:.4;
@@ -1591,6 +1629,9 @@ b[data-i18n] {
   }
   .mana-label {
     font-size:6px;
+  }
+  .vitals.castle .mana-label {
+    font-size:9px;
   }
   .chapter-hud strong {
     font-size:12px;

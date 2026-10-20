@@ -15,6 +15,7 @@ export const SKILLS = {
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
 const ATTACK_RESERVE = 3, MOVE_RESERVE = 2; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
 const WEAPON_PICK = 'spear';
+const HEAVY_DEBT_CAP = 30; // Greatsword frenzy: the bot stops trading light hits once debt plus the hit would pass this (debt of 100 kills)
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
 
 export const chooseWeapon = () => WEAPON_PICK in WEAPONS ? WEAPON_PICK : Object.keys(WEAPONS)[0];
@@ -144,7 +145,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   function decideWarden(game, now, w) {
     const p = game.player, W = game.worldWidth;
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
-    const speed = p.speed * (p.attack > 0 ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
+    const fw = game.mode === 'castle' && p.frenzy ? p.weapon : ''; // twin frenzy: no dash at all; spear frenzy: a dash is an assault with no i-frames, so it never dodges
+    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge && fw !== 'twin' && fw !== 'spear', ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
     const lock = Math.min(.14, Math.max(0, p.attack - p.attackLen * .26)); // the core refuses a dash until 74% of a swing has played (it buffers 0.16 s): press early enough to fire on time
     const toward = Math.sign(w.x - p.x) || p.dir, away = -toward, held = prev.right ? 1 : prev.left ? -1 : 0;
     let danger = Infinity;
@@ -168,7 +170,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) { best = { dir: sd }; break; }
         }
         if (best) { o.dir = flip(w, best.dir); o.urgent = true; }
-        else if (kind === 'charge' && (!w.follow || (p.dashCd > 0 && p.dashCd > t - .1))) {
+        else if (kind === 'charge' && fw !== 'heavy' && (!w.follow || !dashReady || (p.dashCd > 0 && p.dashCd > t - .1))) {
           // double jump the first charge (keeps the dash for the quick return charge), or any charge while the dash is on cooldown; the dash is the fallback
           if ((p.grounded && t <= .5 + jit(w) && t > .3) || (!p.grounded && p.jumps === 1 && p.vy > -150)) { o.jump = true; o.urgent = true; }
           else if (t <= .1 + lock + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); }
@@ -221,9 +223,10 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
-    const speed = p.speed * (p.attack > 0 ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
+    const fw = castle && p.frenzy ? p.weapon : ''; // see decideWarden
+    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
     const canCast = p.magicCd <= 0 && (castle ? p.blood >= SKILL_MIN : p.lunatic || p.mp >= p.magicCost);
-    const dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
+    const dashReady = p.dashCd <= 0 && !p.plunge && fw !== 'twin' && fw !== 'spear', ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
     const trapHot = (tr, extra = .8) => !tr.disabled && (tr.state !== 'idle' || tr.period - tr.t < extra);
     const trapIn = (x, tr) => Math.abs(x - tr.x) < tr.w / 2 + 18;
     const safeSpot = x => game.traps.every(tr => !trapIn(x, tr) || !trapHot(tr)) && game.obstacles.every(ob => Math.abs(x - ob.x) >= (ob.w + 28) / 2 || p.y <= ob.y - ob.h);
@@ -237,6 +240,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         if (Math.abs(bx - p.x) < 14 + b.r && by > p.y - 58 && by < p.y + 4) { threats.push({ e: null, t: s, b }); break; }
       }
     }
+    if (fw === 'heavy') for (let i = threats.length - 1; i >= 0; i--) { const th = threats[i]; if (th.e && !th.e.heavy && th.e.type !== 'boss' && p.debt + th.e.damage * 1.3 <= HEAVY_DEBT_CAP) threats.splice(i, 1); } // Numb to pain: trade through light hits while the debt stays small; heavies and big debts are still dodged
     threats.sort((a, b) => a.t - b.t);
     const canHit = e => { // would a swing from here land on e (same test as core.hitTargets)
       const dx = (e.x - p.x) * p.dir;
@@ -270,7 +274,9 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
       const swing = known.find(e => canHit(e) && !blockedBy(e) && hitTime(e, p.x, p.y) === Infinity);
-      if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
+      const lane = fw === 'spear' && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40;
+      if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)
+      else if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
       else if (target && Math.abs(target.x - p.x) < 620) {
         const dx = target.x - p.x, face = Math.sign(dx) || p.dir, spacing = Math.max(50, p.reach - 22);
         if (blockedBy(target) && !target.heavy) { // frontal block: Eclipse breaks the guard, otherwise walk or dash round to its back
@@ -302,7 +308,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       }
     }
     if (o.dir && p.grounded && !o.jump) { const nx = p.x + o.dir * 16; if (!safeSpot(nx) && game.traps.some(tr => trapIn(nx, tr) && !trapIn(p.x, tr))) o.dir = 0; }
-    if (!p.grounded) o.attack = false; // an air attack would be a plunge
+    if (!p.grounded || fw === 'twin') o.attack = false; // an air attack would be a plunge; twin frenzy swings on its own
     return o;
   }
   return api;

@@ -113,8 +113,9 @@ function handleEvent(e) {
       audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
-    case 'swing': if (e.cost > 0 && settings.shake) $('blood-meter').animate([{ filter: 'brightness(2.2)' }, { filter: 'none' }], 200); // swing cost tick
-      if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play('swing', e.combo === 3 ? 1.2 : .75); break;
+    case 'swing': if (game.frenzyOf('twin')) { trails.push({ ...game.player, life: .16, invulnerable: 0 }); burst(e.x, e.y - 30, '#b6e8ff', 3, 90, game.player.dir, 2); }
+      if (e.cost > 0 && settings.shake) $('blood-meter').animate([{ filter: 'brightness(2.2)' }, { filter: 'none' }], 200); // swing cost tick
+      if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play(game.frenzyOf('twin') ? 'twinTick' : 'swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
       audio.play(e.crit ? 'crit' : 'hit', e.heavy ? 1.15 : .8);
       if (e.punish) audio.play('guardBreak', .9); // opening punished
@@ -135,11 +136,16 @@ function handleEvent(e) {
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
-      audio.play('hurt'); if (e.heavy) audio.play('heavyHit'); damageFlash = .3; rumble(7, .22); hitCount = 0; comboTime = 0;
+      audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
+      if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
+        if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
+        flashNumber({ ...e, amount: `+${e.amount}` }, game.debtLethal() ? '#ff3a4d' : '#aab4c8'); burst(e.x, e.y, '#8d97aa', 8, 90); break;
+      }
+      damageFlash = .3; rumble(7, .22);
       flashNumber({ ...e, amount: `−${e.amount}` }, '#ed7e88'); burst(e.x, e.y, '#a93959', 16, 170); break;
     case 'jump': audio.play('jump', e.double ? .65 : .45); burst(e.x, e.y - 4, e.double ? '#b8adcf' : '#9a8c77', e.double ? 15 : 7, 75); break;
     case 'perfectDash': audio.play('perfect'); trails.push({ ...game.player, life: .4, invulnerable: 0, silver: true }); if (settings.shake) silverFlash = .09; flashNumber({ ...e, y: e.y - 20, size: 23, amount: t('float.perfect') }, '#e8ecf8'); break;
-    case 'dash': audio.play('dash'); burst(e.x, e.y - 25, '#afa2cf', 10, 130); break;
+    case 'dash': audio.play(e.assault ? 'assault' : 'dash'); burst(e.x, e.y - 25, e.assault ? '#e6d4ff' : '#afa2cf', e.assault ? 16 : 10, e.assault ? 200 : 130, e.assault ? -game.player.dir : 0); break;
     case 'magic':
       if (game.stacks('vortex')) audio.play('vortex');
       audio.play('magic'); rumble(5, .23); effects.push({ type: 'magic', x: e.x, y: e.y, life: .6, max: .6 }); burst(e.x, e.y, '#c5b6f4', 35, 290);
@@ -270,7 +276,14 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
+    case 'frenzy': audio.play('frenzy', 1); audio.play('frenzy_' + e.weapon); audio.setHeartbeat(true); rumble(8, .3); if (e.weapon === 'heavy' && !debtHinted) { debtHinted = true; toast(t('hint.debt')); } else if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .5, max: .5, color: FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', r: 150 }); burst(e.x, e.y - 30, FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', 16, 200, 0, 3); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
+    case 'debt': audio.play(game.player.blood <= 0 ? 'debtLethal' : 'debtPaid'); damageFlash = .4; rumble(10, .35); flashNumber({ x: e.x, y: e.y, size: 26, amount: `−${e.amount}` }, '#ed7e88'); // blood debt paid at the frenzy's end: the numbness breaks, the pain arrives all at once
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#ff3a4d', r: 110 }); burst(e.x, e.y - 30, '#a93959', 26, 260); break;
+    case 'assaultHit':
+      if (e.blocked) { audio.play('assaultBlock'); rumble(3, .1); burst(e.x, e.y, '#cfd6e6', 8, 200, e.dir, 3); effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: e.dir, color: '#9aa3b5', s: .7 }); } // blocked: small grey spark, no blood
+      else { audio.play('assaultHit'); rumble(5, .14); burst(e.x, e.y, '#e6d4ff', 14, 240, e.dir, 3); burst(e.x, e.y, '#bf6078', 8, 150); effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: e.dir, color: '#e6d4ff', s: 1.5 }); }
+      break;
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
     case 'rest': vigilNo = e.vigil; audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
     case 'sliceEnd': kingResult = e.king || ''; audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
@@ -282,7 +295,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -346,18 +359,18 @@ function synergyLine(id) {
 let vigilNo = 1; // 2 after the Warden's kill
 let lastFightKing = false; let lastFight = null; // last Warden fightStats, shown on the slice-end and floor-10 death screens
 let kingResult = ''; // 'won' or 'dead' when the slice-end screen follows a Fallen King attempt
-let deathToll = false; // the killing blow of the last death was the Warden's Gate Toll
+let deathDebt = false, deathToll = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
   openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function openVigil() { // rest point: one weapon card each, choosing one starts floor 1
-  openModal(`<div class="modal-eyebrow">${t(vigilNo === 2 ? 'rest.title2' : 'rest.title')}</div><h2 id="modal-title">${t(vigilNo === 2 ? 'rest.choose2' : 'rest.choose')}</h2>${vigilNo === 2 ? `<p>${t('rest.text2')}</p>` : ''}<div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
+  openModal(`<div class="modal-eyebrow">${t(vigilNo === 2 ? 'rest.title2' : 'rest.title')}</div><h2 id="modal-title">${t(vigilNo === 2 ? 'rest.choose2' : 'rest.choose')}</h2>${vigilNo === 2 ? `<p>${t('rest.text2')}</p>` : ''}<div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p>${t(`weapon.${id}.frenzy`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / 10`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathDebt ? 'castle.deadDebt' : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / 10`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -463,12 +476,20 @@ function pumpBanner() {
   if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
+let debtBand = null, debtHinted = false;
+function updateDebtBand(p) { // blood debt eats the bar from the right end of the fill; lethal when the end-of-frenzy payment would kill (game.debtLethal())
+  const m = $('blood-meter'), on = game.mode === 'castle' && p.debt > 0;
+  if (!debtBand) { debtBand = document.createElement('i'); debtBand.className = 'debt-band'; debtBand.setAttribute('aria-hidden', 'true'); m.appendChild(debtBand); }
+  debtBand.hidden = !on; m.classList.toggle('lethal', on && game.debtLethal()); if (!on) return;
+  const hi = Math.min(1, p.blood / BLOOD_MAX), lo = Math.max(0, (p.blood - p.debt) / BLOOD_MAX);
+  debtBand.style.left = `calc(2px + (100% - 4px) * ${lo.toFixed(3)})`; debtBand.style.width = `calc((100% - 4px) * ${(hi - lo).toFixed(3)})`;
+}
 function updateHud() {
-  const p = game.player;
+  const p = game.player; updateDebtBand(p);
   const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
   $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy); $('vitals').classList.toggle('danger', castle && !p.frenzy && p.blood <= BLOOD_HALF); // danger: one heavy (100) kills
-  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); $('mp-text').textContent = ''; }
-  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; }
+  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); const lethal = p.debt > 0 && game.debtLethal(), debtText = p.debt > 0 ? t(lethal ? 'hud.debtLethal' : 'hud.debt', { n: Math.round(p.debt) }) : ''; $('mp-text').textContent = debtText; $('mp-text').classList.toggle('lethal', lethal); $('mp-text').classList.add('debt-text'); if (debtText) m.setAttribute('aria-valuetext', `${Math.ceil(p.blood)}, ${debtText}`); else m.removeAttribute('aria-valuetext'); }
+  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; $('mp-text').classList.remove('debt-text', 'lethal'); }
   const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');
   if (magicLabel.textContent !== want) magicLabel.textContent = want;
   $('hp-text').innerHTML = castle ? `${Math.ceil(p.blood)} <em>/ ${BLOOD_MAX}</em>` : `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -487,14 +508,27 @@ function updateHud() {
   if (wd) { $('armor-gauge').style.setProperty('--notch', `${ECLIPSE_CHIP / wd.superArmorMax * 100}%`); $('armor-bar').style.width = `${wd.superArmor / wd.superArmorMax * 100}%`; $('armor-gauge').classList.toggle('broken', wd.superArmor <= 0); $('armor-gauge').classList.toggle('locked', wd.superArmor > 0 && wd.armorLock > 0); }
   if (boss) { $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`; const label = $('boss-hud').firstElementChild, name = t(boss.warden ? 'enemy.warden' : 'boss.name'); if (label.textContent !== name) label.textContent = name; }
   document.querySelector('[data-control="magic"]').classList.toggle('unavailable', castle ? p.blood < SKILL_MIN : !p.lunatic && p.mp < p.magicCost);
+  const twin = game.frenzyOf('twin'), spear = game.frenzyOf('spear'), dashBtn = document.querySelector('[data-control="dash"]'), dashSpan = dashBtn.querySelector('span'), dashWant = t(twin ? 'touch.dashLocked' : spear ? 'touch.dashAssault' : 'touch.dashShort');
+  dashBtn.classList.toggle('unavailable', twin); dashBtn.classList.toggle('assault', spear); if (dashSpan.textContent !== dashWant) { dashSpan.textContent = dashWant; dashBtn.setAttribute('aria-label', t(twin ? 'touch.dashLockedAria' : spear ? 'touch.dashAssaultAria' : 'touch.dash')); }
   for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
 const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // placeholder trail tints per Vigil weapon
-let auraG = null, vigG = null, vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
-function auraGradient() { if (!auraG) { auraG = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); auraG.addColorStop(0, 'rgba(255,70,70,.45)'); auraG.addColorStop(1, 'rgba(255,70,70,0)'); } return auraG; }
-function vignetteGradient() { if (!vigG || vigW !== viewWidth) { vigW = viewWidth; vigG = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); vigG.addColorStop(0, 'rgba(160,10,30,0)'); vigG.addColorStop(1, 'rgba(160,10,30,.55)'); } return vigG; }
+let vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
+const FRENZY_TINT = { heavy: { aura: '170,180,200', vig: '90,100,130', ring: '#aab4c8' }, twin: { aura: '110,210,255', vig: '40,110,170', ring: '#b6e8ff' }, spear: { aura: '200,150,255', vig: '110,50,170', ring: '#e6d4ff' } }, FRENZY_RED = { aura: '255,70,70', vig: '160,10,30' }; // per-weapon frenzy colours; red is the shared default
+const auraCache = {}, vigCache = {};
+// ctx.filter is slow in Chromium and ignored by iOS Safari: tint via one reused offscreen buffer + source-atop.
+const heroBuf = document.createElement('canvas'); heroBuf.width = 320; heroBuf.height = 200;
+const heroBufCtx = heroBuf.getContext('2d');
+function drawHeroTinted(hero, color) {
+  const b = heroBufCtx; b.clearRect(0, 0, 320, 200);
+  drawHero(b, { ...hero, x: 160, y: 150 }, worldTime); // shortcut: per-call spread of a small object, fine for <=1 hero + few trails
+  b.globalCompositeOperation = 'source-atop'; b.fillStyle = color; b.fillRect(0, 0, 320, 200); b.globalCompositeOperation = 'source-over';
+  ctx.drawImage(heroBuf, Math.round(hero.x) - 160, Math.round(hero.y ?? 0) - 150);
+}
+function auraGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (!auraCache[w]) { const g = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); g.addColorStop(0, `rgba(${k.aura},.45)`); g.addColorStop(1, `rgba(${k.aura},0)`); auraCache[w] = g; } return auraCache[w]; }
+function vignetteGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (vigW !== viewWidth) { vigW = viewWidth; for (const o in vigCache) delete vigCache[o]; } if (!vigCache[w]) { const g = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); g.addColorStop(0, `rgba(${k.vig},0)`); g.addColorStop(1, `rgba(${k.vig},.55)`); vigCache[w] = g; } return vigCache[w]; }
 function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
   ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
   ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
@@ -588,8 +622,8 @@ function drawEffects(dt) {
       ctx.strokeStyle = '#b3a68f'; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.ellipse(0, -3, r, 9 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = '#e4dccb'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, -3, r * .92, 7 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     } else if (fx.type === 'impact') {
-      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = fx.life / fx.max;
-      ctx.fillStyle = '#fff5cd'; ctx.beginPath(); ctx.moveTo(-24, -3); ctx.lineTo(-4,-6); ctx.lineTo(-2,-25); ctx.lineTo(3,-5); ctx.lineTo(28,0); ctx.lineTo(4,4); ctx.lineTo(0,21); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = fx.life / fx.max; if (fx.s) ctx.scale(fx.s, fx.s);
+      ctx.fillStyle = fx.color || '#fff5cd'; ctx.beginPath(); ctx.moveTo(-24, -3); ctx.lineTo(-4,-6); ctx.lineTo(-2,-25); ctx.lineTo(3,-5); ctx.lineTo(28,0); ctx.lineTo(4,4); ctx.lineTo(0,21); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill(); ctx.restore();
     } else if (fx.type === 'shards') { // ice shards fly outward, then fall; pale ring marks the radius
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .9;
       ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, fx.radius * Math.min(1, progress * 3), 0, Math.PI * 2); ctx.stroke();
@@ -696,7 +730,7 @@ function render(dt) {
       ctx.shadowColor = '#e35d83'; ctx.shadowBlur = 12; ctx.fillStyle = '#c9627f';
       ctx.beginPath(); ctx.moveTo(item.x, y+6); ctx.lineTo(item.x-7, y); ctx.lineTo(item.x-7,y-4); ctx.lineTo(item.x-3,y-7); ctx.lineTo(item.x,y-4); ctx.lineTo(item.x+3,y-7); ctx.lineTo(item.x+7,y-4);ctx.lineTo(item.x+7,y);ctx.fill();ctx.shadowBlur = 0;
     }
-    for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
+    for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) drawHeroTinted(trail, 'rgba(214,224,236,.85)'); else drawHero(ctx, trail, worldTime); trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
     for (const pool of game.pools) drawPool(ctx, pool, worldTime, !settings.shake);
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
@@ -744,8 +778,11 @@ function render(dt) {
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
       ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
     }
-    if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
-    if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) drawHero(ctx, p, worldTime);
+    if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(p.weapon); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
+    const numb = frenzyK > 0 && p.weapon === 'heavy', assault = frenzyK > 0 && p.weapon === 'spear' && p.dash > 0;
+    if (assault) { ctx.save(); ctx.fillStyle = WEAPON_TINT.spear; for (let i = 0; i < 5; i++) { ctx.globalAlpha = .5 - i * .09; ctx.fillRect(Math.round(p.x - p.dir * (30 + i * 22)) - (p.dir > 0 ? 26 : 0), Math.round(p.y - 42 + i * 3), 26, 3 + (i & 1)); } ctx.restore(); }
+    if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) { if (numb) drawHeroTinted(p, 'rgba(112,118,126,.8)'); else drawHero(ctx, p, worldTime); }
+    if (numb && p.debt > 0) { const lethal = game.debtLethal(); ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const dy = Math.round(p.y - 92 - (lethal && settings.shake ? Math.abs(Math.sin(worldTime * 10)) * 3 : 0)); ctx.strokeText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.fillStyle = lethal ? '#ff3a4d' : '#cfd6e6'; ctx.fillText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.restore(); }
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
@@ -760,7 +797,7 @@ function render(dt) {
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
     for (let mx = 715 - (Math.floor(camera * .13) % 1440); mx < viewWidth + 200; mx += 1440) { const mr = 150 + 40 * pulse, gr = ctx.createRadialGradient(mx, 150, 10, mx, 150, mr); gr.addColorStop(0, `rgba(255,70,60,${.7 * k})`); gr.addColorStop(1, 'rgba(255,70,60,0)'); ctx.fillStyle = gr; ctx.fillRect(mx - mr, 150 - mr, mr * 2, mr * 2); }
   }
-  if (frenzyK > 0) { ctx.globalAlpha = frenzyK * (settings.shake ? .8 + .2 * Math.sin(worldTime * 9) : .9); ctx.fillStyle = vignetteGradient(); ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = 1; }
+  if (frenzyK > 0) { ctx.globalAlpha = frenzyK * (settings.shake ? .8 + .2 * Math.sin(worldTime * 9) : .9); ctx.fillStyle = vignetteGradient(p.weapon); ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = 1; }
   if (damageFlash > 0) { ctx.fillStyle = `rgba(144,27,50,${damageFlash * .65})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (whiteFlash > 0) { ctx.fillStyle = `rgba(255,232,193,${whiteFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (silverFlash > 0) { ctx.fillStyle = `rgba(214,224,255,${silverFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
@@ -778,12 +815,16 @@ function watchHold() { // delayed-heavy hold loop: on only while a delayed heavy
   if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = true; break; }
   audio.setHold(hold);
 }
+function watchLethal() { // lethal-debt tone: same rule as the HUD band; no allocation
+  const p = game.player;
+  audio.setLethal(game.state === 'playing' && game.mode === 'castle' && game.debtLethal());
+}
 function tick(now) {
   const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
   if (ai) aiModal(dt);
   const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
-  watchBlood(); watchHold();
+  watchBlood(); watchHold(); watchLethal();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
   shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
