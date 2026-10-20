@@ -13,7 +13,7 @@ export const SKILLS = {
   average: { reaction: .3, presses: 6, mistime: .15, mistimeBy: .12, greedy: .1, misread: .05 },
 };
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
-const ATTACK_RESERVE = 2; // attack presses stop this far under the cap so a dodge never waits for the budget
+const ATTACK_RESERVE = 3, MOVE_RESERVE = 2; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
 const WEAPON_PICK = 'spear';
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
 
@@ -101,9 +101,9 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const want = (decider || decide)(game, now);
       while (presses.length && presses[0] < now - 1) presses.shift();
       const out = {};
-      const allow = (kind, key) => { // rising edges cost budget; attacks leave a reserve for dodges
+      const allow = (kind, key) => { // rising edges cost budget; attacks and non-urgent steps leave a reserve for dodges
         if (prev[key]) return true;
-        const cap = skill.presses - (kind === 'attack' ? ATTACK_RESERVE : 0);
+        const cap = skill.presses - (kind === 'attack' ? ATTACK_RESERVE : kind === 'dir' && !want.urgent ? MOVE_RESERVE : 0);
         if (presses.length >= cap) return false;
         presses.push(now); return true;
       };
@@ -135,14 +135,18 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player, W = game.worldWidth;
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const speed = p.speed * (p.attack > 0 ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
-    const toward = Math.sign(w.x - p.x) || p.dir, away = -toward;
+    const lock = Math.min(.14, Math.max(0, p.attack - p.attackLen * .26)); // the core refuses a dash until 74% of a swing has played (it buffers 0.16 s): press early enough to fire on time
+    const toward = Math.sign(w.x - p.x) || p.dir, away = -toward, held = prev.right ? 1 : prev.left ? -1 : 0;
     let danger = Infinity;
     const t = api.reacts(w, now) ? wardenHit(w, p.x, p.y) : Infinity;
     if (t < Infinity) {
       danger = t;
       const kind = w.warn.kind;
       if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; }
-      else if (kind === 'seize') { if (p.grounded && t <= .38 + jit(w)) { o.jump = true; o.urgent = true; } }
+      else if (kind === 'seize') { // misread: takes the Toll for a sweep and steps the wrong way instead of jumping
+        if (flip(w, 1) < 0) { if (p.grounded) o.dir = toward; }
+        else if (p.grounded && t <= .38 + 2 * jit(w)) { o.jump = true; o.urgent = true; } // the Toll's wide jump window needs a twice-as-bad slip before a late jump is caught
+      }
       else {
         let best = null; // walk out on this side of the body if there is time
         if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) {
@@ -153,9 +157,9 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         else if (kind === 'charge' && (!w.follow || (p.dashCd > 0 && p.dashCd > t - .1))) {
           // double jump the first charge (keeps the dash for the quick return charge), or any charge while the dash is on cooldown; the dash is the fallback
           if ((p.grounded && t <= .5 + jit(w) && t > .3) || (!p.grounded && p.jumps === 1 && p.vy > -150)) { o.jump = true; o.urgent = true; }
-          else if (t <= .1 + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); }
+          else if (t <= .1 + lock + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); }
         }
-        else if (t <= (kind === 'charge' ? .1 : .12) + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); } // through the body: i-frames, and a perfect dodge pays blood
+        else if (t <= (kind === 'charge' ? .1 : .12) + lock + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); } // through the body: i-frames, and a perfect dodge pays blood
       }
     }
     if (api.reacts(w, now) && w.warn?.kind === 'slam' && w.tell > 0 && t === Infinity) { // the wave lines (front, and behind in phase 2) are drawn during the tell: time the jump to their arrival
@@ -183,8 +187,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         else if (p.dir !== face) o.dir = face;
         else if (ready && p.y >= FLOOR - 5) o.attack = true;
       } else if (pool && p.grounded) { goal = pool.x; tol = 6; }
-      else if (gap < WARDEN_STANDOFF - 25) { const x = p.x + away * 30; if (x > 60 && x < W - 60) o.dir = away; } // too close: back off to the standoff
-      else if (gap > WARDEN_STANDOFF + 40) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; }
+      else if (gap < WARDEN_STANDOFF - 25 || held === away && gap < WARDEN_STANDOFF - 5) { const x = p.x + away * 30; if (x > 60 && x < W - 60) o.dir = away; } // too close: back off to the standoff
+      else if (gap > WARDEN_STANDOFF + 40 || held === toward && gap > WARDEN_STANDOFF + 20) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; } // hysteresis: a step that started keeps going to the edge of the band, so the standoff never flips direction every frame
       if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
     }
     return o;
