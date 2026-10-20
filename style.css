@@ -920,7 +920,7 @@ kbd {
 .armor-gauge {
   display:flex;
   align-items:center;
-  gap:6px;
+  gap:8px;
   margin:4px 0 0;
 }
 .armor-gauge small {
@@ -932,7 +932,7 @@ kbd {
 }
 .armor-gauge b {
   flex:1;
-  height:5px;
+  height:7px;
   border:1px solid #5d6577;
   background:#12111a;
   padding:1px;
@@ -1770,8 +1770,9 @@ b[data-i18n] {
     font-size:8px;
     letter-spacing:1px;
   }
-  .armor-gauge { margin-top:2px; }
-  .armor-gauge small { font-size:7px; letter-spacing:0; }
+  .armor-gauge { margin-top:3px; gap:7px; }
+  .armor-gauge small { font-size:8px; letter-spacing:0; }
+  .armor-gauge b { height:8px; }
   .fight-line { font-size:10px; margin-top:3px; }
   .toast {
     bottom:110px;
