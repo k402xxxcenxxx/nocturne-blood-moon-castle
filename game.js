@@ -219,10 +219,11 @@ function handleEvent(e) {
     case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
       if (e.enemy === 'king') { audio.play({ slash: 'kingTellSlash', string: 'kingTellString', turnslash: 'kingTellTurn', volley: 'kingTellVolley', ritual: 'kingTellRitual' }[e.kind] || 'tellGeneric', 1); break; }
-      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
-      audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
+      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe' }[e.kind] || 'tellGeneric';
+      const v = game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5;
+      audio.play(e.enemy === 'spear' && e.kind === 'sweep' ? 'tellLow' : cue, v); if (e.enemy === 'knight' && e.follow) audio.play('knightCommit', v); break;
     }
-    case 'enemyCross': burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
+    case 'enemyCross': audio.play('batWing', 1); burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
@@ -235,6 +236,7 @@ function handleEvent(e) {
       if (e.enemy === 'warden') { wardenSwing(e); break; }
       if (!e.heavy && !e.boss) { // castle minion moves with their own contact look
         const kd = e.kind, L = (type, o) => effects.push({ type, x: e.x, y: e.y, dir: e.dir, life: .3, max: .3, ...o });
+        const hs = { sweep: 'hitSweep', overhead: 'hitChop', swoop: 'hitClaw', turnswipe: 'hitTurnswipe' }[kd]; if (hs) audio.play(hs, 1);
         if (kd === 'sweep') { L('floorSweep', { y: e.y + e.h * .5 - 12, life: .26, max: .26 }); break; }
         if (kd === 'spear') { L('streak', { life: .22, max: .22 }); break; }
         if (kd === 'swoop') { L('claw', { life: .24, max: .24 }); break; }

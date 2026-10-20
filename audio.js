@@ -211,7 +211,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
+      hitChop: 14, numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -590,6 +590,61 @@ export class AudioSystem {
       case 'tellGeneric': // other moves (swoop, thrust, bolt) until they get their own: soft rising blip
         tone('triangle', 620, 0.1, 0.08, 940);
         tone('noise', 3400, 0.07, 0.07, 1500);
+        break;
+      case 'tellSwoop': // bat dart: one short sharp high squeak-flick (0.25 s lead), no low content; fixed pitch
+        tone('square', 1900, 0.06, 0.05, 2900);
+        tone('noise', 6400, 0.05, 0.1, 3200);
+        break;
+      case 'tellThrust': // spearman thrust: spear levelled, a metallic slide up into a single hard tick
+        tone('noise', 3600, 0.1, 0.09, 6000);
+        tone('triangle', 800, 0.1, 0.07, 1500);
+        tone('square', 2100, 0.03, 0.04, 2100, 0.1);
+        break;
+      case 'tellLow': // spearman low sweep ("jump"): dark low scrape with a falling thump, nothing bright, apart from tellSweep
+        tone('noise', 700, 0.18, 0.1, 250);
+        tone('sine', 190, 0.18, 0.2, 90);
+        tone('sawtooth', 120, 0.12, 0.05, 70, 0.06);
+        break;
+      case 'tellOverhead': // knight overhead chop: sword hoisted, rising plate clank then a held metal ring
+        tone('noise', 2600, 0.12, 0.1, 900);
+        tone('triangle', 330, 0.16, 0.09, 620);
+        tone('sine', 1320, 0.2, 0.04, 1320, 0.08);
+        break;
+      case 'tellTurnswipe': // knight turnswipe: plate wheel, a short falling whoosh and a low rising creak
+        tone('noise', 2200, 0.16, 0.1, 600);
+        tone('sawtooth', 160, 0.16, 0.05, 300);
+        tone('triangle', 540, 0.08, 0.06, 420, 0.1);
+        break;
+      case 'knightCommit': // knight string follow-up chosen: one dull plate knock, higher and single against kingCommit's low double
+        tone('sine', 250, 0.1, 0.2, 160);
+        tone('noise', 1500, 0.06, 0.1, 500);
+        break;
+      case 'batWing': { // bat crossover: soft leathery flaps over a thin whoosh; quiet, detuned
+        const d = 0.94 + Math.random() * 0.12;
+        tone('noise', 1400 * d, 0.3, 0.07, 2600);
+        [0, 0.09, 0.18].forEach(dl => tone('triangle', 240 * d, 0.07, 0.05, 150 * d, dl));
+        break;
+      }
+      case 'hitSweep': // spearman low sweep contact: low floor whip and thump
+        tone('noise', 1800, 0.12, 0.2, 300);
+        tone('sine', 110, 0.14, 0.24, 55);
+        break;
+      case 'hitChop': { // knight overhead contact: heavy blade into stone, thud and a short ring
+        const d = 0.96 + Math.random() * 0.08;
+        tone('sine', 80 * d, 0.22, 0.32, 38);
+        tone('noise', 3000, 0.1, 0.22, 400);
+        tone('triangle', 880 * d, 0.12, 0.05, 840 * d);
+        break;
+      }
+      case 'hitClaw': { // bat claw rake: two quick high scratches
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 6800 * d, 0.05, 0.14, 3000);
+        tone('noise', 5800 * d, 0.05, 0.12, 2600, 0.05);
+        break;
+      }
+      case 'hitTurnswipe': // knight turnswipe contact: quick wide metal swish
+        tone('noise', 3400, 0.14, 0.2, 800);
+        tone('triangle', 420, 0.1, 0.08, 200);
         break;
       // Gate Warden cues. Tells are fixed pitch (no detune); impacts and footfalls detune a little so they do not repeat.
       case 'tellSweep': // wide arm drawn back: low scrape rising into a dull stone knock; lower and slower than tellSlash
