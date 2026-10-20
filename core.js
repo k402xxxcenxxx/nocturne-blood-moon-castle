@@ -303,7 +303,7 @@ export class Game {
     if (debt <= 0) return;
     p.blood = Math.max(0, p.blood - debt);
     this.emit('debt', { amount: debt, x: p.x, y: p.y - 30 });
-    if (p.blood <= 0) this.heroDown(true, 'debt');
+    if (p.blood <= 0) this.heroDown(false, 'debt');
   }
   // True while this weapon's frenzy effect is on (castle only; frenzy exists only there).
   frenzyOf(weapon) { const p = this.player; return p.frenzy && p.weapon === weapon && this.mode === 'castle'; }
@@ -1306,7 +1306,7 @@ export class Game {
     const p = this.player;
     if (p.invulnerable > 0) { this.perfectDodge(); return; }
     const taken = Math.min(p.blood, p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
-    if (numb) p.debt += taken; else p.blood -= taken;
+    if (numb) p.debt += Math.round(taken); else p.blood -= taken; // debt stays whole so the HUD, lethal cue and payment agree
     e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
     p.invulnerable = .8; if (!numb) p.x = clamp(p.x + e.dir * 120, 25, this.worldWidth - 30); this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += taken;

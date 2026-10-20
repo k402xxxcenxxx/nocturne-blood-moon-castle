@@ -3319,12 +3319,20 @@ test('warden blood: hits during a heavy recovery pay even while armored, and so 
 
 // Known gap (QA #61 re-check, P3): a toll taken at fractional blood adds fractional debt, while the HUD shows Math.round(debt) and the lethal cue compares the raw value.
 // Rule: debt is whole, so the number shown is the number paid. Drop `todo` once the engineer rounds the debt when it is added.
-test('greatsword debt stays whole: a Warden toll at fractional blood adds a whole amount', { todo: 'toll adds fractional debt (raw blood); HUD rounds it, lethal cue does not' }, () => {
+test('greatsword debt stays whole: a Warden toll at fractional blood adds a whole amount', () => {
   const { game, player, b } = warden(1000, 1060);
   b.dir = 1; b.superArmor = 20; player.blood = 150.4; player.frenzy = true; player.weapon = 'heavy';
   game.wardenStart(b, 'seize'); advance(game, 1.2);
   assert.ok(player.debt > 0, 'the toll landed as debt');
   assert.equal(player.debt, Math.round(player.debt), `debt ${player.debt} is fractional`);
+});
+
+test('a lethal blood-debt payment emits death cause debt, not heavy', () => {
+  const { game, player, events } = arena();
+  Object.assign(player, { blood: 100, frenzy: true, weapon: 'heavy', debt: 100 });
+  game.endFrenzy(true);
+  const d = events.findLast(e => e.type === 'death');
+  assert.equal(game.state, 'dead'); assert.equal(d.cause, 'debt'); assert.ok(!d.heavy);
 });
 
 test('warden toll: takes all blood above 100 (30 at 100 or less), refills the gauge by that amount and ends a frenzy', () => {
