@@ -428,7 +428,7 @@ export class Game {
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
     for (const o of this.obstacles) if (p.y > o.y - o.h + 1 && p.y - p.h < o.y && Math.abs(p.x - o.x) < (p.w + o.w) / 2) p.x = o.x + (oldX < o.x ? -1 : 1) * (p.w + o.w) / 2; // solid sides
-    for (const e of this.enemies) if (e.warden && e.hp > 0 && e.travel <= 0 && p.dash <= 0 && p.y > e.y - e.h + 1 && Math.abs(p.x - e.x) < (p.w + e.w) / 2) p.x = e.x + (oldX < e.x ? -1 : 1) * (p.w + e.w) / 2; // the Warden's body blocks walking (a dash passes, a double jump clears it)
+    for (const e of this.enemies) if (e.warden && e.hp > 0 && e.travel <= 0 && p.dash <= 0 && p.y > e.y - e.h + 1 && Math.abs(p.x - e.x) < (p.w + e.w) / 2) { const half = (p.w + e.w) / 2, side = oldX < e.x ? -1 : 1, nx = e.x + side * half; p.x = clamp(nx < 25 || nx > this.worldWidth - 30 ? e.x - side * half : nx, 25, this.worldWidth - 30); } // the Warden's body blocks walking (a dash passes, a double jump clears it); at a wall the hero is pushed to the other side
     const oldY = p.y;
     p.vy += 1550 * dt;
     p.y += p.vy * dt;
@@ -466,7 +466,7 @@ export class Game {
     if (this.state !== 'playing') return;
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
-    if (!this.portalOpen && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
+    if (!this.portalOpen && !(this.mode === 'castle' && this.floor === WARDEN_FLOOR) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
   // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.
@@ -636,6 +636,7 @@ export class Game {
     this.emit('magic', { x: p.x, y: p.y - 32, radius });
     const caught = this.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < radius);
     if (vortex) for (const e of caught) {
+      if (e.warden && e.superArmor > 0) continue; // knockback-immune while armored
       const from = e.x; e.x = clamp(e.x + (p.x - e.x) * (e.type === 'boss' ? .1 : .78), 30, this.worldWidth - 40); // keeps y: never changes platform height
       if (e.type !== 'bat') for (const o of this.obstacles) { // stay on the near side of any solid in the way
         const half = (e.w + o.w) / 2;
@@ -1192,7 +1193,7 @@ export class Game {
   // Which follow-up (if any) ends a sweep, charge, slam or seize, from where the hero is at that moment (visible state only); a backhand ends the string. A crossed read always ends in the backhand.
   wardenFollow(e, move) {
     const p = this.player, side = e.x - p.x, behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(side);
-    if (move === 'backhand' || (e.follows || 0) >= MAX_FOLLOWS[e.bossPhase] || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
+    if (this.state !== 'playing' || move === 'backhand' || (e.follows || 0) >= MAX_FOLLOWS[e.bossPhase] || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
     if (e.chain === 'backhand') return 'backhand'; // a crossed read expects the hero behind it
     if (move === 'slam') return gap <= 330 ? 'charge' : ''; // the floor wave pins the hero to a jump; the charge meets the landing
     if (move === 'seize' && (e.struck || !p.grounded)) return !e.struck && gap <= 200 ? 'slam' : ''; // a landed Toll ends the string; a jumped gauntlet meets the slam on the landing

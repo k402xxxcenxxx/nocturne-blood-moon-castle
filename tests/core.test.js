@@ -3586,3 +3586,29 @@ test('warden body blocks walking, but a dash passes through it', () => {
   advance(game, .5, { right: true, dash: true });
   assert.ok(player.x > 1050, `dashed through (${player.x})`);
 });
+
+test('warden: the body-block never leaves the hero outside the world, at either wall', () => {
+  const { game, player, b } = warden(30, 25);
+  player.invulnerable = 99; b.recover = 5;
+  advance(game, .5);
+  assert.ok(player.x >= 25 && player.x <= game.worldWidth - 30, `left wall (${player.x})`);
+  b.x = game.worldWidth - 35; player.x = game.worldWidth - 30; advance(game, .5);
+  assert.ok(player.x >= 25 && player.x <= game.worldWidth - 30, `right wall (${player.x})`);
+});
+
+test('warden: no follow-up starts once the hero is dead', () => {
+  const { game, player, b } = warden(1000, 940);
+  player.hp = 1; player.invulnerable = 0; game.wardenStart(b, 'sweep');
+  advance(game, 2);
+  assert.equal(game.state, 'dead');
+  assert.equal(b.tell > 0 && b.follow, false);
+});
+
+test('warden: Vortex Eclipse does not pull it while armored, and its kill is the only way out of the fight floor', () => {
+  const { game, player, b } = warden(1000, 800);
+  game.relics.push(RELICS.find(r => r.id === 'vortex')); player.blood = 100; b.cd = 99;
+  game.magic();
+  assert.equal(b.x, 1000, 'armored: not pulled');
+  game.portalX = player.x; advance(game, .1);
+  assert.equal(game.portalOpen, false, 'no Moon Gate on the fight floor');
+});

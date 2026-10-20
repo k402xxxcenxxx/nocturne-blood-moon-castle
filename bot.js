@@ -122,8 +122,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
-      if (sig && sig !== r.sig && !(r.sig === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
+      if (sig && sig !== r.sig && !(r.sig[0] === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
     }

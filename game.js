@@ -250,7 +250,7 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); // the boss HUD (armor gauge) sits where the toast lands; burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
+    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
     case 'rest': vigilNo = e.vigil; audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
     case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
@@ -460,7 +460,7 @@ function updateHud() {
   $('enemy-count').hidden = bossStage;
   $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? (game.mode === 'castle' ? 'objective.warden' : 'objective.boss') : 'objective.fight');
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
-  $('boss-hud').hidden = !boss || game.state === 'title' || announceTime > 0; // the chapter banner owns this space
+  $('boss-hud').hidden = !boss || game.state === 'title' || (game.mode === 'castle' && announceTime > 0); // the chapter banner owns this space
   const wd = boss?.warden ? boss : null; $('armor-gauge').hidden = !wd;
   if (wd) { $('armor-bar').style.width = `${wd.superArmor / wd.superArmorMax * 100}%`; $('armor-gauge').classList.toggle('broken', wd.superArmor <= 0); $('armor-gauge').classList.toggle('locked', wd.superArmor > 0 && wd.armorLock > 0); }
   if (boss) { $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`; const label = $('boss-hud').firstElementChild, name = t(boss.warden ? 'enemy.warden' : 'boss.name'); if (label.textContent !== name) label.textContent = name; }

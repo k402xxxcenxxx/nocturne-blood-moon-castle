@@ -111,3 +111,17 @@ test('the average profile reacts in 0.3 s, presses at most 6 times a second and 
   for (const x of edges) assert.ok(edges.filter(y => y > x - 1 && y <= x).length <= avg.presses);
   assert.equal(botCalls, 0, 'the bot rolls its mistakes from its own RNG');
 });
+
+test('the bot answers a Warden follow-up only after its reaction delay', () => {
+  const game = castle(); game.loadFloor(10);
+  const w = game.enemies.find(e => e.warden), bot = createBot();
+  Object.assign(w, { engaged: true, cd: 99 }); game.player.invulnerable = 99;
+  game.wardenStart(w, 'sweep');
+  for (let i = 0; i < 15; i++) { bot.input(game); game.update(DT, {}); w.tell = 1; } // the bot has reacted to the first tell
+  assert.equal(bot.reacts(w, game.time), true);
+  w.follows = 1; game.wardenStart(w, 'charge', false, true); w.follows = 1; // the follow-up opens in the same update the previous tell ended
+  bot.input(game);
+  assert.equal(bot.reacts(w, game.time), false, 'a fresh follow-up tell is not answered at once');
+  for (let i = 0; i < Math.ceil(REACTION_DELAY / DT) + 1; i++) { game.update(DT, {}); w.tell = 1; bot.input(game); }
+  assert.equal(bot.reacts(w, game.time), true);
+});
