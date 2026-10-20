@@ -276,7 +276,7 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('frenzy', 1); audio.play('frenzy_' + e.weapon); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
+    case 'frenzy': audio.play('frenzy', 1); audio.play('frenzy_' + e.weapon); audio.setHeartbeat(true); rumble(8, .3); if (e.weapon === 'heavy' && !debtHinted) { debtHinted = true; toast(t('hint.debt')); } else if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .5, max: .5, color: FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', r: 150 }); burst(e.x, e.y - 30, FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', 16, 200, 0, 3); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
     case 'debt': audio.play(game.player.blood <= 0 ? 'debtLethal' : 'debtPaid'); damageFlash = .4; rumble(10, .35); flashNumber({ x: e.x, y: e.y, size: 26, amount: `−${e.amount}` }, '#ed7e88'); // blood debt paid at the frenzy's end: the numbness breaks, the pain arrives all at once
       effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#ff3a4d', r: 110 }); burst(e.x, e.y - 30, '#a93959', 26, 260); break;
@@ -476,22 +476,20 @@ function pumpBanner() {
   if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
-let debtBand = null;
-function updateDebtBand(p) { // blood debt eats the bar from the right end of the fill; it turns lethal-red when the end-of-frenzy payment would kill (debt >= the 100 blood a frenzy ends at)
+let debtBand = null, debtHinted = false;
+function updateDebtBand(p) { // blood debt eats the bar from the right end of the fill; lethal when the end-of-frenzy payment would kill (debt >= the 100 blood a frenzy ends at)
   const m = $('blood-meter'), on = game.mode === 'castle' && p.debt > 0;
-  if (!debtBand) { debtBand = document.createElement('i'); debtBand.setAttribute('aria-hidden', 'true'); debtBand.style.cssText = 'position:absolute;top:2px;bottom:2px;pointer-events:none;box-sizing:border-box;border:1px solid #cfd6e6'; m.appendChild(debtBand); }
-  debtBand.hidden = !on; if (!on) return;
-  const hi = Math.min(1, p.blood / BLOOD_MAX), lo = Math.max(0, (p.blood - p.debt) / BLOOD_MAX), lethal = p.debt >= Math.min(p.blood, BLOOD_HALF);
+  if (!debtBand) { debtBand = document.createElement('i'); debtBand.className = 'debt-band'; debtBand.setAttribute('aria-hidden', 'true'); m.appendChild(debtBand); }
+  debtBand.hidden = !on; m.classList.toggle('lethal', on && p.debt >= Math.min(p.blood, BLOOD_HALF)); if (!on) return;
+  const hi = Math.min(1, p.blood / BLOOD_MAX), lo = Math.max(0, (p.blood - p.debt) / BLOOD_MAX);
   debtBand.style.left = `calc(2px + (100% - 4px) * ${lo.toFixed(3)})`; debtBand.style.width = `calc((100% - 4px) * ${(hi - lo).toFixed(3)})`;
-  debtBand.style.background = lethal ? 'repeating-linear-gradient(135deg,#ff1f3a 0 4px,#4a0610 4px 8px)' : 'repeating-linear-gradient(135deg,#8d97aa 0 4px,#3c4354 4px 8px)';
-  debtBand.style.borderColor = lethal ? '#ffd0d6' : '#cfd6e6'; m.style.boxShadow = lethal ? '0 0 12px #ff1f3a' : '';
 }
 function updateHud() {
   const p = game.player; updateDebtBand(p);
   const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
   $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy); $('vitals').classList.toggle('danger', castle && !p.frenzy && p.blood <= BLOOD_HALF); // danger: one heavy (100) kills
-  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); $('mp-text').textContent = p.debt > 0 ? t('hud.debt', { n: Math.round(p.debt) }) : ''; }
-  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; }
+  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); const lethal = p.debt > 0 && p.debt >= Math.min(p.blood, BLOOD_HALF), debtText = p.debt > 0 ? t(lethal ? 'hud.debtLethal' : 'hud.debt', { n: Math.round(p.debt) }) : ''; $('mp-text').textContent = debtText; $('mp-text').classList.toggle('lethal', lethal); $('mp-text').classList.add('debt-text'); if (debtText) m.setAttribute('aria-valuetext', `${Math.ceil(p.blood)}, ${debtText}`); else m.removeAttribute('aria-valuetext'); }
+  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; $('mp-text').classList.remove('debt-text', 'lethal'); }
   const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');
   if (magicLabel.textContent !== want) magicLabel.textContent = want;
   $('hp-text').innerHTML = castle ? `${Math.ceil(p.blood)} <em>/ ${BLOOD_MAX}</em>` : `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -510,6 +508,8 @@ function updateHud() {
   if (wd) { $('armor-gauge').style.setProperty('--notch', `${ECLIPSE_CHIP / wd.superArmorMax * 100}%`); $('armor-bar').style.width = `${wd.superArmor / wd.superArmorMax * 100}%`; $('armor-gauge').classList.toggle('broken', wd.superArmor <= 0); $('armor-gauge').classList.toggle('locked', wd.superArmor > 0 && wd.armorLock > 0); }
   if (boss) { $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`; const label = $('boss-hud').firstElementChild, name = t(boss.warden ? 'enemy.warden' : 'boss.name'); if (label.textContent !== name) label.textContent = name; }
   document.querySelector('[data-control="magic"]').classList.toggle('unavailable', castle ? p.blood < SKILL_MIN : !p.lunatic && p.mp < p.magicCost);
+  const twin = game.frenzyOf('twin'), spear = game.frenzyOf('spear'), dashBtn = document.querySelector('[data-control="dash"]'), dashSpan = dashBtn.querySelector('span'), dashWant = t(twin ? 'touch.dashLocked' : spear ? 'touch.dashAssault' : 'touch.dashShort');
+  dashBtn.classList.toggle('unavailable', twin); dashBtn.classList.toggle('assault', spear); if (dashSpan.textContent !== dashWant) { dashSpan.textContent = dashWant; dashBtn.setAttribute('aria-label', t(twin ? 'touch.dashLockedAria' : spear ? 'touch.dashAssaultAria' : 'touch.dash')); }
   for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
