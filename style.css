@@ -917,6 +917,51 @@ kbd {
   background:#b74b66;
   width:100%;
 }
+.armor-gauge {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin:4px 0 0;
+}
+.armor-gauge small {
+  font:9px var(--serif);
+  letter-spacing:1px;
+  color:#aab4c8;
+  text-shadow:0 1px 3px #000;
+  white-space:nowrap;
+}
+.armor-gauge b {
+  flex:1;
+  height:5px;
+  border:1px solid #5d6577;
+  background:#12111a;
+  padding:1px;
+  position:relative;
+}
+/* notches every 25: one Eclipse chip each, a frenzy chip is 34 */
+.armor-gauge b::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(#12111a,#12111a) 25% 0/1px 100% no-repeat,
+    linear-gradient(#12111a,#12111a) 50% 0/1px 100% no-repeat,
+    linear-gradient(#12111a,#12111a) 75% 0/1px 100% no-repeat;
+}
+.armor-gauge em {
+  display:block;
+  height:100%;
+  background:#aab4c8;
+}
+.armor-gauge.locked em { background:#6b7385; }
+.armor-gauge.broken em { background:#ffd36e; width:100% !important; animation:armor-pulse .5s steps(2) infinite; }
+@media (prefers-reduced-motion:reduce) { .armor-gauge.broken em { animation:none; } }
+@keyframes armor-pulse { 50% { background:#fff0b0; } }
+.fight-line {
+  font-size:12px;
+  color:#b9a9c4;
+  margin:6px 0 0;
+}
 .stage-announcement {
   position:absolute;
   top:32%;
@@ -1725,6 +1770,9 @@ b[data-i18n] {
     font-size:8px;
     letter-spacing:1px;
   }
+  .armor-gauge { margin-top:2px; }
+  .armor-gauge small { font-size:7px; letter-spacing:0; }
+  .fight-line { font-size:10px; margin-top:3px; }
   .toast {
     bottom:110px;
     font-size:9px;
