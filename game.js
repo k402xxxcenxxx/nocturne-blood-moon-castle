@@ -238,7 +238,7 @@ function handleEvent(e) {
         const kd = e.kind, L = (type, o) => effects.push({ type, x: e.x, y: e.y, dir: e.dir, life: .3, max: .3, ...o });
         const hs = { sweep: 'hitSweep', overhead: 'hitChop', swoop: 'hitClaw', turnswipe: 'hitTurnswipe' }[kd]; if (hs) audio.play(hs, 1);
         if (kd === 'sweep') { L('floorSweep', { y: e.y + e.h * .5 - 12, life: .26, max: .26 }); break; }
-        if (kd === 'spear') { L('streak', { life: .22, max: .22 }); break; }
+        if (kd === 'spear' && game.mode === 'castle') { L('streak', { life: .22, max: .22 }); break; }
         if (kd === 'swoop') { L('claw', { life: .24, max: .24 }); break; }
         if (kd === 'overhead') { L('chop', { x: e.x + e.dir * 40, y: e.y + e.h * .5, life: .39, max: .39, delay: .15 }); rumble(3, .1); break; }
         if (kd === 'turnswipe') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -e.dir, life: .24, max: .24, boss: false, big: false }); break; }
