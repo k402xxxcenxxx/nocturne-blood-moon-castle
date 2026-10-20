@@ -1,5 +1,5 @@
-import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest } from './art.js';
+import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, WARDEN_FLOOR } from './core.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest, drawPool } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -129,7 +129,7 @@ function handleEvent(e) {
       break;
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
-      if (e.boss) { rumble(9, .4); toast(t('toast.bossDown')); }
+      if (e.boss) { rumble(9, .4); toast(t(e.warden ? 'toast.wardenDown' : 'toast.bossDown')); }
       break;
     case 'eliteKill': lastEliteAffix = e.affix; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
@@ -176,10 +176,25 @@ function handleEvent(e) {
       burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3);
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
-    case 'enemyHeavy': audio.play('heavyWarn'); break;
+    case 'wardenPhase': audio.play('wardenRoar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); burst(e.x, e.y, '#ff7a52', 24, 200, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: '#ff5a44', r: 200 }); break; // phase 2: ember seams light up (art.js)
+    case 'toll': // the Gate Toll: blood torn out of the hero (placeholder feedback; dedicated art and audio come from their roles)
+      audio.play('hurt'); audio.play('tollDrain'); damageFlash = .35; rumble(9, .3); hitCount = 0; comboTime = 0; audio.setHeartbeat(false);
+      flashNumber({ ...e, amount: t('float.toll', { n: Math.round(e.amount) }) }, '#d8445a'); burst(e.x, e.y, '#a93959', 26, 220);
+      { const w = game.enemies.find(o => o.warden && o.hp > 0); // the blood streams out of the hero into the Warden's chest, then its shell flares crimson
+        if (w) { effects.push({ type: 'toll', x: e.x, y: e.y, x2: w.x, y2: w.y - 62, n: Math.min(16, 5 + Math.round(e.amount / 6)), life: .8, max: .8 }); effects.push({ type: 'ringIn', x: w.x, y: w.y - 56, life: .5, max: .5, color: '#d8445a', r: 90, delay: .35 }); } }
+      break;
+    case 'armorChip': audio.play('stoneCrack', .9); flashNumber({ ...e, amount: t('float.armorChip') }, '#9aa3b5'); burst(e.x, e.y, '#cfd6e6', 8, 170); burst(e.x, e.y, '#ffffff', 4, 110, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .22, max: .22, color: '#cfd6e6', r: 50 }); break;
+    case 'armorBreak': audio.play('plateShatter', 1.1); rumble(9, .3); if (settings.shake) whiteFlash = .06; flashNumber({ ...e, amount: t('float.armorBreak') }, '#ffd36e'); burst(e.x, e.y, '#8e99a8', 18, 260, 0, 4); burst(e.x, e.y, '#ffd36e', 14, 220); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .4, max: .4, color: '#ffd36e', r: 120 });
+      { const plates = []; for (let i = 0; i < 16; i++) plates.push({ a: i / 16 * Math.PI * 2 + Math.random() * .4, d: 50 + Math.random() * 70, s: 5 + (Math.random() * 7 | 0), r: Math.random() * 6 }); effects.push({ type: 'shards', x: e.x, y: e.y, radius: 70, shards: plates, life: .7, max: .7, c1: '#aab4c8', c2: '#586070' }); } // the shell bursts into stone plates
+      break;
+    case 'armorRestore': audio.play('armorForm', .8); burst(e.x, e.y, '#8e99a8', 10, 120); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .45, max: .45, color: '#aab4c8', r: 80 }); break; // the shell closes round the Warden again
+    case 'bloodPool': audio.play('poolSplash', .8); burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
+    case 'poolTaken': audio.play('poolGulp', 1); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
+    case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; break; // metric for the #44 playtest; the result screen shows a compact line
+    case 'enemyHeavy': audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
     case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
-      const cue = { slash: 'tellSlash', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
+      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
       audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
     }
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
@@ -189,7 +204,8 @@ function handleEvent(e) {
     case 'enemySwing':
       if (e.heavy) audio.play('heavyWhoosh'); else
       if (e.kind === 'spear') audio.play('thrust');
-      else if (e.boss) { const s = { slash: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
+      else if (e.boss) { const s = { slash: 'bossSlash', sweep: 'bossSlash', backhand: 'bossSlash', slam: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
+      if (e.enemy === 'warden') { wardenSwing(e); break; }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
@@ -234,9 +250,9 @@ function handleEvent(e) {
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
     case 'enemyBuff': audio.play('bless', .8); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
-    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // placeholder feedback; vignette, aura and heartbeat belong to art and audio
+    case 'frenzy': audio.play('frenzy', 1); audio.setHeartbeat(true); rumble(8, .3); if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
     case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
-    case 'rest': audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = ''; openVigil(); break;
+    case 'rest': vigilNo = e.vigil; audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
     case 'sliceEnd': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
     case 'room': if (announceTime <= 0) showRoom(e.stage, e.index); break; // the stage announcement already names room 0; later rooms are shown when it ends (see tick)
@@ -246,7 +262,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': deathHeavy = !!e.heavy; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -307,17 +323,20 @@ function synergyLine(id) {
   const partners = game.synergyPartners(id);
   return partners.length ? `<em class="card-synergy">${partners.map(p => `<span><b>${t('upgrade.synergy', { name: t(`relic.${p.with}.name`) })}</b> — ${t(p.key)}</span>`).join('')}</em>` : '';
 }
+let vigilNo = 1; // 2 after the Warden's kill
+let lastFight = null; // last Warden fightStats, shown on the slice-end and floor-10 death screens
+let deathToll = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
   openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function openVigil() { // rest point: one weapon card each, choosing one starts floor 1
-  openModal(`<div class="modal-eyebrow">${t('rest.title')}</div><h2 id="modal-title">${t('rest.choose')}</h2><div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
+  openModal(`<div class="modal-eyebrow">${t(vigilNo === 2 ? 'rest.title2' : 'rest.title')}</div><h2 id="modal-title">${t(vigilNo === 2 ? 'rest.choose2' : 'rest.choose')}</h2>${vigilNo === 2 ? `<p>${t('rest.text2')}</p>` : ''}<div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? 'castle.toVigil' : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? 'castle.sliceEnd' : deathToll ? 'castle.deadToll' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR) ? `<p class="fight-line">${t('castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? `${game.floor} / 10` : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div><div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : 'castle.toVigil') : 'result.again')}</button><button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -436,13 +455,15 @@ function updateHud() {
   if (!castle) $('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
   $('souls').textContent = game.souls;
   const guards = game.guardStatus();
-  const bossStage = game.stage === 4; // only the king is required there, so no guard counter
+  const bossStage = game.stage === 4 || (game.mode === 'castle' && game.floor === WARDEN_FLOOR); // only the king (or the Warden) is required there, so no guard counter
   $('enemy-count').textContent = bossStage ? '' : t('hud.guards', { n: guards.n, total: guards.total });
   $('enemy-count').hidden = bossStage;
-  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? 'objective.boss' : 'objective.fight');
+  $('objective-text').textContent = t(game.portalOpen ? 'objective.open' : bossStage ? (game.mode === 'castle' ? 'objective.warden' : 'objective.boss') : 'objective.fight');
   const boss = game.enemies.find(e => e.type === 'boss' && e.hp > 0 && Math.abs(e.x - p.x) < 800);
-  $('boss-hud').hidden = !boss || game.state === 'title';
-  if (boss) $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`;
+  $('boss-hud').hidden = !boss || game.state === 'title' || (game.mode === 'castle' && announceTime > 0); // the chapter banner owns this space
+  const wd = boss?.warden ? boss : null; $('armor-gauge').hidden = !wd;
+  if (wd) { $('armor-bar').style.width = `${wd.superArmor / wd.superArmorMax * 100}%`; $('armor-gauge').classList.toggle('broken', wd.superArmor <= 0); $('armor-gauge').classList.toggle('locked', wd.superArmor > 0 && wd.armorLock > 0); }
+  if (boss) { $('boss-bar').style.width = `${boss.hp / boss.maxHp * 100}%`; const label = $('boss-hud').firstElementChild, name = t(boss.warden ? 'enemy.warden' : 'boss.name'); if (label.textContent !== name) label.textContent = name; }
   document.querySelector('[data-control="magic"]').classList.toggle('unavailable', castle ? p.blood < SKILL_MIN : !p.lunatic && p.mp < p.magicCost);
   for (const [c, cd, total] of [['magic', p.magicCd, p.magicCdMax], ['dash', p.dashCd, p.dashCooldown]]) { const b = document.querySelector(`[data-control="${c}"]`); b.classList.toggle('cooldown', cd > 0); b.style.setProperty('--cd', Math.min(1, Math.max(0, cd / total))); }
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
@@ -550,8 +571,22 @@ function drawEffects(dt) {
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .9;
       ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, fx.radius * Math.min(1, progress * 3), 0, Math.PI * 2); ctx.stroke();
       for (const s of fx.shards) { const k = Math.sin(Math.min(1, progress * 1.6) * Math.PI / 2), sx = Math.round(Math.cos(s.a) * s.d * k), sy = Math.round(Math.sin(s.a) * s.d * k * .7 + progress * progress * 40);
-        ctx.fillStyle = '#e9f8ff'; ctx.beginPath(); ctx.moveTo(sx, sy - s.s); ctx.lineTo(sx + 2 + s.r * .3, sy + s.s * .5); ctx.lineTo(sx - 2, sy + s.s * .4); ctx.fill(); ctx.fillStyle = '#7fc4f0'; ctx.fillRect(sx, sy, 1, s.s >> 1); }
+        ctx.fillStyle = fx.c1 || '#e9f8ff'; ctx.beginPath(); ctx.moveTo(sx, sy - s.s); ctx.lineTo(sx + 2 + s.r * .3, sy + s.s * .5); ctx.lineTo(sx - 2, sy + s.s * .4); ctx.fill(); ctx.fillStyle = fx.c2 || '#7fc4f0'; ctx.fillRect(sx, sy, 1, s.s >> 1); }
       ctx.restore();
+    } else if (fx.type === 'toll') { // blood streams from the hero into the Warden's chest along a rising curve
+      ctx.save(); const cxm = (fx.x + fx.x2) / 2, cym = Math.min(fx.y, fx.y2) - 70;
+      ctx.strokeStyle = `rgba(216,68,90,${.35 * (1 - progress)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(Math.round(fx.x), Math.round(fx.y)); ctx.quadraticCurveTo(cxm, cym, Math.round(fx.x2), Math.round(fx.y2)); ctx.stroke();
+      for (let i = 0; i < fx.n; i++) { const q = clamp(progress * 1.5 - i * .045, 0, 1); if (q <= 0 || q >= 1) continue; const m = 1 - q, bx = Math.round(m * m * fx.x + 2 * m * q * cxm + q * q * fx.x2), by = Math.round(m * m * fx.y + 2 * m * q * cym + q * q * fx.y2);
+        ctx.fillStyle = '#5a1630'; ctx.fillRect(bx - 5, by - 5, 10, 10); ctx.fillStyle = '#e0584c'; ctx.fillRect(bx - 4, by - 4, 8, 8); ctx.fillStyle = '#ffd0d6'; ctx.fillRect(bx - 2, by - 2, 3, 3); }
+      ctx.restore();
+    } else if (fx.type === 'ringIn') { // ring closing onto a point: the shell re-forming, or the Warden swallowing the Toll
+      const q = clamp((progress - (fx.delay || 0) / fx.max) / (1 - (fx.delay || 0) / fx.max), 0, 1);
+      if (q > 0) { ctx.save(); ctx.globalAlpha = Math.sin(q * Math.PI); ctx.strokeStyle = fx.color; ctx.lineWidth = 2 + 4 * q; ctx.beginPath(); ctx.ellipse(Math.round(fx.x), Math.round(fx.y), Math.round(fx.r * (1 - q) + 12), Math.round(fx.r * (1 - q) * 1.3 + 14), 0, 0, 7); ctx.stroke(); ctx.restore(); }
+    } else if (fx.type === 'crack') { // jagged crack along the floor from the slam, fading
+      ctx.save(); ctx.globalAlpha = Math.min(1, (1 - progress) * 1.6); ctx.lineJoin = 'miter'; for (const [w, col] of [[4, '#13111b'], [2, '#cfc6b4']]) { ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); fx.pts.forEach(([px, py], i) => i ? ctx.lineTo(Math.round(px), Math.round(py)) : ctx.moveTo(Math.round(px), Math.round(py))); ctx.stroke(); } ctx.restore();
+    } else if (fx.type === 'grab') { // seize contact: two crescents close on a point with a pale flash
+      const k = Math.min(1, progress * 2.4), o = Math.round(26 * (1 - k)); ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = 1 - progress * progress; ctx.strokeStyle = '#ff7ab8'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(8, -o, 22, Math.PI * .1, Math.PI * .9); ctx.stroke(); ctx.beginPath(); ctx.arc(8, o, 22, -Math.PI * .9, -Math.PI * .1); ctx.stroke(); ctx.restore();
     } else if (fx.type === 'flameCol') { // rising blood-flame column plus a floor ring of the exact radius
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .85;
       const hgt = 40 + 120 * Math.sin(Math.min(1, progress * 1.5) * Math.PI / 2), wd = 22 * (1 - progress * .5);
@@ -577,6 +612,24 @@ function drawEffects(dt) {
   }
   ctx.globalAlpha = 1; numbers = numbers.filter(n => n.life > 0);
 }
+function wardenSwing(e) { // contact visuals per Warden move; each reads differently from the others
+  const d = e.dir === -1 ? -1 : 1, fx = e.x + d * 60;
+  if (e.kind === 'sweep' || e.kind === 'backhand') { const sd = e.kind === 'backhand' ? -d : d; effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: sd, life: .3, max: .3, boss: true, big: true }); rumble(4, .12); }
+  else if (e.kind === 'slam') { // maul meets the floor: shock ring, cracks and debris, the big shake
+    rumble(12, .35); audio.play('wardenSlam', 1); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
+    const pts = []; for (let i = 0, x = fx, y = FLOOR; i < 7; i++) { pts.push([x, y]); x += d * (22 + Math.random() * 16); y = FLOOR - 1 + (Math.random() * 6 | 0); }
+    effects.push({ type: 'crack', pts, life: 1.2, max: 1.2 }); burst(fx, FLOOR - 4, '#9a8c77', 18, 240, 0, 3); burst(fx, FLOOR - 4, '#e4dccb', 8, 160);
+  } else if (e.kind === 'seize') { audio.play('wardenSeize', .9); effects.push({ type: 'grab', x: e.x + d * 52, y: e.y - 40, dir: d, life: .35, max: .35 }); } // two crescents snap shut
+  else if (e.kind === 'charge') { rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
+}
+let wardenX = null, wardenStep = 0, wardenRun = false; // footfall shake: one thud per stride of the Warden's own movement (walking 56 px, charging 90 px), only near the hero and with the shake setting on
+function wardenSteps(e) {
+  if (wardenX === null || e.stun > 0 || e.pause > 0 || Math.abs(e.x - wardenX) > 60) { wardenX = e.x; return; }
+  const run = e.travel > 0; if (wardenRun && !run && Math.abs(e.x - game.player.x) <= 700) audio.play('wardenSkid', .9); wardenRun = run; wardenStep += Math.abs(e.x - wardenX); wardenX = e.x;
+  if (wardenStep < (run ? 90 : 56)) return;
+  wardenStep = 0; if (Math.abs(e.x - game.player.x) > 700) return;
+  audio.play('wardenStep', run ? 1.3 : .8); rumble(run ? 4 : 2, .09); burst(e.x + e.dir * 14, e.y - 2, '#9a8c77', run ? 4 : 2, 70, 0, 3);
+}
 function render(dt) {
   const title = game.state === 'title', p = game.player;
   const frenzyK = p.frenzy && game.mode === 'castle' ? .25 + .75 * clamp((p.blood - BLOOD_HALF) / (BLOOD_MAX - BLOOD_HALF), 0, 1) : 0; // fades as blood burns 200 -> 100
@@ -598,6 +651,7 @@ function render(dt) {
     }
     for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
+    for (const pool of game.pools) drawPool(ctx, pool, worldTime, !settings.shake);
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
     for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
@@ -612,6 +666,13 @@ function render(dt) {
       if (e.type !== 'boss' && e.hp < e.maxHp) {
         const barY = e.y - e.h - (e.type === 'knight' ? 29 : (e.type === 'mage' || e.type === 'priest') ? 17 : e.type === 'shield' ? 21 : 9);
         ctx.fillStyle = '#13111b'; ctx.fillRect(Math.round(e.x - 18), Math.round(barY), 36, 4); ctx.fillStyle = '#b75a66'; ctx.fillRect(Math.round(e.x - 17), Math.round(barY + 1), Math.max(0, 34 * e.hp / e.maxHp), 2);
+      }
+      if (e.warden && e.hp > 0) { // super armor gauge under the feet: steel while armored, dim while locked after a break, gold during the break stun
+        const bw = 72, bx = Math.round(e.x - bw / 2), by = Math.round(e.y + 5), broken = e.superArmor <= 0;
+        ctx.fillStyle = broken ? '#fff0b0' : '#13111b'; ctx.fillRect(bx - 1, by - 1, bw + 2, 6); ctx.fillStyle = '#13111b'; ctx.fillRect(bx, by, bw, 4);
+        ctx.fillStyle = broken ? (!settings.shake || (worldTime * 12 | 0) % 2 ? '#fff0b0' : '#ffd36e') : e.armorLock > 0 ? '#6b7385' : '#aab4c8'; ctx.fillRect(bx + 1, by + 1, broken ? bw - 2 : Math.round((bw - 2) * e.superArmor / e.superArmorMax), 2);
+        ctx.fillStyle = '#13111b'; for (let n = 1; n < 4; n++) ctx.fillRect(bx + Math.round(bw * n / 4), by, 1, 4); // quarter notches: a chip is 25
+        wardenSteps(e);
       }
       const brk = e.riposte && e.stun > 0; // posture bar: only below max (or flashing while broken, until the riposte lands)
       if (e.maxPoise && (brk || e.poise < e.maxPoise) && (game.mode === 'castle' || e.type === 'knight' || e.type === 'shield' || e.type === 'boss') && e.type !== 'bat') {
@@ -630,7 +691,7 @@ function render(dt) {
         ctx.fillStyle = '#d8445a'; ctx.fillRect(cx - 1, cy - 2, 3, 4);
       }
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
-      if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && e.type !== 'boss', mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
+      if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && (e.type !== 'boss' || e.warden), mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
     if (p.plunge === 2) { // short vertical streak above the falling hero
       const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');

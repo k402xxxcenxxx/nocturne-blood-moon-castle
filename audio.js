@@ -183,7 +183,8 @@ export class AudioSystem {
       roar: [60, 40, 120], frenzy: [50, 30, 90, 30, 160], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
-      block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160] };
+      block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
+      tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -516,6 +517,97 @@ export class AudioSystem {
         tone('triangle', 620, 0.1, 0.08, 940);
         tone('noise', 3400, 0.07, 0.07, 1500);
         break;
+      // Gate Warden cues. Tells are fixed pitch (no detune); impacts and footfalls detune a little so they do not repeat.
+      case 'tellSweep': // wide arm drawn back: low scrape rising into a dull stone knock; lower and slower than tellSlash
+        tone('noise', 900, 0.2, 0.1, 2200);
+        tone('sawtooth', 150, 0.2, 0.06, 260);
+        tone('square', 520, 0.07, 0.04, 560, 0.2);
+        break;
+      case 'tellBackhand': // reverse snap: quick falling whip then a hard double tick, reads as "behind you"
+        tone('noise', 4200, 0.1, 0.12, 700);
+        tone('triangle', 880, 0.1, 0.07, 340);
+        tone('noise', 3200, 0.03, 0.1, 1400, 0.11);
+        tone('square', 640, 0.05, 0.04, 600, 0.11);
+        break;
+      case 'wardenRattle': // seize tell: gauntlet chain rattling, a burst of irregular metal ticks over a low drag; fixed pitch
+        [0, 0.05, 0.1, 0.17, 0.23, 0.31].forEach((dl, i) => {
+          tone('noise', 5200 - (i % 3) * 600, 0.03, 0.09, 1800, dl);
+          tone('square', 1320 + (i % 2) * 310, 0.04, 0.025, 1200, dl);
+        });
+        tone('sawtooth', 90, 0.4, 0.05, 70);
+        break;
+      case 'wardenSeize': // gauntlet clamps shut: iron clang over a crushing low squeeze
+        tone('noise', 6000, 0.06, 0.25, 1200);
+        tone('sine', 120, 0.3, 0.38, 45);
+        [740, 1110, 1630].forEach((f, i) => tone('square', f, 0.2 - i * 0.04, 0.035, f * 0.97));
+        tone('sawtooth', 70, 0.35, 0.08, 40);
+        break;
+      case 'wardenStep': { // footfall: dull stone thud; intensity 1.3 = charge stride (heavier, shorter gap)
+        if (ctx.currentTime - (this._lastStep ?? -1) < 0.08) return;
+        this._lastStep = ctx.currentTime;
+        const d = 0.9 + Math.random() * 0.2;
+        tone('sine', 62 * d, 0.2, 0.32, 30);
+        tone('noise', 700 * d, 0.1, 0.12, 150);
+        break;
+      }
+      case 'wardenSkid': // charge ends: stone dragged and ground to a halt
+        tone('noise', 2400, 0.4, 0.2, 250);
+        tone('sawtooth', 110, 0.35, 0.07, 45);
+        tone('sine', 58, 0.3, 0.28, 28, 0.05);
+        break;
+      case 'wardenSlam': { // maul on the floor: deeper and longer than plunge, with a falling crack and rubble tail
+        const d = 0.96 + Math.random() * 0.08;
+        tone('sine', 52 * d, 0.6, 0.5, 22);
+        tone('noise', 1800, 0.4, 0.34, 120);
+        tone('sawtooth', 85 * d, 0.2, 0.09, 34);
+        tone('noise', 5200, 0.07, 0.18, 800, 0.01);
+        [0.12, 0.2, 0.3].forEach((dl, i) => tone('noise', 2000 - i * 400, 0.05, 0.09, 500, dl));
+        break;
+      }
+      case 'stoneCrack': { // armorChip: brittle stone crack, short and dry (plays often)
+        const d = 0.94 + Math.random() * 0.12;
+        tone('noise', 4800, 0.05, 0.18, 1200);
+        tone('sine', 140 * d, 0.1, 0.2, 70);
+        tone('square', 1700 * d, 0.04, 0.03, 1300 * d);
+        break;
+      }
+      case 'plateShatter': // armorBreak: heavy crack, plates cascading down, a low thud
+        tone('noise', 6500, 0.3, 0.3, 300);
+        tone('sine', 90, 0.4, 0.42, 34);
+        [0, 0.05, 0.09, 0.14, 0.2, 0.27].forEach((dl, i) => tone('noise', 3600 - i * 350, 0.05, 0.1, 700, dl + 0.04));
+        [1480, 2200, 1170].forEach((f, i) => tone('triangle', f, 0.16, 0.05, f * 0.88, 0.02 * i));
+        break;
+      case 'armorForm': // armorRestore: stone grinding back together, rising scrape and a settling thud
+        tone('noise', 600, 0.45, 0.14, 2200);
+        tone('sawtooth', 70, 0.45, 0.07, 130);
+        tone('sine', 70, 0.2, 0.28, 36, 0.42);
+        tone('noise', 2000, 0.06, 0.1, 500, 0.42);
+        break;
+      case 'tollDrain': // Gate Toll: wet pull as blood is torn out, three descending gulps and a dark thump
+        tone('noise', 800, 0.4, 0.2, 3000);
+        [0, 0.12, 0.25].forEach((dl, i) => tone('sine', 220 - i * 45, 0.14, 0.2, 90 - i * 15, dl));
+        tone('sine', 55, 0.5, 0.4, 26, 0.05);
+        tone('sawtooth', 100, 0.35, 0.07, 45);
+        break;
+      case 'poolSplash': // bloodPool: small wet slap
+        tone('noise', 1500, 0.12, 0.16, 300);
+        tone('sine', 200, 0.1, 0.15, 90);
+        break;
+      case 'poolGulp': // poolTaken: warm quick gulp, rising bubble, nothing bright
+        tone('sine', 150, 0.12, 0.2, 260);
+        tone('sine', 230, 0.1, 0.12, 400, 0.08);
+        tone('noise', 900, 0.1, 0.05, 2000, 0.02);
+        break;
+      case 'wardenRoar': { // phase 2: Warden roar, the boss roar plus a stone grind and a second low detuned voice
+        const d = 0.97 + Math.random() * 0.06;
+        tone('sawtooth', 80 * d, 1.3, 0.16, 38);
+        tone('sawtooth', 84 * d, 1.3, 0.12, 40);
+        tone('sine', 46, 1.4, 0.4, 24);
+        tone('noise', 1000, 1.2, 0.22, 100);
+        tone('square', 190, 0.5, 0.03, 90, 0.1);
+        [0.1, 0.3, 0.55].forEach((dl, i) => tone('noise', 2400 - i * 500, 0.06, 0.12, 600, dl));
+        break;
+      }
       case 'glint': // THE timing cue, 0.4 s before a heavy lands: fixed pitch (no detune), rising bright swish into two high partials
         tone('noise', 3000, 0.16, 0.2, 9000);
         tone('sine', 4186, 0.24, 0.17, 4100);

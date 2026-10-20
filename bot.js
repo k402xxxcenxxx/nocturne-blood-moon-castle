@@ -6,8 +6,14 @@ import { FLOOR, WEAPONS, SKILL_MIN } from './core.js';
 export const REACTION_DELAY = .18; // s before the bot reacts to a new tell, strike, projectile or enemy
 export const MAX_PRESSES_PER_SECOND = 8; // rising edges of any button, in any sliding second
 export const MIN_HOLD = 1 / 30; // s a direction stays held before it may change (non-urgent)
+// Skill profiles. `mistime`: chance that one attack's dodge is early or late by `mistimeBy` s; `greedy`: chance of one extra swing after a punish when a new
+// threat appears; `misread`: chance of dodging the wrong way. Rolled once per attack from the bot's own seeded RNG (never game.rand()); expert rolls nothing.
+export const SKILLS = {
+  expert: { reaction: REACTION_DELAY, presses: MAX_PRESSES_PER_SECOND, mistime: 0, mistimeBy: 0, greedy: 0, misread: 0 },
+  average: { reaction: .3, presses: 6, mistime: .15, mistimeBy: .12, greedy: .1, misread: .05 },
+};
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
-const ATTACK_RESERVE = 2; // attack presses stop this far under the cap so a dodge never waits for the budget
+const ATTACK_RESERVE = 3, MOVE_RESERVE = 2; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
 const WEAPON_PICK = 'spear';
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
 
@@ -24,6 +30,20 @@ export function resolveModal(game) {
   return false;
 }
 
+const CHARGE_SPEED = 610; // Warden charge: 305 px in 0.5 s
+const WARDEN_STANDOFF = 120; // the bot waits this far from the Warden: outside its slam box, so every close move shows a tell it can answer
+// Seconds until the Warden's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss (a seize box is 80 px tall: feet above it are safe).
+function wardenHit(w, px, py) {
+  const a = w.warn, striking = w.travel > 0;
+  if (!a || !(w.tell > 0 || striking)) return Infinity;
+  if (a.kind === 'charge') {
+    if (py <= w.y - w.h) return Infinity; // feet above the body: a double jump clears the pass
+    const d = Math.sign(w.chargeTo - w.x) || w.dir, ahead = (px - w.x) * d;
+    if (ahead < -50 || ahead > Math.abs(w.chargeTo - w.x) + 50) return Infinity;
+    return (striking ? 0 : w.tell) + Math.max(0, ahead - 50) / CHARGE_SPEED;
+  }
+  return w.tell > 0 && a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
+}
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
 
 // Seconds until enemy e's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss. Reads the warn geometry the core exposes.
@@ -55,15 +75,25 @@ function hitTime(e, px, py) {
   return Infinity; // mages and priests act through projectiles
 }
 
-export function createBot({ decide: decider } = {}) { // `decide` overrides the policy (tests drive the press limiter with it)
+export function createBot({ decide: decider, skill: skillName = 'expert', seed = 1 } = {}) { // `decide` overrides the policy (tests drive the press limiter with it)
+  const skill = SKILLS[skillName];
+  if (!skill) throw new Error(`unknown bot skill: ${skillName}`);
+  let rs = seed >>> 0 || 1; // mulberry32: the bot's own mistakes, so game.rand() rolls stay untouched
+  const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
+  const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
+  let greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
+  const greedyOn = now => now < greedyUntil;
+  const rollGreedy = now => { if (skill.greedy && rng() < skill.greedy) greedyUntil = now + 1.5; };
+  const rolled = new WeakMap(); // enemy -> attack count of the punish window already rolled for greed
   const info = new WeakMap(); // enemy or projectile -> { sig, since, seen }: when the bot first perceived it / its current attack
   const presses = []; // timestamps of recent rising edges
   let prev = {}, last = {}, dirSince = -1;
   const api = {
     presses,
     // Has the bot had REACTION_DELAY to notice enemy e's current attack?
-    reacts(e, now) { const r = info.get(e); return !!(r && r.sig && now - r.since >= REACTION_DELAY); },
-    known(e, now) { const r = info.get(e); return !!(r && r.seen !== null && now - r.seen >= REACTION_DELAY); },
+    reacts(e, now) { const r = info.get(e); return !!(r && r.sig && now - r.since >= skill.reaction); },
+    known(e, now) { const r = info.get(e); return !!(r && r.seen !== null && now - r.seen >= skill.reaction); },
     input(game) {
       if (game.state !== 'playing' || game.freeze > 0 || game.eliteBeat > 0) return last; // the core ignores this frame; a pending impulse waits
       const now = game.time;
@@ -71,9 +101,9 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
       const want = (decider || decide)(game, now);
       while (presses.length && presses[0] < now - 1) presses.shift();
       const out = {};
-      const allow = (kind, key) => { // rising edges cost budget; attacks leave a reserve for dodges
+      const allow = (kind, key) => { // rising edges cost budget; attacks and non-urgent steps leave a reserve for dodges
         if (prev[key]) return true;
-        const cap = MAX_PRESSES_PER_SECOND - (kind === 'attack' ? ATTACK_RESERVE : 0);
+        const cap = skill.presses - (kind === 'attack' ? ATTACK_RESERVE : kind === 'dir' && !want.urgent ? MOVE_RESERVE : 0);
         if (presses.length >= cap) return false;
         presses.push(now); return true;
       };
@@ -92,14 +122,80 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' : e.strikeT > 0 ? 's' : '') : '';
-      if (sig && sig !== r.sig && !(r.sig === 't' && sig === 's')) r.since = now; // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
+      if (sig && sig !== r.sig && !(r.sig[0] === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
     }
-    for (const b of game.projectiles) if (!info.has(b)) info.set(b, { sig: 'p', since: now, seen: now });
+    for (const b of game.projectiles) if (!info.has(b)) { const r = { sig: 'p', since: now, seen: now }; roll(r); info.set(b, r); }
+  }
+  // The Gate Warden: answer its tell (jump the seize and the slam wave, walk out of boxes, dash through a charge), take pools,
+  // hit it in its heavy recoveries and break stun, and break the armor with the first hit of a frenzy.
+  function decideWarden(game, now, w) {
+    const p = game.player, W = game.worldWidth;
+    const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
+    const speed = p.speed * (p.attack > 0 ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge, ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
+    const lock = Math.min(.14, Math.max(0, p.attack - p.attackLen * .26)); // the core refuses a dash until 74% of a swing has played (it buffers 0.16 s): press early enough to fire on time
+    const toward = Math.sign(w.x - p.x) || p.dir, away = -toward, held = prev.right ? 1 : prev.left ? -1 : 0;
+    let danger = Infinity;
+    const t = api.reacts(w, now) ? wardenHit(w, p.x, p.y) : Infinity;
+    if (t < Infinity) {
+      danger = t;
+      const kind = w.warn.kind;
+      if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; }
+      else if (kind === 'seize') { // misread: takes the Toll for a sweep and steps the wrong way instead of jumping
+        if (flip(w, 1) < 0) { if (p.grounded) o.dir = toward; }
+        else if (p.grounded && t <= .38 + 2 * jit(w)) { o.jump = true; o.urgent = true; } // the Toll's wide jump window needs a twice-as-bad slip before a late jump is caught
+      }
+      else {
+        let best = null; // walk out on this side of the body if there is time
+        if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) {
+          const x = p.x + away * d;
+          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) best = { dir: away };
+        }
+        if (best) { o.dir = flip(w, best.dir); o.urgent = true; }
+        else if (kind === 'charge' && (!w.follow || (p.dashCd > 0 && p.dashCd > t - .1))) {
+          // double jump the first charge (keeps the dash for the quick return charge), or any charge while the dash is on cooldown; the dash is the fallback
+          if ((p.grounded && t <= .5 + jit(w) && t > .3) || (!p.grounded && p.jumps === 1 && p.vy > -150)) { o.jump = true; o.urgent = true; }
+          else if (t <= .1 + lock + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); }
+        }
+        else if (t <= (kind === 'charge' ? .1 : .12) + lock + jit(w) && dashReady) { o.dash = true; o.urgent = true; o.dir = flip(w, toward); } // through the body: i-frames, and a perfect dodge pays blood
+      }
+    }
+    if (api.reacts(w, now) && w.warn?.kind === 'slam' && w.tell > 0 && t === Infinity) { // the wave lines (front, and behind in phase 2) are drawn during the tell: time the jump to their arrival
+      for (const v of [w.warn.wave, w.warn.wave2]) {
+        if (!v) continue;
+        const dir = Math.sign(v.x2 - v.x1), s = (p.x - v.x1) * dir, arrive = w.tell + s / 240;
+        if (s > 0) { danger = Math.min(danger, arrive); if (arrive <= .28 + jit(w) && p.grounded) { o.jump = true; o.urgent = true; } }
+      }
+    }
+    for (const b of game.projectiles) { // the slam's floor wave: jump it (it was announced by the tell, so no fresh reaction delay)
+      if (!b.ground) continue;
+      for (let s = 0; s <= .5; s += .02) if (Math.abs(b.x + b.vx * s - p.x) < 14 + b.r) { danger = Math.min(danger, s); if (s <= .3 + jit(b) && p.grounded) { o.jump = true; o.urgent = true; } break; }
+    }
+    if (danger > .45) {
+      const dx = w.x - p.x, face = Math.sign(dx) || p.dir, gap = Math.abs(dx);
+      const open = w.superArmor <= 0 || (w.heavy && w.recover > 0); // blood-paying windows: break stun, heavy recovery
+      if (open && !wasOpen) rollGreedy(now);
+      wasOpen = open;
+      const breakable = p.frenzy && w.superArmor > 0 && w.armorLock <= 0;
+      const pool = game.pools.filter(q => (q.x - w.x) * (p.x - w.x) > 0 || Math.abs(q.x - w.x) > 60).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).find(q => Math.abs(q.x - p.x) / speed < q.life - .1);
+      let goal = null, tol = 12;
+      if ((open || breakable) && gap < 330) {
+        const spacing = Math.max(50, p.reach - 22);
+        if (gap > spacing) { goal = w.x; tol = spacing - 4; }
+        else if (p.dir !== face) o.dir = face;
+        else if (ready && p.y >= FLOOR - 5) o.attack = true;
+      } else if (pool && p.grounded) { goal = pool.x; tol = 6; }
+      else if (gap < WARDEN_STANDOFF - 25 || held === away && gap < WARDEN_STANDOFF - 5) { const x = p.x + away * 30; if (x > 60 && x < W - 60) o.dir = away; } // too close: back off to the standoff
+      else if (gap > WARDEN_STANDOFF + 40 || held === toward && gap > WARDEN_STANDOFF + 20) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; } // hysteresis: a step that started keeps going to the edge of the band, so the standoff never flips direction every frame
+      if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
+    }
+    return o;
   }
   function decide(game, now) {
+    const warden = game.enemies.find(e => e.warden && e.hp > 0);
+    if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const speed = p.speed * (p.attack > 0 ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
@@ -112,7 +208,7 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
     const threats = [];
     for (const e of foes) if (api.reacts(e, now)) { const t = hitTime(e, p.x, p.y); if (t < Infinity) threats.push({ e, t }); }
     for (const b of game.projectiles) {
-      if (now - info.get(b).since < REACTION_DELAY) continue;
+      if (now - info.get(b).since < skill.reaction) continue;
       for (let s = 0; s <= .6; s += .02) {
         const bx = b.x + b.vx * s, by = b.y + b.vy * s;
         if (Math.abs(bx - p.x) < 14 + b.r && by > p.y - 58 && by < p.y + 4) { threats.push({ e: null, t: s, b }); break; }
@@ -130,8 +226,9 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
     let danger = Infinity;
     if (threats.length) {
       const { e, t } = threats[0]; danger = t;
-      if (e && flinches(e) && canHit(e) && ready && t > .05) o.attack = true; // a landed light hit cancels the swing
-      else if (t <= DASH_LEAD && dashReady) { o.dash = true; o.urgent = true; o.dir = e ? dirAway(e) : -Math.sign(threats[0].b.vx); } // i-frames; the dash direction is picked by the core on the same frame
+      if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; } // a greedy extra swing instead of dodging
+      else if (e && flinches(e) && canHit(e) && ready && t > .05) o.attack = true; // a landed light hit cancels the swing
+      else if (t <= DASH_LEAD + jit(e || threats[0].b) && dashReady) { o.dash = true; o.urgent = true; o.dir = e ? (e.heavy ? flip(e, dirAway(e)) : dirAway(e)) : -Math.sign(threats[0].b.vx); } // i-frames; the dash direction is picked by the core on the same frame
       else if (t <= .25 && !dashReady && canCast && (e ? e.heavy && Math.hypot(e.x - p.x, e.y - p.y) < 205 : true)) o.magic = true; // Eclipse cancels a heavy and clears projectiles
       else { // walk out of the area if the time allows
         let best = null;
@@ -139,7 +236,7 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
           const x = Math.max(25, Math.min(W - 30, p.x + s * d));
           if (d / speed < t - .05 && safeSpot(x) && threats.every(th => th.e ? hitTime(th.e, x, p.y) === Infinity : Math.abs(th.b.x + th.b.vx * th.t - x) > 14 + th.b.r)) { best = { dir: s }; break; }
         }
-        if (best) { o.dir = best.dir; o.urgent = true; }
+        if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
       }
     }
     // --- offence and navigation when nothing is about to land
@@ -150,7 +247,7 @@ export function createBot({ decide: decider } = {}) { // `decide` overrides the 
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
       const swing = known.find(e => canHit(e) && !blockedBy(e) && hitTime(e, p.x, p.y) === Infinity);
-      if (swing && ready) o.attack = true;
+      if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
       else if (target && Math.abs(target.x - p.x) < 620) {
         const dx = target.x - p.x, face = Math.sign(dx) || p.dir, spacing = Math.max(50, p.reach - 22);
         if (blockedBy(target) && !target.heavy) { // frontal block: Eclipse breaks the guard, otherwise walk or dash round to its back

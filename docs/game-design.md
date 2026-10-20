@@ -6,7 +6,7 @@ Maintained by the Game Designer. This document records the rules and numbers **a
 
 ### Approved direction (#43)
 
-Approved by the user in #43. This is the direction new proposals must serve. Its vertical slice (#44, approved) is being built in steps: step 1, the blood loop, is the Castle Descent mode below; weapon frenzy effects and debt (step 2) and the Gate Warden, blood pools, save, second rest point and castle records (step 3) are still planned. The normal run and Endless Trial described in the rest of this document are unchanged.
+Approved by the user in #43. This is the direction new proposals must serve. Its vertical slice (#44, approved) is being built in steps: step 1, the blood loop, is the Castle Descent mode below; the Gate Warden, blood pools and the second rest point (#50 PR 4) are built; weapon frenzy effects and debt (step 2) and save and castle records (step 3) are still planned. The normal run and Endless Trial described in the rest of this document are unchanged.
 
 - **Core fun**: blood is your only resource: the fuller you are, the stronger you get, and the closer you are to losing control.
 - **Pillars**
@@ -168,7 +168,7 @@ Approved in #22; explicitly **not balanced**: it exists for combination testing 
 
 ## Castle Descent (slice step 1)
 
-Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). Constants are exported from `core.js`. Not balanced: every number is a playtest starting point.
+Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45; the Gate Warden from #50 PR 4). Constants are exported from `core.js`. Not balanced: every number is a playtest starting point.
 
 - **The Vigil** (state `rest`, `rest` {weapons} event): the run starts here. It resets the player to base stats, blood to 100, no relics, no frenzy. Pick a weapon with `setWeapon(id)`, then `descend()` loads floor 1. No opening build pick.
 - **Weapons** (`WEAPONS`, base stats only; frenzy effects are step 2): they replace `damage`, `attackSpeed` (attack cooldown multiplier) and `reach`.
@@ -219,9 +219,48 @@ Third title-screen mode, `Game(onEvent, seed, 'castle')` (#44, step 1 in #45). C
 
 - **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
 - **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).
-- **Slice end**: clearing floor 9 (after its pick) sets state `sliceEnd` and emits `sliceEnd`; a placeholder for floor 10 and the Gate Warden (step 3). Castle runs write no records yet.
+- **Floor 10, the Gate Warden** (#50 section 5, `loadFloor(10)`): floor 9's pick leads to floor 10, the Warden alone in the boss arena layout (width 2800, two ledges, Gate art, HUD "Floor 10 / 10"). `loadFloor(50)` (the Fallen King) is a stub that returns false. See "The Gate Warden" below.
+- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then sets state `sliceEnd` and emits `sliceEnd`. Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
 
-Differences from #44: the slice ends after floor 9, not at the Warden on floor 10 (step 3); frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
+### The Gate Warden (floor 10)
+
+A `boss`-type enemy flagged `warden: true` (the King's body and art, none of its moves). 520 HP, speed 75, body 72 x 112 (blocks walking; a dash passes, a double jump clears it), super armor gauge `superArmor` / `superArmorMax` 100. It never flinches, takes poise damage or loses a tell to a hit; its engagement range is 900 px, and it only starts a tell with the hero within 320 px left / 560 px right of it (nothing attacks from off screen). Lights deal 16, heavies a flat `HEAVY_DAMAGE` 100.
+
+| Move | Kind | Tell | Hit area | Recovery |
+| --- | --- | --- | --- | --- |
+| `sweep` | light | 0.6 | 146 in front, body height | 0.6 |
+| `backhand` | light, follow-up | 0.5 | 10-120 behind | 0.6 |
+| `slam` | heavy | 0.95 | 112 x 123 in front, plus a 100-damage floor wave (240 px/s, 3 s; jump it; phase 2 also sends one behind it); two blood pools | 1.2 (phase 2: 0.9) |
+| `charge` | heavy | 0.9 | 305 px path, body height, 0.5 s travel (dash through or double jump; a single jump peaks at 107 px, under the 112 px body) | 1.0 (phase 2: 0.9) |
+| `seize` | heavy, the Gate Toll | 1.1 | 10-95 in front, 80 tall: the Toll takes a hero inside the box, so a jump must be above 80 px at contact (a late, low jump is caught) | 1.3 (phase 2: 1.0) |
+
+Every heavy glints `GLINT_LEAD` (0.4 s) before contact; a delayed heavy (phase 2: any opening heavy 50%, the seize included; or a habit read) adds 0.4 s of hold before the glint. Heavies keep `heavy` through their recovery. Phase 2 cuts every heavy recovery by `PHASE2_RECOVER_CUT` 0.3 s, never below 0.9 s (the guide's floor: one full Greatsword combo).
+
+- **Strings** (`wardenFollow`, difficulty passes): when a `sweep`, `charge`, `slam` or `seize` ends, a follow-up starts instead of the recovery whenever the rules below name one (both phases; the old phase 1 coin flip is gone), picked from where the hero stands at that moment (visible state only, never input). It turns to face the hero as its tell starts (the backhand keeps its facing), then locks; it is never delayed (one delay per string), heavy follow-ups still glint 0.4 s before contact, and a pick draws at most `MAX_FOLLOWS` follow-ups (phase 1: 2, phase 2: 3), so a string ends with the recovery of its last move. A backhand ends the string. Tells (`FOLLOW_TELL`): charge 0.5, seize 0.75, backhand 0.5, slam 0.7. A `crossed` habit read always ends in the backhand. No follow-up if the hero is off screen.
+  - After a `charge`: the hero behind it within 330 px (dashed or jumped through) draws the **return charge**, back along a new 305 px path, and a return may draw another (up to the cap). A dash through one charge leaves the dash on cooldown (0.85 s) when the next arrives, so the answers alternate: double jump one and dash the next, or stay out of the first path.
+  - After a `sweep` (and a `seize` the hero dodged on the ground): hero behind within 140 -> `backhand`; behind farther -> `charge`; in front within 130 and grounded -> `seize` (after a sweep only); in front within 330 -> `charge`. Walking out of the sweep therefore meets the charge, and standing in close meets the Toll.
+  - After a `slam`: the hero within 330 px on either side -> `charge`. The floor wave pins the hero to a jump; the charge meets the landing.
+  - After a `seize` the hero jumped (airborne at contact) within 200 px -> `slam` (0.7 s): the gauntlet answered by a jump is answered by the slam on the landing. A landed Toll ends the string (its recovery is the hero's way back).
+
+- **Gauge**: normal hits and projectiles change nothing; an Eclipse hit takes `ECLIPSE_CHIP` 25 (`armorChip` {x, y, value, left}). A damaging hit while the hero is in Blood Frenzy breaks it at once in phase 1; in phase 2 it chips `FRENZY_CHIP` 34 instead (also an `armorChip`), so three frenzy hits break it (user decision in the Warden difficulty pass: a frenzy should not delete phase 2). Break (`armorBreak` {x, y}): cancels the move and tell, slides it 140 px away from the hero, stuns 1.8 s with x1.5 damage, then `armorRestore` refills the gauge to 100 and locks it for 2.5 s (no chip, no break), so one frenzy gives about two breaks in phase 1. Damage over time does not count as a hit.
+- **Blood from hitting it**: none while armored, except hits during a heavy's recovery; the break stun pays normally. Kill gives +8 as usual.
+- **Gate Toll** (`seize` contact on a hero inside its box, without invulnerability): the hero loses all blood above 100, or 30 at 100 or less (never more than they have), the Warden's gauge gains the same amount (cap 100), frenzy ends when blood lands at 100, the hero is thrown 120 px back and gets 0.8 s of invulnerability. `toll` {x, y, amount}. A death by toll emits `death` {cause: 'toll'}. A dash's invulnerability avoids it (and is a perfect dodge). The Numb to pain debt variant waits for the weapon frenzies (#44 step 2).
+- **Blood pools**: a slam spawns two pools at Warden x +-200 (+-260 in phase 2, clamped), +14 blood each, 4 s life, at most 2 on the field (the newest). `bloodPool` {x, y, life} on spawn, `poolTaken` {x, y, amount} on pickup (touch while grounded on the floor; frenzy does not halve it). `game.pools` holds {x, y, life, max}.
+- **Habit memory**: for each heavy, the hero's answer at contact is stored (`jumped` airborne, `crossed` behind it, `stood` in the area, `retreated` out of range; for a charge, at the moment it passes the hero). When two of the last three match the next pick follows the read and the memory clears: `crossed` -> sweep (close) or charge, ending with a `backhand`; `jumped` -> slam (close) or a delayed charge; `retreated` -> charge.
+- **Move pool**: close (< 150 px): sweep, slam, seize (phase 2 adds charge); mid (150-330): charge and slam (its floor wave covers the middle), plus seize if the hero walks toward it; far: charge; never the same move twice in a row. Mid-range camping no longer sees only charges, and a dash through a charge is answered by the return charge. Hero in frenzy or above 150 blood within 160 px: seize (in phase 2 a frenzied hero is seized even right after a seize, the one exception to the no-repeat rule: the Toll ends the frenzy and pays the gauge).
+- **Phase 2** at 50% HP: `wardenPhase` {phase: 2, x, y}, a 1.1 s pause (the roar: it ends a break stun, refills the gauge to 100 and locks it through the pause, so a frenzy cannot chip a standing target); every opening heavy (slam, charge, seize) is delayed half the time; strings may run to 3 follow-ups; frenzy hits chip instead of breaking; the slam sends a second floor wave behind it (`warn.wave2`), so standing behind it is no longer safe; charge joins the close pool; heavy recoveries are 0.3 s shorter (floor 0.9 s); pools at +-260.
+- **Fight stats**: `game.fightStats` {gained, taken, time, breaks, frenzies} resets when floor 10 loads (time counts from when the Warden wakes) and goes out once as `fightStats` {won, ...} on the kill or the hero's death.
+- **Bot** (`node tools/bot-run.mjs --seeds 40 --floors 10 --weapon <w> --skill expert|average`; floors starting at 10 begin straight on floor 10 with no relics and 100 blood): it dashes or double jumps charges, jumps seizes and the slam waves, walks out of boxes, takes pools, hits recoveries and the break stun, and closes in to hit in a frenzy. It reads exact hit boxes, so this is a ceiling, not a human estimate. Floor 10 after the reaction-clock fix (a follow-up tell restarts the bot's reaction clock; before it, 172 of 271 follow-ups were answered within one frame), 40 seeds per cell (clear %, deaths by cause, fight blood gained / taken, frenzies per fight); earlier passes were measured with a bot that skipped the reaction time on follow-ups and are superseded:
+
+  | Bot | Greatsword | Twin Blades | Spear |
+  | --- | --- | --- | --- |
+  | expert | 100%, +128 / -3, 0.9 | 100%, +142 / -9, 1.0 | 100%, +134 / -4, 1.0 |
+  | average | 45%, charge 22, +176 / -204, 0.3 | 40%, charge 24, +219 / -216, 0.6 | 53%, charge 17 toll 1 slam 1, +189 / -177, 0.6 |
+
+  Almost every average death is a charge follow-up (the return charge, or the charge after a slam or sweep) arriving while its dash is spent: with 0.3 s of reaction a 0.5 s follow-up leaves too little time to double jump. The expert reacts in 0.18 s and double jumps it, so it does not die, and its phase 1 frenzy breaks decide most fights.
+  In one-life runs from floor 1 (`--run`, 100 seeds): the expert clears 73 of 100, dying only on floors 2-9 (0 Warden deaths in 73 arrivals); the average clears 56 of 100, with 13 Warden deaths in 69 arrivals (all charge follow-ups). #58 run target: average full-run clear at most 5%; it is about 56% now, a gap expected to close with #50 PRs 2-3 (floors 1-9) plus Warden tuning.
+
+Differences from #44: the Warden has the #50 moveset instead of the King's slash, slam and charge, two phases, and the Toll; the weapon frenzies do not exist yet, so "frenzy hits break the armor" uses the shared Blood Frenzy (and only breaks at once in phase 1, see the gauge); frenzy burn also stops during hit-stop; the floor 8-9 bonus elite is always a knight; kills by damage over time give no blood.
 
 ## Playtest verdicts
 

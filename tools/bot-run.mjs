@@ -1,39 +1,44 @@
 // Headless bot runner (#52): plays castle runs from the Vigil for N seeds and reports per-floor results.
-// Usage: node tools/bot-run.mjs [--seeds 20] [--floors 1-3] [--cap 240] [--first 1] [--weapon spear]
+// Usage: node tools/bot-run.mjs [--seeds 20] [--floors 1-3] [--cap 240] [--first 1] [--weapon spear] [--skill expert|average] [--run]
+// --run: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
 import { Game, WEAPONS } from '../core.js';
-import { createBot, resolveModal } from '../bot.js';
+import { createBot, resolveModal, chooseWeapon } from '../bot.js';
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : fallback; };
-const seeds = +arg('seeds', 20), first = +arg('first', 1), cap = +arg('cap', 240), weapon = arg('weapon', '');
-const [lo, hi] = arg('floors', '1-3').split('-').map(Number);
+const seeds = +arg('seeds', 20), first = +arg('first', 1), cap = +arg('cap', 240), weapon = arg('weapon', ''), skill = arg('skill', 'expert'), runMode = process.argv.includes('--run');
+const [lo, hi = lo] = arg('floors', '1-3').split('-').map(Number), start = +arg('start', lo >= 10 ? lo : 1); // floors 10+ start straight on that floor (no relics, 100 blood)
 const rows = new Map(); // floor -> accumulated stats
-const row = f => { if (!rows.has(f)) rows.set(f, { runs: 0, clears: 0, deaths: {}, timeouts: 0, clearTime: 0, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0 }); return rows.get(f); };
+const row = f => { if (!rows.has(f)) rows.set(f, { runs: 0, clears: 0, deaths: {}, timeouts: 0, clearTime: 0, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, fights: 0, fg: 0, ft: 0, fs: 0, fb: 0, ff: 0 }); return rows.get(f); };
 const DT = 1 / 60;
 
-export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep } = {}) {
+export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, startFloor = start, skill: botSkill = skill } = {}) {
   let cur = null, cause = 'light', pending = null, deathCause = '';
   const floors = [];
-  const begin = floor => { cur = { floor, t0: 0, cleared: false, died: '', timeout: false, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, clearTime: 0 }; floors.push(cur); };
+  const begin = floor => { cur = { floor, t0: 0, cleared: false, died: '', timeout: false, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, clearTime: 0, fight: null }; floors.push(cur); };
   const clear = () => { if (!cur.cleared) { cur.cleared = true; cur.clearTime = game.elapsed - cur.t0; } };
   const game = new Game(e => {
     if (e.type === 'stage' && e.mode === 'castle') { if (cur && e.floor === cur.floor + 1) clear(); begin(e.floor); cur.t0 = game.elapsed; }
     else if (e.type === 'upgrade' && e.reason === 'stage' && cur) clear();
     else if (e.type === 'sliceEnd' && cur) clear();
+    else if (e.type === 'fightStats' && cur) { cur.fight = e; if (e.won) clear(); }
     else if (e.type === 'hurt' && cur) cur.taken += e.amount;
     else if (e.type === 'frenzy' && cur) cur.frenzies++;
     else if (e.type === 'swing' && cur && e.move !== 'plunge') { if (pending && pending.set.size === 0) cur.whiffs++; cur.swings++; pending = { t: game.time, set: game.hitSet }; }
-    else if (e.type === 'death') deathCause = cause;
+    else if (e.type === 'death') deathCause = e.cause === 'toll' ? 'toll' : cause;
   }, seed, 'castle');
   const realHurt = game.hurt.bind(game);
   game.hurt = (amount, dir, hazard = false, heavy = false) => { // remember what hit the hero, for the death cause
     cause = hazard ? 'trap' : heavy ? `heavy:${[...game.enemies].filter(e => e.heavyKind).sort((a, b) => Math.abs(a.x - game.player.x) - Math.abs(b.x - game.player.x))[0]?.heavyKind ?? '?'}` : 'light';
     realHurt(amount, dir, hazard, heavy);
   };
-  const bot = createBot();
+  const bot = createBot({ skill: botSkill, seed });
   game.start();
   if (weapon in WEAPONS) { game.setWeapon(weapon); game.descend(); }
+  else if (startFloor > 1) { game.setWeapon(chooseWeapon(game)); game.descend(); }
+  if (startFloor > 1) game.loadFloor(startFloor);
   let blood = game.player.blood;
   while (game.state !== 'dead' && game.state !== 'sliceEnd' && game.state !== 'won') {
+    if (game.state === 'rest' && game.vigil === 2) { clear(); break; } // the Warden is down: the second Vigil ends the measured run
     if (game.state === 'rest' || game.state === 'upgrade') { if (!resolveModal(game)) break; blood = game.player.blood; continue; }
     if (game.state !== 'playing') break;
     if (cur && game.floor > maxFloor) break;
@@ -47,13 +52,28 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep } =
   return { game, floors, bot };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === `file://${process.argv[1]}` && runMode) {
+  const t0 = Date.now(), floorsDied = {}, causes = {}, times = [];
+  let clears = 0, timeouts = 0;
+  for (let s = 0; s < seeds; s++) {
+    const { floors, game } = playRun(first + s, { startFloor: 1, maxFloor: 10 });
+    const last = floors.at(-1);
+    if (last.floor === 10 && last.cleared) { clears++; times.push(game.elapsed); }
+    else if (last.timeout) timeouts++;
+    else { floorsDied[last.floor] = (floorsDied[last.floor] || 0) + 1; causes[last.died || '?'] = (causes[last.died || '?'] || 0) + 1; }
+  }
+  const fmt = o => Object.entries(o).sort((a, b) => +a[0] - +b[0] || b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ') || '-';
+  console.log(`run weapon=${weapon || 'bot pick'} skill=${skill} seeds=${first}..${first + seeds - 1}: clear ${clears}/${seeds} (${(100 * clears / seeds).toFixed(0)}%), timeouts ${timeouts}, mean clear time ${times.length ? (times.reduce((a, b) => a + b) / times.length).toFixed(0) : '-'}s, wall ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  console.log(`  deaths by floor: ${fmt(floorsDied)}`);
+  console.log(`  deaths by cause: ${fmt(causes)}`);
+} else if (import.meta.url === `file://${process.argv[1]}`) {
   for (let s = 0; s < seeds; s++) {
     const { floors } = playRun(first + s);
     for (const f of floors) {
       if (f.floor < lo || f.floor > hi) continue;
       const r = row(f.floor);
       r.runs++; r.gained += f.gained; r.taken += f.taken; r.frenzies += f.frenzies; r.swings += f.swings; r.whiffs += f.whiffs;
+      if (f.fight) { r.fights++; r.fg += f.fight.gained; r.ft += f.fight.taken; r.fs += f.fight.time; r.fb += f.fight.breaks; r.ff += f.fight.frenzies; }
       if (f.cleared) { r.clears++; r.clearTime += f.clearTime; } else if (f.died) r.deaths[f.died] = (r.deaths[f.died] || 0) + 1; else if (f.timeout) r.timeouts++;
     }
   }
@@ -64,4 +84,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const n = Math.max(1, r.runs);
     console.log(`${String(f).padStart(5)} | ${String(r.runs).padStart(4)} | ${(100 * r.clears / n).toFixed(0).padStart(5)}% | ${deaths} | ${r.timeouts} | ${r.clears ? (r.clearTime / r.clears).toFixed(1) : '-'} | +${(r.gained / n).toFixed(0)} / -${(r.taken / n).toFixed(0)} | ${r.frenzies} | ${r.whiffs}/${r.swings}`);
   }
+  for (const [f, r] of rows) if (r.fights) console.log(`floor ${f} fightStats (avg of ${r.fights}): gained ${(r.fg / r.fights).toFixed(0)} | taken ${(r.ft / r.fights).toFixed(0)} | ratio ${(r.fg / Math.max(1, r.ft)).toFixed(2)} | time ${(r.fs / r.fights).toFixed(1)}s | breaks ${(r.fb / r.fights).toFixed(1)} | frenzies ${(r.ff / r.fights).toFixed(1)}`);
 }
