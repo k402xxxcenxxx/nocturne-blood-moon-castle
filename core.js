@@ -102,7 +102,7 @@ const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, ma
 const SWEEP_RANGE = 80, SWEEP_TELL = .5, SWEEP_RECOVER = .5, SWEEP_BACKOFF = 120; // spearman: a hero inside 80 draws the low sweep; without a token it backs off to 120
 const SWOOP_TELL = .45, BAT_RING = 150, BAT_DART = .25, BAT_DART_FROM = 30, BAT_DART_STOP = 10; // bat: hovers 150-170 px out without a token; a swoop from farther than 30 px first darts to 10 px in 0.25 s (tell 0.7 s)
 const CROSS_TIME = .5, CROSS_FROM = 140, CROSS_BEHIND = 60, CROSS_CD = 4, CROSS_CHANCE = .7; // bat crossover: flies over a hero who faces it within 140 and lands 60 px behind
-const STRING_RANGE = 150, STRING_TELL = .5, STRING_RECOVER = .8, OVERHEAD_STEP = 40; // knight string: after the slash lands, a hero within 150 in front draws the overhead, one behind draws the turnswipe
+const STRING_RANGE = 150, STRING_TELL = .5, STRING_RECOVER = .8, OVERHEAD_STEP = 40, OVERHEAD_STEP_T = .15; // knight string: after the slash lands, a hero within 150 in front draws the overhead, one behind draws the turnswipe
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
@@ -1061,6 +1061,7 @@ export class Game {
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
       if (e.dartT > 0 && !e.heavy) { const prevX = e.x; e.dartT = Math.max(0, e.dartT - dt); e.x = e.dartTo + (e.dartFrom - e.dartTo) * e.dartT / BAT_DART; e.vx = (e.x - prevX) / dt; } // bat dart: to a point fixed at tell start
+      if (e.move === 'overhead' && e.tell < OVERHEAD_STEP_T) { const px = e.x; e.x = e.warn.from + (e.warn.to - e.warn.from) * (1 - Math.max(0, e.tell) / OVERHEAD_STEP_T); if (this.collideEnemy(e, px, dt)) e.warn.to = e.x; e.vx = (e.x - px) / dt; } // the overhead steps during the last 0.15 s of its tell, so contact lands STRING_TELL after the branch
       if (e.heavyKind === 'dive') e.y += (e.warn.hover - e.y) * Math.min(1, dt * 8); // the bat rises and hovers during the tell
       if (castle && e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { // release cue: the same 0.4 s before contact for every heavy, delayed or not
         e.glinted = true; e.glint = .1;
@@ -1179,6 +1180,10 @@ export class Game {
     e.x = e.cutFrom + (w.to - e.cutFrom) * (1 - e.cutT / .15); e.vx = (e.x - prevX) / dt;
     if (this.collideEnemy(e, prevX, dt)) e.cutT = 0; // a barricade stops the lunge
     if (e.cutT > 0) return;
+    this.cutLand(e);
+  }
+  cutLand(e) {
+    const w = e.warn, d = e.dir;
     const reach = w.reach || 100, h = w.h || 70; // the skeleton's lunge; the knight's overhead brings its own box and string recovery
     if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * reach), y: e.y - h, w: reach - 10, h })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
     Object.assign(e, { warn: null, move: '', vx: 0, recover: w.recover || .6, punishable: true, cd: Math.max(e.cd, 1.2) });
@@ -1188,7 +1193,7 @@ export class Game {
   // (a hit still damages it, but the flight is not interrupted). It then turns round and may swoop with a normal tell. The arc is the cue (`enemyCross` names the end point).
   startCross(e, distance) {
     const p = this.player;
-    if (e.crossCd > 0 || distance <= 30 || distance > CROSS_FROM || (e.x - p.x) * p.dir <= 0 || Math.abs(e.y - (p.y - 25)) > 70) return false;
+    if (e.crossCd > 0 || distance <= 30 || distance > CROSS_FROM || (e.x - p.x) * p.dir <= 0 || Math.abs(e.y - (p.y - 25)) > 70 || e.y < p.y - 50) return false; // not while still fluttering up after a swoop: the arc would start from that height
     if (this.rand() >= CROSS_CHANCE) { e.crossCd = 1; return false; } // its own retry timer
     const side = Math.sign(e.x - p.x) || 1, to = clamp(p.x - side * CROSS_BEHIND, 30, this.worldWidth - 40);
     Object.assign(e, { crossT: CROSS_TIME, crossCd: CROSS_CD, crossFrom: e.x, crossY: e.y, crossSide: -side, dir: -side });
@@ -1603,7 +1608,8 @@ export class Game {
     if (e.heavy) { this.heavyStrike(e); return; }
     e.punishable = false;
     const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1), castle = this.mode === 'castle';
-    if (castle && (e.move === 'stepcut' || e.move === 'overhead')) { // the tell is over: lunge (the knight's overhead: step forward) along the stored path
+    if (castle && e.move === 'overhead') { this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'overhead' }); this.cutLand(e); return; } // its step already happened inside the tell
+    if (castle && e.move === 'stepcut') { // the tell is over: lunge along the stored path
       Object.assign(e, { cutT: .15, cutFrom: e.x });
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: e.move });
       return;
@@ -1655,7 +1661,7 @@ export class Game {
     if (next) {
       const to = clamp(e.x + d * OVERHEAD_STEP, 30, this.worldWidth - 40), at = (from, far, h) => ({ x: Math.min(to + d * from, to + d * far), y: e.y - h, w: Math.abs(far - from), h });
       const warn = next === 'overhead'
-        ? { kind: next, to, line: { x1: e.x, y1: e.y - 50, x2: to, y2: e.y - 50 }, box: at(10, 120, 110), reach: 120, h: 110, recover: STRING_RECOVER }
+        ? { kind: next, from: e.x, to, line: { x1: e.x, y1: e.y - 50, x2: to, y2: e.y - 50 }, box: at(10, 120, 110), reach: 120, h: 110, recover: STRING_RECOVER }
         : { kind: next, box: { x: Math.min(e.x - d * 10, e.x - d * 110), y: e.y - 100, w: 100, h: 100 } };
       Object.assign(e, { tell: STRING_TELL, move: next, warn, punishable: false, vx: 0 });
       this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'knight', kind: next, dir: d, follow: true });

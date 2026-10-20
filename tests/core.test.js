@@ -4317,3 +4317,22 @@ test('castle kits (PR 2): the normal run and Endless keep the old spearman, bat 
     assert.ok(!('crossT' in sp) && !g.enemies.some(e => e.move === 'overhead' || e.move === 'turnswipe'), `${mode}: no new fields or moves`);
   }
 });
+
+test('castle knight: the overhead lands STRING_TELL after its branch, the step inside the tell', () => {
+  const { game, player, e, events } = lightFoe('knight', 50, 7);
+  player.blood = 150; player.dir = 1; player.invulnerable = 99;
+  let t = 0; while (e.move !== 'overhead' && t < 2) { advance(game, 1 / 120); t += 1 / 120; }
+  assert.equal(e.move, 'overhead');
+  const x0 = e.x, to = e.warn.to; let n = 0;
+  while (swings(events, 'overhead').length === 0 && n < 200) { advance(game, 1 / 120); n++; }
+  assert.ok(Math.abs(n / 120 - .5) < .02, `contact ${n / 120} s after the branch`);
+  assert.ok(Math.abs(e.x - to) < 1 && Math.abs(to - x0) > 39);
+});
+
+test('castle bat: a crossover never starts from the post-swoop flutter height', () => {
+  const { game, player, events } = castle(42, 4);
+  game.enemies = []; player.x = 600; player.dir = 1;
+  game.spawnEnemy('bat', 750, 0); const b = game.enemies.at(-1);
+  Object.assign(b, { dir: -1, cd: 0, heavyCd: 99, hp: 9999, maxHp: 9999, y: player.y - 34 });
+  for (let i = 0; i < 260; i++) { player.invulnerable = 0; player.blood = 100; game.update(1 / 120, {}); assert.ok(player.y - b.y <= 100, `bat ${player.y - b.y} above the feet at ${i / 120} s`); }
+});
