@@ -177,13 +177,21 @@ function handleEvent(e) {
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
     case 'wardenPhase': audio.play('wardenRoar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); burst(e.x, e.y, '#ff7a52', 24, 200, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: '#ff5a44', r: 200 }); break; // phase 2: ember seams light up (art.js)
-    case 'kingPhase': audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase); toast(t('boss.castlePhase' + e.phase)); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); break; // placeholder roar; art and audio polish come from their roles
-    case 'tithe': // the King draws an untaken pool in along a blood stream (art/audio polish later); taking the pool breaks it
-      if (e.state === 'start') { effects.push({ type: 'toll', x: e.x, y: e.y - 6, x2: e.toX, y2: e.toY, n: 6, life: e.duration, max: e.duration }); audio.play('tollDrain', .5); }
-      else if (e.state === 'end') { audio.play('armorForm', .7); flashNumber({ x: e.toX ?? e.x, y: e.y - 60, amount: `+${Math.round(e.amount)}` }, '#aab4c8'); burst(e.x, e.y - 6, '#a93959', 8, 110); }
-      else burst(e.x, e.y - 6, '#a93959', 6, 100);
+    case 'kingPhase': audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase); toast(t('boss.castlePhase' + e.phase)); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
+      effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: e.phase >= 3 ? '#ff3a4c' : '#ffb04a', r: 220 }); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .7, max: .7, color: e.phase >= 3 ? '#ff5a6a' : '#ffd08a', r: 130 }); if (e.phase >= 3 && settings.shake) whiteFlash = .06; break; // phase 2: the crown ignites; phase 3: the Blood Moon look (art.js) and a red tint over the arena (render)
+    case 'tithe': // the King drinks an untaken pool along a blood ribbon that follows him (drawEffects); taking the pool cuts it
+      if (e.state === 'start') { effects.push({ type: 'tithe', x: e.x, y: e.y - 6, x2: e.toX, y2: e.toY, king: game.enemies.find(o => o.king && o.hp > 0), life: e.duration, max: e.duration }); audio.play('tollDrain', .5); }
+      else if (e.state === 'end') {
+        audio.play('armorForm', .7); flashNumber({ x: e.toX ?? e.x, y: e.toY - 40, amount: `+${Math.round(e.amount)}` }, '#aab4c8'); burst(e.x, e.y - 6, '#a93959', 8, 110);
+        effects.push({ type: 'ringIn', x: e.toX, y: e.toY, life: .45, max: .45, color: '#d8445a', r: 90 }); effects.push({ type: 'ringIn', x: e.toX, y: e.toY, life: .5, max: .5, color: '#aab4c8', r: 110, delay: .15 }); // he swallows the blood, then the shell tightens
+      } else { for (const fx of effects) if (fx.type === 'tithe' && Math.abs(fx.x - e.x) < 2) { fx.cut = true; fx.life = Math.min(fx.life, .25); fx.max = .25; } burst(e.x, e.y - 6, '#a93959', 6, 100); }
       break;
-    case 'descent': audio.play('bossSlam', 1); rumble(10, .35); burst(e.x, e.y, '#9a8c77', 22, 240); effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.r, life: .5, max: .5 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 4, life: .45, max: .45, color: '#e75c50', r: e.r }); break; // the landing shockwave (r 120)
+    case 'descent': { // the landing shockwave (r 120): dust rings, cracks along the ledge both ways, rubble and the red radius ring
+      audio.play('bossSlam', 1); rumble(10, .35); burst(e.x, e.y, '#9a8c77', 22, 240); burst(e.x, e.y, '#e4dccb', 8, 170, 0, 3);
+      effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.r, life: .5, max: .5 }); effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.r * .6, life: .35, max: .35 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 4, life: .45, max: .45, color: e.hit ? '#ffffff' : '#e75c50', r: e.r });
+      for (const sd of [-1, 1]) { const pts = []; for (let i = 0, x = e.x, y = e.y; i < 5; i++) { pts.push([x, y]); x += sd * (18 + Math.random() * 14); y = e.y - 1 + (Math.random() * 5 | 0); } effects.push({ type: 'crack', pts, life: 1, max: 1 }); }
+      break;
+    }
     case 'toll': // the Gate Toll: blood torn out of the hero (placeholder feedback; dedicated art and audio come from their roles)
       audio.play('hurt'); audio.play('tollDrain'); damageFlash = .35; rumble(9, .3); hitCount = 0; comboTime = 0; audio.setHeartbeat(false);
       flashNumber({ ...e, amount: t('float.toll', { n: Math.round(e.amount) }) }, '#d8445a'); burst(e.x, e.y, '#a93959', 26, 220);
@@ -195,7 +203,8 @@ function handleEvent(e) {
       { const plates = []; for (let i = 0; i < 16; i++) plates.push({ a: i / 16 * Math.PI * 2 + Math.random() * .4, d: 50 + Math.random() * 70, s: 5 + (Math.random() * 7 | 0), r: Math.random() * 6 }); effects.push({ type: 'shards', x: e.x, y: e.y, radius: 70, shards: plates, life: .7, max: .7, c1: '#aab4c8', c2: '#586070' }); } // the shell bursts into stone plates
       break;
     case 'armorRestore': audio.play('armorForm', .8); burst(e.x, e.y, '#8e99a8', 10, 120); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .45, max: .45, color: '#aab4c8', r: 80 }); break; // the shell closes round the Warden again
-    case 'bloodPool': audio.play('poolSplash', .8); burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
+    case 'bloodPool': audio.play('poolSplash', .8); if (e.tithe && game.enemies.some(o => o.king && o.hp > 0 && o.bossPhase >= 3)) effects.push({ type: 'moonPool', x: e.x, y: e.y, life: .6, max: .6 }); // Blood Moon: a missed heavy sheds a pool, with a red moon rising off it
+     burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
     case 'poolTaken': audio.play('poolGulp', 1); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; break; // metric for the #44 playtest; the result screen shows a compact line
     case 'enemyHeavy': audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
@@ -213,6 +222,7 @@ function handleEvent(e) {
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', sweep: 'bossSlash', backhand: 'bossSlash', turnslash: 'bossSlash', slam: 'bossSlam', descent: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
       if (e.enemy === 'warden') { wardenSwing(e); break; }
+      if (e.enemy === 'king') { kingSwing(e); break; }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
@@ -538,6 +548,7 @@ function drawShot(s) { // sized to the hit radius s.r
   }
   ctx.restore();
 }
+const TITHE_DASH = [10, 14], NO_DASH = [];
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
@@ -588,6 +599,16 @@ function drawEffects(dt) {
       for (let i = 0; i < fx.n; i++) { const q = clamp(progress * 1.5 - i * .045, 0, 1); if (q <= 0 || q >= 1) continue; const m = 1 - q, bx = Math.round(m * m * fx.x + 2 * m * q * cxm + q * q * fx.x2), by = Math.round(m * m * fx.y + 2 * m * q * cym + q * q * fx.y2);
         ctx.fillStyle = '#5a1630'; ctx.fillRect(bx - 5, by - 5, 10, 10); ctx.fillStyle = '#e0584c'; ctx.fillRect(bx - 4, by - 4, 8, 8); ctx.fillStyle = '#ffd0d6'; ctx.fillRect(bx - 2, by - 2, 3, 3); }
       ctx.restore();
+    } else if (fx.type === 'tithe') { // blood ribbon from the pool to the King's chest, following him; dashes flow toward him and the ribbon fattens as the pool drains. Cut: it fades fast
+      const k = fx.king, tx = k && k.hp > 0 ? k.x : fx.x2, ty = k && k.hp > 0 ? k.y - k.h * .55 : fx.y2, px = Math.round(fx.x), py = Math.round(fx.y), cxm = Math.round((px + tx) / 2), cym = Math.round(Math.min(py, ty) - 90), thick = fx.cut ? 0 : progress;
+      ctx.save(); ctx.globalAlpha = fx.cut ? clamp(fx.life / .25, 0, 1) : Math.min(1, progress * 8); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(cxm, cym, Math.round(tx), Math.round(ty));
+      ctx.strokeStyle = '#2a0b16'; ctx.lineWidth = 8 + 4 * thick; ctx.stroke(); ctx.strokeStyle = '#a93959'; ctx.lineWidth = 5 + 3 * thick; ctx.stroke();
+      if (!fx.cut) { ctx.setLineDash(TITHE_DASH); ctx.lineDashOffset = settings.shake ? -worldTime * 130 : 0; ctx.strokeStyle = '#ffd0d6'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash(NO_DASH); }
+      ctx.globalAlpha = fx.cut ? 0 : .5 + (settings.shake ? .3 * Math.sin(worldTime * 16) : 0); ctx.strokeStyle = '#e0584c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(Math.round(tx), Math.round(ty), 14 + 10 * thick, 18 + 12 * thick, 0, 0, 7); ctx.stroke(); // the gulp point on his chest
+      ctx.restore();
+    } else if (fx.type === 'moonPool') { // Blood Moon: a red moon rises off the spot where the missed heavy shed its pool
+      const my = Math.round(fx.y - 30 - 50 * progress); ctx.save(); ctx.globalAlpha = Math.sin(progress * Math.PI) * .85; ctx.fillStyle = '#7a1428'; ctx.beginPath(); ctx.arc(Math.round(fx.x), my, 16, 0, 7); ctx.fill(); ctx.fillStyle = '#e0566e'; ctx.beginPath(); ctx.arc(Math.round(fx.x) - 2, my - 2, 12, 0, 7); ctx.fill(); ctx.fillStyle = '#ffb4bf'; ctx.fillRect(Math.round(fx.x) - 7, my - 6, 4, 3);
+      ctx.globalAlpha *= .5; ctx.fillStyle = '#c4405c'; ctx.fillRect(Math.round(fx.x) - 1, my + 16, 3, Math.round(fx.y - my - 16)); ctx.restore(); // thin drip back to the pool
     } else if (fx.type === 'ringIn') { // ring closing onto a point: the shell re-forming, or the Warden swallowing the Toll
       const q = clamp((progress - (fx.delay || 0) / fx.max) / (1 - (fx.delay || 0) / fx.max), 0, 1);
       if (q > 0) { ctx.save(); ctx.globalAlpha = Math.sin(q * Math.PI); ctx.strokeStyle = fx.color; ctx.lineWidth = 2 + 4 * q; ctx.beginPath(); ctx.ellipse(Math.round(fx.x), Math.round(fx.y), Math.round(fx.r * (1 - q) + 12), Math.round(fx.r * (1 - q) * 1.3 + 14), 0, 0, 7); ctx.stroke(); ctx.restore(); }
@@ -631,6 +652,18 @@ function wardenSwing(e) { // contact visuals per Warden move; each reads differe
   } else if (e.kind === 'seize') { audio.play('wardenSeize', .9); effects.push({ type: 'grab', x: e.x + d * 52, y: e.y - 40, dir: d, life: .35, max: .35 }); } // two crescents snap shut
   else if (e.kind === 'charge') { rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
 }
+function kingSwing(e) { // contact visuals per King move; the castle King only (the old boss keeps the generic slash)
+  const d = e.dir === -1 ? -1 : 1, fx = e.x + d * 100;
+  if (e.kind === 'slash') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: d, life: .3, max: .3, boss: true, big: true }); rumble(4, .12); }
+  else if (e.kind === 'turnslash') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -d, life: .3, max: .3, boss: true, big: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 40, life: .3, max: .3, color: '#c58bff', r: 70 }); rumble(4, .12); } // the arc behind him plus a spin ring
+  else if (e.kind === 'slam') {
+    rumble(12, .35); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
+    const pts = []; for (let i = 0, x = fx, y = FLOOR; i < 7; i++) { pts.push([x, y]); x += d * (22 + Math.random() * 16); y = FLOOR - 1 + (Math.random() * 6 | 0); }
+    effects.push({ type: 'crack', pts, life: 1.2, max: 1.2 }); burst(fx, FLOOR - 4, '#9a8c77', 18, 240, 0, 3); burst(fx, FLOOR - 4, '#e4dccb', 8, 160);
+  } else if (e.kind === 'charge') { rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
+  else if (e.kind === 'volley') { burst(e.x, e.y, '#ff6a7c', 14, 200); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#ff6a7c', r: 60 }); } // five orbs leave the chest sigil
+  else if (e.kind === 'ritual') { burst(e.x, e.y + 20, '#c58bff', 12, 160); rumble(3, .1); }
+}
 let wardenX = null, wardenStep = 0, wardenRun = false; // footfall shake: one thud per stride of the Warden's own movement (walking 56 px, charging 90 px), only near the hero and with the shake setting on
 function wardenSteps(e) {
   if (wardenX === null || e.stun > 0 || e.pause > 0 || Math.abs(e.x - wardenX) > 60) { wardenX = e.x; return; }
@@ -647,6 +680,7 @@ function render(dt) {
   ctx.fillStyle = '#0b0d15'; ctx.fillRect(0, 0, viewWidth, 540);
   if (shakeTime > 0 && settings.shake) ctx.translate(Math.round((Math.random() - .5) * shakePower * 2), Math.round((Math.random() - .5) * shakePower));
   drawScene(ctx, { camera, width: viewWidth, height: 540, time: worldTime, stage: game.stage, platforms: game.platforms, worldWidth: game.worldWidth });
+  if (!title && game.mode === 'castle') for (const e of game.enemies) if (e.king && e.hp > 0 && e.bossPhase >= 3) { ctx.save(); ctx.globalAlpha = settings.shake ? .85 + .15 * Math.sin(worldTime * 2) : 1; ctx.fillStyle = '#8a102a30'; ctx.fillRect(0, 0, viewWidth, 540); ctx.restore(); break; } // Blood Moon: a red cast over the arena in the King's last phase
   ctx.save(); ctx.translate(-Math.round(camera), 0);
   if (title) {
     drawHero(ctx, { ...p, x: viewWidth * .68, y: FLOOR, invulnerable: 0, vx: 0, dir: 1 }, worldTime);
