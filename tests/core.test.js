@@ -4336,3 +4336,12 @@ test('castle bat: a crossover never starts from the post-swoop flutter height', 
   Object.assign(b, { dir: -1, cd: 0, heavyCd: 99, hp: 9999, maxHp: 9999, y: player.y - 34 });
   for (let i = 0; i < 260; i++) { player.invulnerable = 0; player.blood = 100; game.update(1 / 120, {}); assert.ok(player.y - b.y <= 100, `bat ${player.y - b.y} above the feet at ${i / 120} s`); }
 });
+
+test('castle: the spearman reads an approaching hero harder from floor 5 on; floors 1-4 keep the base read', () => {
+  for (const [floor, chance] of [[4, .45], [5, 1]]) {
+    const { game, player } = castle(42, floor);
+    const spear = enemy(game, player.x + 150, { type: 'spear' });
+    player.vx = 200; // walking toward it
+    assert.equal(game.heavyChance(spear), chance);
+  }
+});

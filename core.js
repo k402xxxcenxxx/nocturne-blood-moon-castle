@@ -84,10 +84,10 @@ const HEAVY = {
   skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .1, reads: { whiff: .8, dashSpent: .5 } },
   bat: { kind: 'dive', tell: .9, recover: 1, base: .5, reads: { airborne: .6, frenzy: .5 } },
   shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
-  spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
+  spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 }, lateReads: { dashSpent: .8, approach: 1 } }, // lateReads: from LATE_READS_FLOOR on
   knight: { kind: 'greatswing', tell: 1, recover: 1.2, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
 };
-export const HEAVY_CD = 3, HEAVY_WHIFF = .4;
+export const HEAVY_CD = 3, HEAVY_WHIFF = .4, LATE_READS_FLOOR = 5; // floors 1-4 (the bat lesson included) keep the base reads
 // Castle combat systems (#50 PR 1). Posture, flinch budget, attack tokens, glint and delayed heavies; all numbers are playtest starting points.
 export const ATTACK_TOKENS = 2, TOKEN_GAP = .3, STARVED = 2; // tokens for the whole field (at most 1 heavy), retake gap, s of denial after which an enemy outranks the rest
 export const STEADY = .5, POISE_REGEN_DELAY = 1.5, POISE_REGEN = .25, STAGGER_STUN = 1.5, RIPOSTE_MUL = 1.5, RIPOSTE_BLOOD = 5, GLINT_LEAD = .4, DELAY_EXTRA = .4;
@@ -1687,7 +1687,7 @@ export class Game {
   heavyChance(e) {
     const p = this.player, h = HEAVY[e.type];
     const seen = { whiff: p.whiff > 0, dashSpent: p.dashCd > 0 && p.dash <= 0, airborne: !p.grounded, frenzy: p.frenzy, cast: p.magicCd > 0, approach: p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100 };
-    return Math.max(h.base, ...Object.entries(h.reads).filter(([k]) => seen[k]).map(([, c]) => c));
+    return Math.max(h.base, ...Object.entries(this.floor >= LATE_READS_FLOOR && h.lateReads || h.reads).filter(([k]) => seen[k]).map(([, c]) => c));
   }
   // Called where a ready enemy would pick an attack: returns true if a heavy wind-up started (the caller skips the light attack).
   startHeavy(e, distance) {
