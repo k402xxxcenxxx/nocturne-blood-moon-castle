@@ -222,7 +222,7 @@ function handleEvent(e) {
       const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
       audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
     }
-    case 'enemyCross': burst(e.x, e.y, '#8a7aa8', 5, 70); break; // bat crossover: placeholder dust at the take-off point (art and audio add the arc and the wing cue)
+    case 'enemyCross': burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
@@ -233,6 +233,14 @@ function handleEvent(e) {
       if (e.kind === 'spear') audio.play('thrust');
       else if (e.boss) { const s = { slash: 'bossSlash', sweep: 'bossSlash', backhand: 'bossSlash', turnslash: 'bossSlash', slam: 'bossSlam', descent: 'bossSlam', charge: 'bossCharge', volley: 'bossVolley', ritual: 'bossBurst' }[e.kind]; if (s) audio.play(s, .9); }
       if (e.enemy === 'warden') { wardenSwing(e); break; }
+      if (!e.heavy && !e.boss) { // castle minion moves with their own contact look
+        const kd = e.kind, L = (type, o) => effects.push({ type, x: e.x, y: e.y, dir: e.dir, life: .3, max: .3, ...o });
+        if (kd === 'sweep') { L('floorSweep', { y: e.y + e.h * .5 - 12, life: .26, max: .26 }); break; }
+        if (kd === 'spear') { L('streak', { life: .22, max: .22 }); break; }
+        if (kd === 'swoop') { L('claw', { life: .24, max: .24 }); break; }
+        if (kd === 'overhead') { L('chop', { x: e.x + e.dir * 40, y: e.y + e.h * .5, life: .39, max: .39, delay: .15 }); rumble(3, .1); break; }
+        if (kd === 'turnswipe') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -e.dir, life: .24, max: .24, boss: false, big: false }); break; }
+      }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
     case 'reaction': {
@@ -586,7 +594,7 @@ function drawShot(s) { // sized to the hit radius s.r
   }
   ctx.restore();
 }
-const TITHE_DASH = [10, 14], NO_DASH = [];
+const TITHE_DASH = [10, 14], NO_DASH = [], CROSS_DASH = [5, 6];
 function drawEffects(dt) {
   for (const fx of effects) {
     const progress = 1 - fx.life / fx.max;
@@ -664,6 +672,25 @@ function drawEffects(dt) {
       ctx.save(); ctx.globalAlpha = fx.life / fx.max; ctx.lineJoin = 'miter';
       for (const [w, c] of [[4, '#ffe97a88'], [1.5, '#fffbd0']]) { ctx.lineWidth = w; ctx.strokeStyle = c; ctx.beginPath(); fx.pts.forEach(([px, py], i) => i ? ctx.lineTo(Math.round(px), Math.round(py)) : ctx.moveTo(Math.round(px), Math.round(py))); ctx.stroke(); }
       ctx.restore();
+    } else if (fx.type === 'crossArc') { // bat crossover: the flight path dashed from take-off to the landing spot over the hero's head, two wing flicks at the start and a bright head riding it (static when motion is reduced)
+      const x0 = Math.round(fx.x), y0 = Math.round(fx.y), x1 = Math.round(fx.toX), cx = Math.round((x0 + x1) / 2), cy = y0 - 90, calm = !settings.shake;
+      ctx.save(); ctx.globalAlpha = (1 - progress) * .85; ctx.lineCap = 'round'; ctx.strokeStyle = '#cdb8ff'; ctx.lineWidth = 2; ctx.setLineDash(CROSS_DASH); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y0); ctx.stroke(); ctx.setLineDash(NO_DASH);
+      if (progress < .45) { const r = 10 + progress * 50; ctx.lineWidth = 3; ctx.strokeStyle = '#e4d8ff'; ctx.globalAlpha = (1 - progress / .45) * .9; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(x0, y0 + 4, r, sd === 1 ? -Math.PI * .45 : Math.PI * 1.05, sd === 1 ? Math.PI * .05 : Math.PI * 1.55); ctx.stroke(); } }
+      if (!calm && progress < 1) { const t = progress, hx = Math.round((1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cx + t * t * x1), hy = Math.round((1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cy + t * t * y0); ctx.globalAlpha = 1 - progress * .6; ctx.fillStyle = '#fff2ff'; ctx.fillRect(hx - 3, hy - 3, 6, 6); }
+      ctx.restore();
+    } else if (fx.type === 'floorSweep') { // spearman sweep: a flat pale crescent skimming the floor in front of it, a tip streak at the end
+      const k = Math.min(1, progress * 2.4); ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = 1 - progress; ctx.lineCap = 'round';
+      ctx.strokeStyle = '#e9dcc8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(10, 0, 92 * k, 9, 0, -Math.PI * .5, Math.PI * .5); ctx.stroke(); // flat half-crescent growing out
+      
+      ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(Math.round(14 + 90 * k), 0); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'streak') { // spear thrust: a thin bright line along the hit area that fades from the base
+      const k = Math.min(1, progress * 3); ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = '#f2ecd8'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Math.round(fx.x + fx.dir * (10 + 90 * progress)), Math.round(fx.y)); ctx.lineTo(Math.round(fx.x + fx.dir * (10 + 184 * k)), Math.round(fx.y)); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'chop') { // knight overhead: a falling crescent in front of the blade, landing after the 0.15 s step
+      const q = (progress * fx.max - fx.delay) / (fx.max - fx.delay); if (q > 0) { ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = Math.sin(Math.min(1, q) * Math.PI) * .95; ctx.lineCap = 'round';
+        ctx.strokeStyle = '#dfe6ee'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(8, -62, 78, -Math.PI * .5, -Math.PI * .5 + Math.min(1, q * 1.4) * Math.PI * .6); ctx.stroke(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore(); }
+    } else if (fx.type === 'claw') { // bat swoop contact: three short rakes
+      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = '#f5d8e4'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(14 + i * 7, -22 + i * 9); ctx.lineTo(34 + i * 7 + progress * 10, 4 + i * 9); ctx.stroke(); } ctx.restore();
     } else drawSlash(fx.x, fx.y, fx.dir, progress, fx.boss, true, null, fx.big);
     fx.life -= dt;
   }
