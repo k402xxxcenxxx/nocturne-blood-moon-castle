@@ -64,13 +64,13 @@ const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this c
 // Castle Descent (mode 'castle', #44): one blood meter replaces HP and MP.
 export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
-export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
+export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 const WARDEN_MOVES = { // tell and recovery in seconds; heavy ones deal a flat HEAVY_DAMAGE and glint GLINT_LEAD before contact
   sweep: { tell: .6, recover: .6 }, backhand: { tell: .5, recover: .6 },
   slam: { tell: .95, recover: 1.2, heavy: true }, charge: { tell: .9, recover: 1, heavy: true }, seize: { tell: 1.1, recover: 1.3, heavy: true },
 };
-// Warden strings: a follow-up starts at the end of a sweep or charge, picked by where the hero stands then; its tell is FOLLOW_TELL (heavies still glint GLINT_LEAD before contact) and it is never delayed.
-const FOLLOW_TELL = { charge: .5, seize: .75, backhand: .5 }, FOLLOW_CHANCE = .5, PHASE2_RECOVER_CUT = .3, MAX_FOLLOWS = 2;
+// Warden strings: a follow-up starts at the end of a sweep, charge, slam or seize, picked by where the hero stands then; its tell is FOLLOW_TELL (heavies still glint GLINT_LEAD before contact), it is never delayed, and a pick draws at most MAX_FOLLOWS[phase] of them.
+const FOLLOW_TELL = { charge: .5, seize: .75, backhand: .5, slam: .7 }, PHASE2_RECOVER_CUT = .3, MAX_FOLLOWS = { 1: 2, 2: 3 };
 const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
@@ -1091,13 +1091,15 @@ export class Game {
   }
   // Blood from a hit on the Warden: none while the gauge is up, except during a heavy's recovery (and the break stun, when the gauge is empty).
   bloodOk(e) { return !e.warden || e.superArmor <= 0 || (e.heavy && e.recover > 0); }
-  // Gauge rules for one landed hit: a hit while the hero is in frenzy breaks it; Eclipse chips 25; normal hits and the post-stun lock change nothing.
+  // Gauge rules for one landed hit: a frenzy hit breaks it in phase 1 and chips FRENZY_CHIP in phase 2 (user decision); Eclipse chips 25; normal hits and the post-stun lock change nothing.
   armorHit(e, eclipse) {
     if (e.superArmor <= 0 || e.armorLock > 0) return;
-    if (this.player.frenzy) { this.armorBreak(e); return; }
-    if (!eclipse) return;
-    e.superArmor = Math.max(0, e.superArmor - ECLIPSE_CHIP);
-    this.emit('armorChip', { x: e.x, y: e.y - e.h * .55, value: ECLIPSE_CHIP, left: e.superArmor });
+    const frenzy = this.player.frenzy;
+    if (frenzy && e.bossPhase < 2) { this.armorBreak(e); return; }
+    if (!eclipse && !frenzy) return;
+    const chip = frenzy ? FRENZY_CHIP : ECLIPSE_CHIP;
+    e.superArmor = Math.max(0, e.superArmor - chip);
+    this.emit('armorChip', { x: e.x, y: e.y - e.h * .55, value: chip, left: e.superArmor });
     if (e.superArmor <= 0) this.armorBreak(e);
   }
   armorBreak(e) {
@@ -1109,7 +1111,7 @@ export class Game {
   }
   wardenPhase(e) {
     this.cancelAttack(e);
-    Object.assign(e, { bossPhase: 2, chain: '', pause: 1.1 });
+    Object.assign(e, { bossPhase: 2, chain: '', pause: 1.1, stun: 0, breakStun: 0, vx: 0, superArmor: ARMOR_MAX, armorLock: 1.1 }); // the roar ends a break stun and restores the gauge, locked through the pause
     this.emit('wardenPhase', { phase: 2, x: e.x, y: e.y - e.h * .5 });
   }
   moveWarden(e, dt) {
@@ -1154,7 +1156,7 @@ export class Game {
       if (read === 'jumped') return close ? { move: 'slam' } : { move: 'charge', delay: true };
       return { move: 'charge' };
     }
-    if ((p.frenzy || p.blood > 150) && distance <= 160 && e.lastMove !== 'seize') return { move: 'seize' };
+    if ((p.frenzy || p.blood > 150) && distance <= 160 && (e.lastMove !== 'seize' || p.frenzy && e.bossPhase >= 2)) return { move: 'seize' }; // phase 2 seizes a frenzied hero again and again
     const approach = p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100;
     const pool = close ? (e.bossPhase >= 2 ? ['sweep', 'slam', 'seize', 'charge'] : ['sweep', 'slam', 'seize']) : distance <= 330 ? (approach ? ['charge', 'slam', 'seize'] : ['charge', 'slam']) : ['charge']; // mid range: the slam's floor wave covers it too
     const list = pool.filter(m => m !== e.lastMove);
@@ -1187,15 +1189,16 @@ export class Game {
     const next = this.wardenFollow(e, move);
     if (next) { e.chain = ''; e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.wardenStart(e, next, false, true); }
   }
-  // Which follow-up (if any) ends a sweep or charge, from where the hero is at that moment (visible state only). A crossed read always ends in the backhand; otherwise phase 2 always follows and phase 1 half the time.
+  // Which follow-up (if any) ends a sweep, charge, slam or seize, from where the hero is at that moment (visible state only); a backhand ends the string. A crossed read always ends in the backhand.
   wardenFollow(e, move) {
     const p = this.player, side = e.x - p.x, behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(side);
-    if ((move !== 'sweep' && move !== 'charge') || (e.follows || 0) >= MAX_FOLLOWS || e.follow && move === 'charge' || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
+    if (move === 'backhand' || (e.follows || 0) >= MAX_FOLLOWS[e.bossPhase] || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
     if (e.chain === 'backhand') return 'backhand'; // a crossed read expects the hero behind it
-    if (!(e.bossPhase >= 2 || this.rand() < FOLLOW_CHANCE)) return '';
-    if (move === 'charge') return behind && gap <= 330 ? 'charge' : ''; // the return charge: a dash through the first one leaves the dash on cooldown
+    if (move === 'slam') return gap <= 330 ? 'charge' : ''; // the floor wave pins the hero to a jump; the charge meets the landing
+    if (move === 'seize' && (e.struck || !p.grounded)) return !e.struck && gap <= 200 ? 'slam' : ''; // a landed Toll ends the string; a jumped gauntlet meets the slam on the landing
+    if (move === 'charge') return behind && gap <= 330 ? 'charge' : ''; // the return charge: a dash through the first one leaves the dash on cooldown; a return may draw another
     if (behind) return gap <= 140 ? 'backhand' : 'charge';
-    return gap <= 130 && p.grounded ? 'seize' : gap <= 330 ? 'charge' : ''; // walked out of the sweep: the gauntlet or the charge follows
+    return gap <= 130 && p.grounded && move === 'sweep' ? 'seize' : gap <= 330 ? 'charge' : ''; // walked out: the gauntlet (after a sweep) or the charge follows
   }
   // How the hero answered a heavy at contact: jumped (airborne), crossed (behind the Warden), stood (in the area) or retreated (out of range).
   noteAnswer(e, answer) { e.habit.push(answer); if (e.habit.length > 3) e.habit.shift(); }
@@ -1234,7 +1237,7 @@ export class Game {
     const p = this.player;
     if (p.invulnerable > 0) { this.perfectDodge(); return; }
     const taken = Math.min(p.blood, p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE);
-    p.blood -= taken; e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken);
+    p.blood -= taken; e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
     p.invulnerable = .8; p.x = clamp(p.x + e.dir * 120, 25, this.worldWidth - 30); this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += taken;
     this.emit('toll', { x: p.x, y: p.y - 30, amount: taken });

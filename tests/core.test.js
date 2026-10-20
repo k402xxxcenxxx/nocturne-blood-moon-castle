@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, WARDEN_FLOOR, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
+import { Game, FLOOR, WARDEN_FLOOR, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3246,6 +3246,24 @@ test('warden gauge: normal hits change nothing, Eclipse chips 25 and four break 
   assert.equal(t2.game.fightStats.breaks, 1);
 });
 
+test('warden gauge, phase 2: a frenzy hit chips FRENZY_CHIP and only breaks at 0; Eclipse still chips 25; the lock still holds', () => {
+  const { game, player, events, b } = warden();
+  b.bossPhase = 2; player.frenzy = true; player.blood = 190;
+  hit(game, b);
+  assert.equal(b.superArmor, ARMOR_MAX - FRENZY_CHIP); assert.ok(!events.some(e => e.type === 'armorBreak'));
+  assert.equal(events.filter(e => e.type === 'armorChip').at(-1).value, FRENZY_CHIP);
+  player.frenzy = false; player.magicCd = 0; game.magic();
+  assert.equal(b.superArmor, ARMOR_MAX - FRENZY_CHIP - 25, 'Eclipse out of frenzy still chips 25');
+  player.frenzy = true; player.blood = 190; hit(game, b);
+  assert.equal(b.superArmor, 7); assert.ok(!events.some(e => e.type === 'armorBreak'));
+  hit(game, b);
+  assert.equal(b.superArmor, 0); assert.equal(events.filter(e => e.type === 'armorBreak').length, 1);
+  advance(game, BREAK_STUN + .2); b.cd = 99; // + the break's hit-stop
+  assert.equal(b.superArmor, ARMOR_MAX); assert.ok(b.armorLock > 0);
+  player.frenzy = true; player.blood = 190; hit(game, b);
+  assert.equal(b.superArmor, ARMOR_MAX, 'no chip while locked');
+});
+
 test('warden break: cancels the move, knocks it 140 px back, stuns 1.8 s at x1.5 damage, then refills and locks for 2.5 s', () => {
   const { game, player, events, b } = warden(1000, 900);
   player.invulnerable = 99; // the Warden may act again between the stun and the lock
@@ -3394,7 +3412,7 @@ test('warden: every attack shows a tell, and heavies glint 0.4 s before contact 
   for (const [move, delay] of [['sweep'], ['backhand'], ['slam'], ['charge'], ['seize'], ['slam', true], ['charge', true]]) {
     const { game, events, b } = warden(1000, 700);
     b.dir = 1; game.wardenStart(b, move, delay);
-    const tell = b.tell;
+    const tell = b.tell, heavy = b.heavy; // a follow-up may start in the contact frame
     assert.ok(tell > 0 && b.warn && b.warn.kind === move, `${move} has a tell and an exposed area`);
     assert.equal(events.some(e => e.type === (b.heavy ? 'enemyHeavy' : 'enemyTell')), true);
     let glintAt = null, swingAt = null;
@@ -3403,7 +3421,7 @@ test('warden: every attack shows a tell, and heavies glint 0.4 s before contact 
       for (const e of events) { if (e.type === 'enemyGlint' && glintAt === null) glintAt = game.time; if (e.type === 'enemySwing' && swingAt === null) swingAt = game.time; }
     }
     assert.ok(swingAt !== null, `${move} strikes`);
-    if (b.heavy || ['slam', 'charge', 'seize'].includes(move)) assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, `${move} glints ${GLINT_LEAD} s before contact`);
+    if (heavy) assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, `${move} glints ${GLINT_LEAD} s before contact`);
     else assert.equal(glintAt, null, `${move} is light: no glint`);
     if (delay) assert.ok(tell > (move === 'slam' ? .95 : .9), 'delayed tell is longer');
   }
@@ -3423,8 +3441,54 @@ test('warden return charge: a hero behind it when a charge ends draws a turned c
   const n = events.length; let glintAt = null, swingAt = null;
   for (let t = 0; t < 1 && swingAt === null; t += 1 / 120) { game.update(1 / 120, {}); for (const e of events.slice(n)) { if (e.type === 'enemyGlint' && glintAt === null) glintAt = game.time; if (e.type === 'enemySwing' && swingAt === null) swingAt = game.time; } }
   assert.ok(glintAt !== null && Math.abs(swingAt - glintAt - GLINT_LEAD) < .02, 'the follow-up glints 0.4 s before contact');
-  advance(game, .6); assert.ok(b.recover > 0, 'one return per string: the second charge ends in its recovery');
-  assert.equal(b.move, '');
+  let charges = 2;
+  for (let t = 0; t < 6 && !(b.recover > 0); t += 1 / 120) { const was = b.tell > 0 && b.move === 'charge'; game.update(1 / 120, {}); if (!was && b.tell > 0 && b.move === 'charge') charges++; }
+  assert.equal(charges, 4, 'phase 2: a return may draw another, up to 3 follow-ups');
+  assert.ok(b.recover > 0 && b.move === '', 'the string ends in the recovery of its last charge');
+});
+
+test('warden strings: a pick draws at most 2 follow-ups in phase 1 and 3 in phase 2', () => {
+  for (const [phase, total] of [[1, 3], [2, 4]]) {
+    const { game, player, b } = warden(1000, 1200); b.bossPhase = phase; player.invulnerable = 99;
+    b.dir = 1; game.wardenStart(b, 'charge');
+    let charges = 1;
+    for (let t = 0; t < 8 && !(b.recover > 0); t += 1 / 120) { const was = b.tell > 0; game.update(1 / 120, {}); player.x = 1200; if (!was && b.tell > 0) charges++; }
+    assert.equal(charges, total, `phase ${phase}`);
+  }
+});
+
+test('warden strings: a slam is followed by the charge, and a jumped seize by the slam', () => {
+  const s = warden(1000, 1250); s.player.invulnerable = 99;
+  s.b.dir = 1; s.game.wardenStart(s.b, 'slam'); s.game.wardenStrike(s.b);
+  assert.ok(s.b.follow && s.b.move === 'charge' && Math.abs(s.b.tell - .5) < 1e-9 && !s.b.delayed);
+  const far = warden(1000, 1400); far.player.invulnerable = 99;
+  far.b.dir = 1; far.game.wardenStart(far.b, 'slam'); far.game.wardenStrike(far.b);
+  assert.ok(!far.b.follow && far.b.recover > 0, 'beyond 330 px: the slam ends in its recovery');
+  const j = warden(1000, 1060); j.b.dir = 1;
+  j.game.wardenStart(j.b, 'seize'); Object.assign(j.player, { y: FLOOR - 100, grounded: false, vy: 0 });
+  j.game.wardenStrike(j.b);
+  assert.ok(!j.events.some(e => e.type === 'toll'), 'cleared the box');
+  assert.ok(j.b.follow && j.b.move === 'slam' && Math.abs(j.b.tell - .7) < 1e-9 && j.b.heavy, 'the slam meets the landing');
+  const d = warden(1000, 920); d.b.dir = 1; d.player.invulnerable = 99; // dashed through the seize: grounded behind it
+  d.game.wardenStart(d.b, 'seize'); d.game.wardenStrike(d.b);
+  assert.ok(d.b.follow && d.b.move === 'backhand', 'behind within 140 px: the backhand');
+  const t = warden(1000, 1060); t.b.dir = 1; t.player.blood = 150;
+  t.game.wardenStart(t.b, 'seize'); t.game.wardenStrike(t.b);
+  assert.ok(t.events.some(e => e.type === 'toll') && !t.b.follow && t.b.recover > 0, 'a landed Toll ends the string');
+});
+
+test('warden phase change: the roar ends a break stun and restores the gauge, locked through the 1.1 s pause; phase 2 seizes a frenzied hero again', () => {
+  const { game, player, b } = warden(1000, 940);
+  player.frenzy = true; player.blood = 190; hit(game, b); // phase 1: the frenzy hit breaks
+  assert.ok(b.stun > 0 && b.superArmor === 0);
+  hit(game, b, 250);
+  assert.equal(b.bossPhase, 2); assert.equal(b.stun, 0); assert.equal(b.breakStun, 0);
+  assert.equal(b.superArmor, ARMOR_MAX); assert.ok(Math.abs(b.armorLock - 1.1) < 1e-9);
+  hit(game, b); assert.equal(b.superArmor, ARMOR_MAX, 'no chip during the roar');
+  b.lastMove = 'seize'; b.habit = [];
+  assert.equal(game.wardenPick(b, 100).move, 'seize', 'phase 2 repeats the seize against a frenzied hero');
+  player.frenzy = false; player.blood = 160;
+  assert.notEqual(game.wardenPick(b, 100).move, 'seize', 'otherwise never twice in a row');
 });
 
 test('warden sweep string: the follow-up depends on where the hero stands when the sweep ends', () => {
@@ -3439,11 +3503,11 @@ test('warden sweep string: the follow-up depends on where the hero stands when t
 });
 
 test('warden phase 2: the slam sends a second wave behind it and heavy recoveries are 0.3 s shorter (never under 0.9 s)', () => {
-  const { game, b } = wardenP2(1000, 1300);
+  const { game, b } = wardenP2(1000, 1400); // beyond 330 px: no charge follows the slam
   b.dir = 1; game.wardenStart(b, 'slam'); game.wardenStrike(b);
   assert.deepEqual(game.projectiles.filter(q => q.ground).map(q => Math.sign(q.vx)).sort(), [-1, 1]);
   assert.ok(Math.abs(b.recover - .9) < 1e-9, 'slam 1.2 - 0.3');
-  const one = warden(1000, 1300); one.b.dir = 1; one.game.wardenStart(one.b, 'slam'); one.game.wardenStrike(one.b);
+  const one = warden(1000, 1400); one.b.dir = 1; one.game.wardenStart(one.b, 'slam'); one.game.wardenStrike(one.b);
   assert.equal(one.game.projectiles.filter(q => q.ground).length, 1, 'phase 1: one wave, forward');
   assert.ok(Math.abs(one.b.recover - 1.2) < 1e-9);
   const c = wardenP2(1000, 1500); c.b.dir = 1; c.game.wardenStart(c.b, 'charge'); c.game.wardenStrike(c.b); advance(c.game, .51); // hero ahead of the path end: no return charge
