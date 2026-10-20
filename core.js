@@ -85,7 +85,7 @@ const HEAVY = {
   bat: { kind: 'dive', tell: .9, recover: 1, base: .15, reads: { airborne: .6, frenzy: .5 } },
   shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 } },
-  knight: { kind: 'greatswing', tell: 1, recover: 1.1, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
+  knight: { kind: 'greatswing', tell: 1, recover: 1.2, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
 };
 export const HEAVY_CD = 3, HEAVY_WHIFF = .4;
 // Castle combat systems (#50 PR 1). Posture, flinch budget, attack tokens, glint and delayed heavies; all numbers are playtest starting points.
@@ -93,13 +93,17 @@ export const ATTACK_TOKENS = 2, TOKEN_GAP = .3, STARVED = 2; // tokens for the w
 export const STEADY = .5, POISE_REGEN_DELAY = 1.5, POISE_REGEN = .25, STAGGER_STUN = 1.5, RIPOSTE_MUL = 1.5, RIPOSTE_BLOOD = 5, GLINT_LEAD = .4, DELAY_EXTRA = .4;
 export const SCREEN_LEFT = 320, SCREEN_RIGHT = 560; // a tell may only start within this many px left / right of the hero
 const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40 };
-const LIGHT_RECOVER = { skeleton: .45, shield: .6 }; // castle light-attack recovery (standing still, punishable); other types join with their kits
+const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5 }; // castle light-attack recovery (standing still, punishable); the priest and mage join with their kits
 const LIGHT_CD = { skeleton: 1 }; // castle light-attack cooldown overrides (s); others keep the stage-based cooldown
 const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
-const TRIGGER = { bat: 30, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
+const TRIGGER = { bat: 50, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
 const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35 }; // castle re-face delay outside attacks
+// Castle kits of the spearman, bat and knight (#50 PR 2). Seconds and px; playtest starting points.
+const SWEEP_RANGE = 80, SWEEP_TELL = .5, SWEEP_RECOVER = .5, SWEEP_BACKOFF = 120; // spearman: a hero inside 80 draws the low sweep; without a token it backs off to 120
+const CROSS_TIME = .5, CROSS_FROM = 140, CROSS_BEHIND = 60, CROSS_CD = 4, CROSS_CHANCE = .7; // bat crossover: flies over a hero who faces it within 140 and lands 60 px behind
+const STRING_RANGE = 150, STRING_TELL = .5, STRING_RECOVER = .8, OVERHEAD_STEP = 40; // knight string: after the slash lands, a hero within 150 in front draws the overhead, one behind draws the turnswipe
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
-const HOLD_RING = { skeleton: 112, shield: 100 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
+const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7 }; // a heavy is only delayed on floors after the player met it
 const DELAY_CHANCE = floor => floor >= 8 ? .5 : floor >= 5 ? .3 : 0;
 export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 128 } };
@@ -213,7 +217,8 @@ export class Game {
     if (!fight) this.placeHazards(index);
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
-  // Castle floor table (#47): floors 1-3 are fixed mixes (5 enemies), 4-7 roll 6, 8-9 roll 7 and add knights; slot 1 is a bat.
+  // Castle floor table (#50): floors 1-3 are fixed mixes (5 enemies), 4-7 roll 6, 8-9 roll 7. Floor 4 teaches the bat with two bat slots (1 and 3, never a gate guard), floors 5-9 keep slot 1 a bat,
+  // floor 7 previews one knight, floors 8-9 roll knights. The priest and mage slots of floors 5-9 are rolled from known types until #50 PR 3 places them.
   castlePlan() {
     const f = this.floor, fill = (n, t) => Array(n).fill(t);
     if (f <= 3) {
@@ -221,8 +226,10 @@ export class Game {
       for (let i = list.length; --i > 0;) { const j = Math.floor(this.rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       return list;
     }
-    const pool = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'];
-    return Array.from({ length: f >= 8 ? 7 : 6 }, (_, i) => i === 1 ? 'bat' : pool[Math.floor(this.rand() * pool.length)]);
+    const pool = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], bats = f === 4 ? [1, 3] : [1];
+    const plan = Array.from({ length: f >= 8 ? 7 : 6 }, (_, i) => bats.includes(i) ? 'bat' : pool[Math.floor(this.rand() * pool.length)]);
+    if (f === 7) plan[2] = 'knight';
+    return plan;
   }
   loadFloor(n) {
     if (n === KING_FLOOR && this.mode !== 'castle') return false; // the Fallen King's castle fight is a Castle Descent floor
@@ -416,7 +423,9 @@ export class Game {
     const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
-    return this.enemies.at(-1);
+    const e = this.enemies.at(-1);
+    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0 }); // bat crossover timers
+    return e;
   }
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
@@ -728,7 +737,7 @@ export class Game {
     const broken = e.hp > 0 && e.poise <= 0 && !warden;
     // The boss deliberately keeps its warning but still takes a 0.08 s hit stun (see the stun line below).
     const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken && !(eclipse && e.type !== 'boss'); // light hits don't interrupt heavy enemies
-    const hold = castle && !eclipse && (e.recover > 0 || e.steady > 0); // castle: no flinch during recovery or the steady window after a flinch
+    const hold = castle && !eclipse && (e.recover > 0 || e.steady > 0 || e.crossT > 0); // castle: no flinch during recovery or the steady window after a flinch
     if (blocked) {
       if (castle && e.type === 'shield' && !shot) { e.blocks = e.blocks.filter(t => this.time - t < 1).concat(this.time); if (e.blocks.length >= 2) e.counterT = 1; }
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
@@ -901,6 +910,7 @@ export class Game {
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false;
     e.heavy = false; e.heavyKind = ''; e.strikeT = 0; e.stepT = 0; e.cutT = 0; e.glint = 0; e.glinted = false; e.delayed = false;
+    if (e.crossT) e.crossT = 0;
   }
   stagger(e) {
     const cancelled = this.attacking(e) || e.recover > 0, castle = this.mode === 'castle' && e.type !== 'boss';
@@ -917,7 +927,7 @@ export class Game {
   // Does o ask for a token right now: ready, not busy, and the hero is inside its trigger range?
   wantsToken(o) {
     const p = this.player;
-    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
+    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && !(o.crossT > 0) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
       && Math.abs(o.x - p.x) < (this.provoked(o) ? PROVOKED_REACH : TRIGGER[o.type]) && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
   }
   // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
@@ -1014,7 +1024,7 @@ export class Game {
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const castle = this.mode === 'castle' && e.type !== 'boss';
     if (castle) {
-      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt);
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt);
       if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
       if (e.stun <= 0) e.riposte = false;
     }
@@ -1022,12 +1032,14 @@ export class Game {
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt); e.rollT = Math.max(0, e.rollT - dt); e.heavyCd = Math.max(0, e.heavyCd - dt);
     const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
-    if (e.stun > 0) { if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
+    if (e.stun > 0) { if (e.crossT > 0) e.crossT = 0; if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     if (e.strikeT > 0) { this.heavyTravel(e, dt); return; }
     if (e.stepT > 0 || e.cutT > 0) { this.stepcut(e, dt); return; }
+    if (e.crossT > 0) { this.crossover(e, dt); return; }
     if (resting && !(e.tell > 0)) { // recovery: stands still, facing locked, open to punishing hits
       e.vx = 0;
       if (e.type === 'bat' && e.heavy) e.y += (FLOOR - e.y) * Math.min(1, dt * 10);
+      else if (e.type === 'bat' && castle) e.y += (Math.min(e.y, p.y - 72) - e.y) * Math.min(1, dt * 6); // a swoop ends in a flutter up, still inside sword height
       if ((e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false });
       return;
     }
@@ -1059,9 +1071,12 @@ export class Game {
     const tellBefore = e.tell;
     if (this.mode === 'castle' && e.type !== 'boss' && this.startHeavy(e, distance)) e.vx = 0;
     else if (e.type === 'bat') {
-      e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
-      e.vx = e.dir * e.speed; e.x += e.vx * dt;
-      if (distance < 30 && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .36; e.cd = 1.3; }
+      if (castle && this.startCross(e, distance)) e.vx = 0; // the bat flies over the hero (no hitbox, no token)
+      else {
+        e.y += ((p.y - 34 + Math.sin(this.time * 4 + e.phase) * 15) - e.y) * dt * 1.6;
+        e.vx = e.dir * e.speed; e.x += e.vx * dt;
+        if (distance < (castle ? 50 : 30) && Math.abs(e.y - (p.y - 25)) < 40 && e.cd <= 0 && this.canWindUp(e)) { e.tell = castle ? .45 : .36; e.cd = 1.3; }
+      }
     } else if (e.type === 'mage') {
       if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
@@ -1078,18 +1093,30 @@ export class Game {
       else { e.vx = e.pause <= 0 && e.recover <= 0 && distance > 95 ? e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'spear') {
       if (e.turn > 0) e.vx = 0; // recovery after the thrust
-      else if (distance <= 193 && Math.abs(p.y - e.y) < 64 && e.cd <= 0 && this.canWindUp(e)) {
+      else if (castle && distance <= SWEEP_RANGE && Math.abs(p.y - e.y) < 64) { // a hero inside the tip: the low sweep, or a step back to 120 while no token is free
+        if (e.cd <= 0 && this.canWindUp(e)) {
+          const d = e.dir, box = { x: Math.min(e.x + d * 10, e.x + d * 100), y: e.y - 30, w: 90, h: 30 };
+          Object.assign(e, { tell: SWEEP_TELL, move: 'sweep', cd: Math.max(1.2, 2.2 - this.stage * .12), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
+        } else { e.backoff = true; e.vx = -face * e.speed * 1.2; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
+      } else if (distance <= 193 && Math.abs(p.y - e.y) < 64 && e.cd <= 0 && this.canWindUp(e)) {
         e.tell = .64; e.cd = Math.max(1.2, 2.2 - this.stage * .12); e.vx = 0;
         const x0 = e.x + e.dir * 10, x1 = e.x + e.dir * 194;
         e.thrustBox = { x: Math.min(x0, x1), y: e.y - 54, w: 184, h: 54 };
-      } else { e.vx = distance > 145 ? e.dir * e.speed : distance < 80 ? -e.dir * e.speed * .8 : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
+        if (castle) e.warn = { kind: 'thrust', box: e.thrustBox };
+      } else {
+        if (e.backoff && distance >= SWEEP_BACKOFF) e.backoff = false;
+        e.vx = e.backoff ? -face * e.speed * 1.2 : distance > 145 ? e.dir * e.speed : distance < 80 ? -e.dir * e.speed * .8 : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
+      }
     } else if (e.turn > 0 || e.reface > 0) {
       e.vx = 0; // shield bearer recovering from a bash or about to turn: holds its old facing, leaving its back open
     } else if (castle && this.startMove(e, distance)) {
       e.vx = 0; // skeleton stepcut / shield counter started
     } else {
       const near = distance < (this.provoked(e) ? PROVOKED_REACH : e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && this.ready(e);
-      if (near && this.canWindUp(e)) { e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = (castle && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.stage * .12); }
+      if (near && this.canWindUp(e)) {
+        e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = (castle && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.stage * .12);
+        if (castle && e.type === 'knight') e.warn = { kind: 'slash', box: { x: Math.min(e.x + e.dir * 10, e.x + e.dir * 90), y: e.y - 100, w: 80, h: 100 } };
+      }
       else if (castle && HOLD_RING[e.type] && (near || !this.ready(e) || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
         const lo = HOLD_RING[e.type];
         e.vx = distance < lo ? -face * e.speed * .6 : distance > lo + 20 ? e.dir * e.speed : 0;
@@ -1142,9 +1169,30 @@ export class Game {
     e.x = e.cutFrom + (w.to - e.cutFrom) * (1 - e.cutT / .15); e.vx = (e.x - prevX) / dt;
     if (this.collideEnemy(e, prevX, dt)) e.cutT = 0; // a barricade stops the lunge
     if (e.cutT > 0) return;
-    if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * 100), y: e.y - 70, w: 90, h: 70 })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
-    Object.assign(e, { warn: null, move: '', vx: 0, recover: .6, punishable: true, cd: Math.max(e.cd, 1.2) });
+    const reach = w.reach || 100, h = w.h || 70; // the skeleton's lunge; the knight's overhead brings its own box and string recovery
+    if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * reach), y: e.y - h, w: reach - 10, h })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: w.recover || .6, punishable: true, cd: Math.max(e.cd, 1.2) });
     e.action++;
+  }
+  // Bat `crossover` (read: the hero faces the bat within 140): 0.5 s over the hero's head to 60 px behind them. Not an attack: no hitbox, no tell, no token, so no hyper armor either
+  // (a hit still damages it, but the flight is not interrupted). It then turns round and may swoop with a normal tell. The arc is the cue (`enemyCross` names the end point).
+  startCross(e, distance) {
+    const p = this.player;
+    if (e.crossCd > 0 || distance <= 30 || distance > CROSS_FROM || (e.x - p.x) * p.dir <= 0 || Math.abs(e.y - (p.y - 25)) > 70) return false;
+    if (this.rand() >= CROSS_CHANCE) { e.crossCd = 1; return false; } // its own retry timer
+    const side = Math.sign(e.x - p.x) || 1, to = clamp(p.x - side * CROSS_BEHIND, 30, this.worldWidth - 40);
+    Object.assign(e, { crossT: CROSS_TIME, crossCd: CROSS_CD, crossFrom: e.x, crossY: e.y, crossSide: -side, dir: -side });
+    this.emit('enemyCross', { x: e.x, y: e.y - e.h * .5, toX: to, dir: -side, enemy: 'bat', duration: CROSS_TIME });
+    return true;
+  }
+  crossover(e, dt) {
+    const p = this.player, prevX = e.x;
+    e.crossT = Math.max(0, e.crossT - dt);
+    const k = 1 - e.crossT / CROSS_TIME;
+    e.x = e.crossFrom + (clamp(p.x + e.crossSide * CROSS_BEHIND, 30, this.worldWidth - 40) - e.crossFrom) * k; // the end point follows the hero, always on the far side of them
+    e.y = e.crossY - 45 * Math.sin(Math.PI * k); e.vx = (e.x - prevX) / dt;
+    if (e.crossT > 0) return;
+    Object.assign(e, { dir: -e.crossSide, reface: 0, vx: 0, cd: Math.max(e.cd, .5) });
   }
   // --- The Gate Warden (#50 section 5): a boss with a super armor gauge, a Gate Toll and blood pools. It reuses the boss body (type 'boss', warden: true) but none of the King's moves. ---
   spawnWarden(x) {
@@ -1545,9 +1593,9 @@ export class Game {
     if (e.heavy) { this.heavyStrike(e); return; }
     e.punishable = false;
     const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1), castle = this.mode === 'castle';
-    if (castle && e.move === 'stepcut') { // the tell is over: lunge along the stored path
+    if (castle && (e.move === 'stepcut' || e.move === 'overhead')) { // the tell is over: lunge (the knight's overhead: step forward) along the stored path
       Object.assign(e, { cutT: .15, cutFrom: e.x });
-      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'stepcut' });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: e.move });
       return;
     }
     if (castle && e.move === 'counter') {
@@ -1561,6 +1609,7 @@ export class Game {
       e.action++;
       return;
     }
+    if (castle && e.type === 'knight') { this.knightStrike(e, dmg); return; }
     if (e.blessRadius) {
       const targets = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= e.blessRadius);
       for (const o of targets) o.blessed = 5;
@@ -1572,17 +1621,43 @@ export class Game {
       const base = Math.atan2(p.y - 30 - (e.y - e.h * .6), p.x - e.x);
       this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base) * 250, vy: Math.sin(base) * 250, r: 7, life: 4, damage: dmg });
     } else if (e.type === 'spear') {
-      const b = e.thrustBox; e.turn = .72; e.thrustBox = null;
-      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'spear' });
+      const b = e.thrustBox, sweep = e.move === 'sweep'; e.turn = sweep ? SWEEP_RECOVER : .72; e.thrustBox = null;
+      if (castle) { e.warn = null; e.move = ''; }
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: sweep ? 'sweep' : 'spear' });
       if (b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir);
+      if (castle && sweep) { e.recover = SWEEP_RECOVER; e.punishable = true; e.action++; return; }
     } else {
       const range = e.type === 'bat' ? 55 : e.type === 'shield' ? 70 : 82;
       if (e.type === 'shield') e.turn = .6;
-      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, ...(castle && e.type === 'bat' ? { kind: 'swoop' } : {}) });
       if (Math.abs(p.x - e.x) < range && (e.type !== 'shield' || (p.x - e.x) * e.dir >= 0) && Math.abs(p.y - e.y) < (e.type === 'bat' ? 58 : 77)) this.hurt(dmg, e.dir);
     }
     if (castle && LIGHT_RECOVER[e.type]) { e.recover = LIGHT_RECOVER[e.type]; e.punishable = true; } // the attack ends in a punishable recovery
     e.action++;
+  }
+  // Knight `slash` and its string (castle). After the slash lands or misses, the hero's position at that moment (visible state) picks the next hit: in front within 150 -> `overhead`
+  // (0.5 s tell, steps 40 forward, box 10-120 x 110), behind within 150 (dashed through) -> `turnswipe` (own pose, 0.5 s tell, box 10-110 behind), else the string ends. The string holds one token.
+  knightStrike(e, dmg) {
+    const w = e.warn, d = e.dir, turn = e.move === 'turnswipe';
+    this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: d, boss: false, kind: turn ? 'turnswipe' : 'slash', area: w });
+    if (w && this.heavyHits(e, w.box)) this.hurt(dmg, turn ? -d : d);
+    const next = !turn && this.state === 'playing' ? this.knightBranch(e) : '';
+    if (next) {
+      const to = clamp(e.x + d * OVERHEAD_STEP, 30, this.worldWidth - 40), at = (from, far, h) => ({ x: Math.min(to + d * from, to + d * far), y: e.y - h, w: Math.abs(far - from), h });
+      const warn = next === 'overhead'
+        ? { kind: next, to, line: { x1: e.x, y1: e.y - 50, x2: to, y2: e.y - 50 }, box: at(10, 120, 110), reach: 120, h: 110, recover: STRING_RECOVER }
+        : { kind: next, box: { x: Math.min(e.x - d * 10, e.x - d * 110), y: e.y - 100, w: 100, h: 100 } };
+      Object.assign(e, { tell: STRING_TELL, move: next, warn, punishable: false, vx: 0 });
+      this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'knight', kind: next, dir: d, follow: true });
+      return;
+    }
+    Object.assign(e, { warn: null, move: '', recover: turn ? STRING_RECOVER : LIGHT_RECOVER.knight, punishable: true });
+    e.action++;
+  }
+  knightBranch(e) {
+    const p = this.player, dx = p.x - e.x;
+    if (Math.abs(dx) > STRING_RANGE || Math.abs(p.y - e.y) >= 82) return '';
+    return dx * e.dir > 0 ? 'overhead' : 'turnswipe';
   }
   // --- Castle heavy attacks (#47) ---
   punishing(e) { return this.mode === 'castle' && e.punishable && e.recover > 0; } // a hit on an enemy recovering from an attack
@@ -1603,7 +1678,7 @@ export class Game {
     const h = HEAVY[e.type], p = this.player;
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.rollT > 0 || e.turn > 0 || e.reface > 0 || e.heavy) return false;
     const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
-    const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
+    const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= 160 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82 }[h.kind];
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
     if (this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
     const box = (from, to, height) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - height, w: to - from, h: height });

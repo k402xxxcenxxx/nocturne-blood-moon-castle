@@ -4097,3 +4097,207 @@ test('king kill: the burn freezes and the debt is not paid in the window; the sl
   advance(game, 1.0);
   assert.equal(game.state, 'sliceEnd'); assert.ok(events.some(e => e.type === 'sliceEnd' && e.king === 'won'));
 });
+
+// ---- Castle kits, PR 2 (#50): spearman, bat and knight, and the floor table without priest and mage ----
+const swings = (events, kind) => events.filter(ev => ev.type === 'enemySwing' && (kind === undefined || ev.kind === kind));
+const tellsOf = (events, kind) => events.filter(ev => (ev.type === 'enemyTell' || ev.type === 'enemyHeavy') && ev.kind === kind);
+
+test('castle floor table (PR 2): bats from floor 4, one knight on floor 7, no priest or mage yet, floors 1-3 unchanged', () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const game = new Game(() => {}, seed, 'castle'), types = floor => { game.floor = floor; return game.castlePlan(); };
+    for (const floor of [1, 2, 3]) assert.ok(types(floor).every(t => t === 'skeleton' || t === 'shield' || t === 'spear'), `floor ${floor}: no bat or knight`);
+    const four = types(4);
+    assert.equal(four.length, 6); assert.deepEqual(four.map((t, i) => t === 'bat' ? i : -1).filter(i => i >= 0), [1, 3], 'two bats, both outside the two gate guards (the last two slots)');
+    for (const floor of [5, 6]) { const plan = types(floor); assert.equal(plan.filter(t => t === 'bat').length, 1); assert.equal(plan[1], 'bat'); assert.ok(!plan.includes('knight'), `no knight on floor ${floor}`); }
+    const seven = types(7); assert.equal(seven.filter(t => t === 'knight').length, 1, 'knight preview'); assert.equal(seven[1], 'bat');
+    for (const floor of [8, 9]) assert.equal(types(floor).length, 7);
+    for (let floor = 1; floor <= 9; floor++) assert.ok(!types(floor).some(t => t === 'priest' || t === 'mage'), `floor ${floor}: priest and mage wait for PR 3`);
+  }
+  const g = new Game(() => {}, 5, 'castle'); g.loadFloor(4);
+  assert.equal(g.enemies.filter(e => e.type === 'bat').length, 2, 'both floor-4 bats spawn (a bat in a guard slot would become a skeleton)');
+  const n = new Game(() => {}, 5, 'normal'); n.loadStage(0); assert.ok(n.enemies.every(e => e.type === 'skeleton' || e.type === 'bat'), 'normal mode rolls its own types');
+});
+
+test('castle spearman: a hero inside the tip draws the low sweep (0.5 s tell, 30 px tall, jumpable, punishable recovery); outside it the thrust is unchanged', () => {
+  const { game, player, e, events } = lightFoe('spear', 60);
+  player.blood = 150; advance(game, .02);
+  assert.equal(e.move, 'sweep'); assert.ok(e.tell > .45 && e.token === 'light' && !e.heavy);
+  assert.equal(e.warn.box.h, 30); assert.equal(tellsOf(events, 'sweep').length, 1);
+  const box = { ...e.warn.box }; player.x -= 20; advance(game, .2); assert.deepEqual(e.warn.box, box, 'the area is fixed at tell start');
+  player.x += 20; game.damageEnemy(e, 5, 1, false, false, false, 10); assert.ok(e.tell > 0 && e.stun === 0, 'hyper armor from tell start');
+  advance(game, .4);
+  assert.ok(swings(events, 'sweep').length === 1 && player.blood < 150, 'a hero who stays is swept');
+  assert.ok(e.recover > 0 && e.recover <= .5 && e.punishable && e.token === 'light', 'short punishable recovery that holds the token');
+  // jumping clears the 30 px box
+  const j = lightFoe('spear', 60); j.player.blood = 150; advance(j.game, .1); j.game.jump();
+  advance(j.game, .5); assert.equal(swings(j.events, 'sweep').length, 1); assert.equal(j.player.blood, 150, 'jumped the sweep');
+  // from outside 80 the spearman thrusts (0.64 s, 54 px tall), never sweeps
+  const t = lightFoe('spear', 150); advance(t.game, .02);
+  assert.ok(t.e.tell > .6 && t.e.warn.kind === 'thrust' && t.e.warn.box.h === 54 && !t.e.move, 'thrust from the tip');
+});
+
+test('castle spearman: with no token free a hero inside the tip makes it back off to 120 instead of sweeping; its lunge never starts inside the sweep range', () => {
+  const { game, player, e } = lightFoe('spear', 60);
+  const a = enemy(game, player.x + 300); const b = enemy(game, player.x + 330);
+  Object.assign(a, { token: 'light', tell: 9, cd: 1e9 }); Object.assign(b, { token: 'light', tell: 9, cd: 1e9 }); // both tokens taken
+  advance(game, .02); assert.equal(e.tell, 0, 'no token, no sweep');
+  advance(game, 1); assert.ok(e.x - player.x >= 118 && e.tell === 0, `backed off to ${e.x - player.x}`);
+  const l = heavyFoe('spear', 60); advance(l.game, .02); assert.notEqual(l.e.warn?.kind, 'lunge', 'inside 80 the sweep, not the lunge');
+  const m = heavyFoe('spear', 150); advance(m.game, .02); assert.equal(m.e.warn.kind, 'lunge');
+});
+
+test('castle bat: swoop has a 0.45 s tell with hyper armor, then flutters up for a 0.5 s recovery that a sword can still hit', () => {
+  const { game, player, e, events } = lightFoe('bat', 20);
+  e.y = player.y - 30; player.blood = 150; player.dir = 1;
+  advance(game, .02);
+  assert.ok(e.tell > .4 && e.token === 'light' && tellsOf(events, 'swoop').length === 1, 'tell');
+  game.damageEnemy(e, 3, 1, false, false, false, 3); assert.ok(e.tell > 0 && e.stun === 0, 'hyper armor');
+  advance(game, .5);
+  assert.equal(swings(events).length, 1); assert.ok(e.recover > 0 && e.punishable);
+  advance(game, .3);
+  const y0 = e.y; assert.ok(y0 <= player.y - 30, `flutters up (${player.y - y0})`);
+  player.x = e.x - 40; player.dir = 1; player.combo = 1; player.move = ''; game.hitSet = new Set(); const hp = e.hp; game.hitTargets();
+  assert.ok(e.hp < hp, 'a sword still reaches it in recovery');
+  const n = new Game(() => {}, 3, 'normal'); n.state = 'playing'; n.enemies = []; const nb = enemy(n, n.player.x + 20, { type: 'bat' }); nb.y = n.player.y - 25; nb.cd = 0; n.update(1 / 120, {});
+  assert.ok(Math.abs(nb.tell - .36) < .02, 'normal mode keeps the 0.36 s swoop');
+});
+
+test('castle bat: crossover flies over a hero who faces it within 140, ends behind them, takes no token and shows its end point', () => {
+  const setup = (dir = 1, gap = 110) => { const c = castle(42, 4); c.game.rand = () => .3; c.player.dir = dir; const e = enemy(c.game, c.player.x + dir * gap, { type: 'bat' }); e.y = c.player.y - 40; e.dir = -dir; e.cd = 0; return { ...c, e }; };
+  const { game, player, e, events } = setup();
+  const side = Math.sign(e.x - player.x);
+  advance(game, .02);
+  assert.ok(e.crossT > 0 && e.token === '' && !game.attacking(e), 'a move, not an attack: no token, no tell');
+  const cue = events.find(ev => ev.type === 'enemyCross'); assert.ok(cue && Math.sign(cue.toX - player.x) === -side && cue.duration === .5, 'the cue names the far side');
+  game.damageEnemy(e, 2, -1, false, false, false, 5); assert.ok(e.crossT > 0 && e.stun === 0, 'a hit does not interrupt the flight');
+  advance(game, .55);
+  assert.equal(Math.sign(e.x - player.x), -side, 'behind the hero'); assert.ok(Math.abs(e.x - player.x) < 90 && e.crossT === 0 && e.dir === side, 'close, turned round');
+  assert.ok(game.tokens.length <= 1);
+  // not facing it, too far, or on cooldown: no crossover
+  const away = setup(1, 110); away.player.dir = -1; advance(away.game, .1); assert.equal(away.e.crossT, 0, 'only against a hero who faces it');
+  const far = setup(1, 200); advance(far.game, .02); assert.equal(far.e.crossT, 0, 'beyond 140');
+  assert.ok(e.crossCd > 3, 'cooldown');
+  // normal mode has no crossover
+  const n = new Game(() => {}, 3, 'normal'); n.state = 'playing'; n.enemies = []; n.player.dir = 1; const nb = enemy(n, n.player.x + 110, { type: 'bat' }); n.rand = () => .3; advance(n, .3); assert.ok(!nb.crossT);
+});
+
+test('castle bat: a crossed bat may swoop from behind, with a normal tell', () => {
+  const { game, player, e, events } = castle(42, 4);
+  game.rand = () => .3; player.dir = 1; player.invulnerable = 9;
+  const b = enemy(game, player.x + 110, { type: 'bat' }); b.y = player.y - 30; b.dir = -1; b.cd = 0;
+  advance(game, 1.2);
+  assert.ok(events.some(ev => ev.type === 'enemyCross') && tellsOf(events, 'swoop').length >= 1, 'swoop after the crossover');
+  const cross = events.findIndex(ev => ev.type === 'enemyCross'), tell = events.findIndex(ev => ev.type === 'enemyTell' && ev.kind === 'swoop');
+  assert.ok(tell > cross); assert.ok(Math.sign(b.x - player.x) !== 0);
+});
+
+test('castle knight: slash tell 0.6 s with a fixed box; hero in front within 150 draws the overhead (0.5 s tell, steps 40, box 10-120 x 110)', () => {
+  const { game, player, e, events } = lightFoe('knight', 50, 7);
+  player.blood = 150; player.dir = 1; advance(game, .02);
+  assert.ok(e.tell > .55 && e.warn.kind === 'slash' && e.warn.box.h === 100 && e.token === 'light');
+  const slashBox = { ...e.warn.box }; player.x -= 10; advance(game, .2); assert.deepEqual(e.warn.box, slashBox);
+  player.x += 10; game.damageEnemy(e, 5, 1, false, false, false, 10); assert.ok(e.stun === 0 && e.tell > 0, 'hyper armor');
+  advance(game, .42);
+  assert.equal(e.move, 'overhead'); assert.ok(e.tell > .45 && e.tell <= .5, `branch tell ${e.tell}`); assert.equal(e.warn.box.h, 110);
+  assert.equal(tellsOf(events, 'overhead').length, 1);
+  const x0 = e.x, to = e.warn.to; assert.ok(Math.abs(Math.abs(to - x0) - 40) < 1e-6 && to > x0 === (e.dir > 0));
+  player.invulnerable = 0; player.blood = 150; advance(game, .75);
+  assert.ok(Math.abs(e.x - to) < 1, 'stepped 40 px forward'); assert.equal(swings(events, 'overhead').length, 1);
+  assert.ok(e.recover > .5 && e.recover <= .8 && e.punishable && e.token === 'light', 'string recovery 0.8 s, same token all through');
+  assert.equal(holders(game).length, 1);
+});
+
+test('castle knight: the branch is picked at slash contact from where the hero stands (behind: turnswipe, far: the string ends)', () => {
+  const at = (dx, y = 0) => { const c = lightFoe('knight', 50, 7); c.player.dir = 1; c.player.invulnerable = 99; advance(c.game, .55); c.player.x = c.e.x + dx; c.player.y = FLOOR - y; advance(c.game, .1); return c; };
+  const behind = at(70);
+  assert.equal(behind.e.move, 'turnswipe'); assert.ok(behind.e.tell > .4 && behind.e.tell <= .5);
+  const box = behind.e.warn.box; assert.ok((box.x + box.w / 2 - behind.e.x) * behind.e.dir < 0, 'the swipe box is behind the knight'); assert.notEqual(behind.e.warn.kind, 'overhead');
+  const boxFixed = { ...box }; behind.player.x = behind.e.x - 60; advance(behind.game, .2); assert.deepEqual(behind.e.warn.box, boxFixed, 'a hero who walks round does not re-aim it');
+  behind.player.invulnerable = 0; behind.player.blood = 150; behind.player.x = behind.e.x + 60; advance(behind.game, .4);
+  assert.ok(swings(behind.events, 'turnswipe').length === 1 && behind.player.blood < 150, 'a hero who stays behind is hit');
+  assert.ok(behind.e.recover > 0 && behind.e.recover <= .8);
+  const far2 = lightFoe('knight', 50, 7); far2.player.invulnerable = 99; advance(far2.game, .55); far2.player.x = far2.e.x - 400; advance(far2.game, .1);
+  assert.ok(far2.e.move === '' && far2.e.recover > 0 && far2.e.recover <= .5 && far2.e.punishable, 'no follow-up: plain slash recovery 0.5 s');
+  assert.equal(far2.events.filter(ev => ev.type === 'enemyTell' && ev.follow).length, 0);
+  const high = at(-60, 120); assert.equal(high.e.move, '', 'a hero on another level ends the string');
+});
+
+test('castle knight: greatswing recovers for 1.2 s and its posture is 140; a posture break ends a string and frees the token', () => {
+  const { game, player, e } = heavyFoe('knight', 60, 42); assert.equal(e.maxPoise, 140);
+  player.blood = 150; advance(game, .02); assert.equal(e.warn.kind, 'greatswing');
+  advance(game, 1.05); assert.ok(e.recover > 1 && e.recover <= 1.2 && e.punishable);
+  const s = lightFoe('knight', 50, 7); s.player.invulnerable = 99; advance(s.game, .62); assert.equal(s.e.move, 'overhead');
+  s.game.damageEnemy(s.e, 1, 1, false, false, false, 1e4); s.game.freeze = 0;
+  assert.ok(s.e.stun > 0 && s.e.tell === 0 && s.e.move === '' && s.e.warn === null, 'break cancels the follow-up');
+  advance(s.game, .02); assert.equal(s.e.token, '');
+});
+
+test('castle kits: every new light move waits at least 0.45 s between its tell and its contact; heavies glint exactly 0.4 s before', () => {
+  const probe = (type, floor, gapPx, setup, kind) => {
+    const c = lightFoe(type, gapPx, floor); c.player.invulnerable = 99; c.player.dir = 1; setup?.(c);
+    let tellAt = null, hitAt = null;
+    for (let i = 0; i < 120 * 3 && hitAt === null; i++) {
+      c.game.update(1 / 120, {});
+      if (tellAt === null && tellsOf(c.events, kind).length) tellAt = c.game.time;
+      if (hitAt === null && swings(c.events, kind === 'thrust' ? 'spear' : kind).length) hitAt = c.game.time;
+    }
+    return { tell: hitAt - tellAt, ok: tellAt !== null && hitAt !== null };
+  };
+  for (const [type, floor, px, kind, setup] of [['spear', 3, 150, 'thrust'], ['spear', 3, 60, 'sweep'], ['knight', 7, 50, 'slash'], ['knight', 7, 50, 'overhead'], ['bat', 4, 20, 'swoop', c => { c.e.y = c.player.y - 30; }]]) {
+    const r = probe(type, floor, px, setup, kind);
+    assert.ok(r.ok && r.tell >= .45 - 1 / 120, `${type} ${kind}: ${r.tell}`);
+  }
+  const turn = lightFoe('knight', 50, 7); turn.player.invulnerable = 99; advance(turn.game, .55); turn.player.x = turn.e.x + 70; advance(turn.game, .1);
+  assert.ok(turn.e.move === 'turnswipe' && turn.e.tell > .39, 'turnswipe tell is 0.5 s');
+  for (const [type, floor, px, kind] of [['spear', 5, 150, 'lunge'], ['bat', 4, 100, 'dive'], ['knight', 7, 60, 'greatswing']]) {
+    const c = heavyFoe(type, px, 42); c.game.floor = floor; c.player.invulnerable = 99; if (type === 'bat') c.e.y = FLOOR - 95;
+    let glintAt = null, hitAt = null;
+    for (let i = 0; i < 120 * 3 && hitAt === null; i++) {
+      c.game.update(1 / 120, {});
+      if (glintAt === null && c.events.some(ev => ev.type === 'enemyGlint')) glintAt = c.game.time;
+      if (hitAt === null && swings(c.events).some(ev => ev.heavy)) hitAt = c.game.time;
+    }
+    assert.ok(glintAt !== null && hitAt !== null && Math.abs(hitAt - glintAt - .4) <= 1 / 120 + 1e-9, `${kind}: glint ${hitAt - glintAt} before contact`);
+  }
+});
+
+test('castle delayed variants (PR 2): dive after floor 4, lunge after floor 5, greatswing after floor 7; never on floors 1-4', () => {
+  const tellOf = (floor, type, gapPx) => {
+    const c = castle(42, floor); c.game.rand = () => 0;
+    const e = enemy(c.game, c.player.x + gapPx, { type }); e.cd = 0; e.dir = -1; if (type === 'bat') e.y = FLOOR - 95;
+    advance(c.game, .02); return e;
+  };
+  for (const floor of [1, 2, 3, 4]) for (const [type, px] of [['spear', 150], ['bat', 100], ['knight', 60]]) { const e = tellOf(floor, type, px); assert.ok(!e.delayed && e.tell < 1.05, `${type} floor ${floor}`); }
+  assert.ok(tellOf(5, 'bat', 100).delayed, 'a dive met on floor 4 may be delayed from floor 5');
+  assert.ok(!tellOf(5, 'spear', 150).delayed && tellOf(6, 'spear', 150).delayed);
+  assert.ok(!tellOf(7, 'knight', 60).delayed, 'the knight is previewed on floor 7: no delayed greatswing there');
+  assert.ok(tellOf(8, 'knight', 60).delayed && tellOf(8, 'knight', 60).tell > 1.3);
+});
+
+test('castle kits (PR 2): tokens, hyper armor and the on-screen rule hold for the new moves', () => {
+  const { game, player, events } = castle(42, 7);
+  game.enemies = []; game.rand = (r => () => { r = (r * 16807) % 2147483647; return r / 2147483647; })(11);
+  player.invulnerable = 1e9; player.blood = 200;
+  for (const [type, dx] of [['knight', 50], ['spear', 100], ['bat', 40], ['bat', -50], ['spear', -80], ['knight', -120]]) { const e = enemy(game, player.x + dx, { type, hp: 1e6 }); e.cd = 0; e.maxPoise = e.poise = 1e6; if (type === 'bat') e.y = player.y - 30; }
+  let maxHolders = 0, maxHeavy = 0;
+  for (let i = 0; i < 120 * 25; i++) {
+    game.update(1 / 120, {}); player.blood = 200;
+    maxHolders = Math.max(maxHolders, holders(game).length); maxHeavy = Math.max(maxHeavy, holders(game).filter(e => e.token === 'heavy').length);
+    for (const e of game.enemies) if (e.crossT > 0) assert.equal(e.token, '', 'a crossover never holds a token');
+  }
+  assert.ok(maxHolders <= ATTACK_TOKENS && maxHeavy <= 1, `holders ${maxHolders}, heavy ${maxHeavy}`);
+  assert.ok(events.some(ev => ev.type === 'enemyCross') && events.some(ev => ev.type === 'enemyTell' && ev.kind === 'swoop') && events.some(ev => ev.type === 'enemyTell' && ev.kind === 'thrust'), 'the kits ran');
+  const far = castle(42, 7); far.player.x = 900; far.game.rand = () => .99;
+  for (const [type, dx, ok] of [['spear', 561, false], ['spear', 540, true], ['knight', -321, false], ['knight', -300, true]]) { const e = enemy(far.game, far.player.x + dx, { type }); assert.equal(far.game.canWindUp(e), ok, `${type} ${dx}`); }
+});
+
+test('castle kits (PR 2): the normal run and Endless keep the old spearman, bat and knight', () => {
+  for (const mode of ['normal', 'endless']) {
+    const g = new Game(() => {}, 9, mode); g.state = 'playing'; g.enemies = [];
+    const sp = enemy(g, g.player.x + 60, { type: 'spear' }), kn = enemy(g, g.player.x - 70, { type: 'knight' }); sp.cd = 0; kn.cd = 0; sp.dir = -1; kn.dir = 1; g.player.invulnerable = 99;
+    advance(g, .05);
+    assert.ok(sp.move === '' && !sp.warn && sp.thrustBox, `${mode}: the spearman thrusts, no sweep`);
+    advance(g, 3);
+    assert.ok(!('crossT' in sp) && !g.enemies.some(e => e.move === 'overhead' || e.move === 'turnswipe'), `${mode}: no new fields or moves`);
+  }
+});

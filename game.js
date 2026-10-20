@@ -222,6 +222,7 @@ function handleEvent(e) {
       const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
       audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
     }
+    case 'enemyCross': burst(e.x, e.y, '#8a7aa8', 5, 70); break; // bat crossover: placeholder dust at the take-off point (art and audio add the arc and the wing cue)
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
