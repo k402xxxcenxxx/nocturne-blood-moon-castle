@@ -2563,3 +2563,5 @@ b[data-i18n] {
 
 .throne-note { font-size:12px; color:#b9a9a4; margin:10px 0 0; }
 .throne-button { border-color:#9a7b3c; color:#f0d7a0; }
+.modal-buttons .primary-button,.modal-buttons .secondary-button { display:inline-flex; align-items:center; justify-content:center; gap:12px; }
+.modal-buttons .primary-button svg,.modal-buttons .secondary-button svg { flex:none; width:20px; height:20px; margin:0; vertical-align:middle; }
