@@ -518,6 +518,15 @@ const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // 
 let vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
 const FRENZY_TINT = { heavy: { aura: '170,180,200', vig: '90,100,130', ring: '#aab4c8' }, twin: { aura: '110,210,255', vig: '40,110,170', ring: '#b6e8ff' }, spear: { aura: '200,150,255', vig: '110,50,170', ring: '#e6d4ff' } }, FRENZY_RED = { aura: '255,70,70', vig: '160,10,30' }; // per-weapon frenzy colours; red is the shared default
 const auraCache = {}, vigCache = {};
+// ctx.filter is slow in Chromium and ignored by iOS Safari: tint via one reused offscreen buffer + source-atop.
+const heroBuf = document.createElement('canvas'); heroBuf.width = 320; heroBuf.height = 200;
+const heroBufCtx = heroBuf.getContext('2d');
+function drawHeroTinted(hero, color) {
+  const b = heroBufCtx; b.clearRect(0, 0, 320, 200);
+  drawHero(b, { ...hero, x: 160, y: 150 }, worldTime); // shortcut: per-call spread of a small object, fine for <=1 hero + few trails
+  b.globalCompositeOperation = 'source-atop'; b.fillStyle = color; b.fillRect(0, 0, 320, 200); b.globalCompositeOperation = 'source-over';
+  ctx.drawImage(heroBuf, Math.round(hero.x) - 160, Math.round(hero.y ?? 0) - 150);
+}
 function auraGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (!auraCache[w]) { const g = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); g.addColorStop(0, `rgba(${k.aura},.45)`); g.addColorStop(1, `rgba(${k.aura},0)`); auraCache[w] = g; } return auraCache[w]; }
 function vignetteGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (vigW !== viewWidth) { vigW = viewWidth; for (const o in vigCache) delete vigCache[o]; } if (!vigCache[w]) { const g = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); g.addColorStop(0, `rgba(${k.vig},0)`); g.addColorStop(1, `rgba(${k.vig},.55)`); vigCache[w] = g; } return vigCache[w]; }
 function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
@@ -721,7 +730,7 @@ function render(dt) {
       ctx.shadowColor = '#e35d83'; ctx.shadowBlur = 12; ctx.fillStyle = '#c9627f';
       ctx.beginPath(); ctx.moveTo(item.x, y+6); ctx.lineTo(item.x-7, y); ctx.lineTo(item.x-7,y-4); ctx.lineTo(item.x-3,y-7); ctx.lineTo(item.x,y-4); ctx.lineTo(item.x+3,y-7); ctx.lineTo(item.x+7,y-4);ctx.lineTo(item.x+7,y);ctx.fill();ctx.shadowBlur = 0;
     }
-    for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) ctx.filter = 'grayscale(1) brightness(1.7)'; drawHero(ctx, trail, worldTime); ctx.filter = 'none'; trail.life -= dt; }
+    for (const trail of trails) { ctx.globalAlpha = Math.min(1, trail.life * 2.5); if (trail.silver) drawHeroTinted(trail, 'rgba(214,224,236,.85)'); else drawHero(ctx, trail, worldTime); trail.life -= dt; }
     ctx.globalAlpha = 1; trails = trails.filter(t => t.life > 0);
     for (const pool of game.pools) drawPool(ctx, pool, worldTime, !settings.shake);
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
@@ -772,7 +781,7 @@ function render(dt) {
     if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(p.weapon); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
     const numb = frenzyK > 0 && p.weapon === 'heavy', assault = frenzyK > 0 && p.weapon === 'spear' && p.dash > 0;
     if (assault) { ctx.save(); ctx.fillStyle = WEAPON_TINT.spear; for (let i = 0; i < 5; i++) { ctx.globalAlpha = .5 - i * .09; ctx.fillRect(Math.round(p.x - p.dir * (30 + i * 22)) - (p.dir > 0 ? 26 : 0), Math.round(p.y - 42 + i * 3), 26, 3 + (i & 1)); } ctx.restore(); }
-    if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) { if (numb) ctx.filter = 'grayscale(.85) brightness(.9)'; drawHero(ctx, p, worldTime); if (numb) ctx.filter = 'none'; }
+    if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) { if (numb) drawHeroTinted(p, 'rgba(112,118,126,.8)'); else drawHero(ctx, p, worldTime); }
     if (numb && p.debt > 0) { const lethal = p.debt >= BLOOD_HALF; ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const dy = Math.round(p.y - 92 - (lethal && settings.shake ? Math.abs(Math.sin(worldTime * 10)) * 3 : 0)); ctx.strokeText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.fillStyle = lethal ? '#ff3a4d' : '#cfd6e6'; ctx.fillText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.restore(); }
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
