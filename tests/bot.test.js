@@ -125,3 +125,15 @@ test('the bot answers a Warden follow-up only after its reaction delay', () => {
   for (let i = 0; i < Math.ceil(REACTION_DELAY / DT) + 1; i++) { game.update(DT, {}); w.tell = 1; bot.input(game); }
   assert.equal(bot.reacts(w, game.time), true);
 });
+
+test('the expert bot beats the Fallen King on floor 50 (all weapons, a few seeds) and leaves a won fight', () => {
+  for (const [seed, weapon] of [[1, 'heavy'], [2, 'twin'], [3, 'spear'], [4, 'spear']]) {
+    const events = [], game = new Game(e => events.push(e), seed, 'castle');
+    game.start(); game.setWeapon(weapon); game.descend(); game.loadFloor(50);
+    const bot = createBot({ seed });
+    for (let t = 0; t < 300 && game.state === 'playing'; t += DT) game.update(DT, bot.input(game));
+    assert.equal(game.state, 'sliceEnd', `${weapon} seed ${seed}`);
+    assert.equal(events.find(e => e.type === 'sliceEnd').king, 'won'); assert.equal(events.find(e => e.type === 'fightStats').won, true);
+    assert.ok(bot.presses.length <= MAX_PRESSES_PER_SECOND);
+  }
+});

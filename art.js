@@ -744,7 +744,7 @@ function drawBossWarn(ctx, e, time) {
   };
   ctx.save();
   if (w.kind === 'seize') { rgb = '214,74,138'; edge = '#ff7ab8'; } // the Toll: magenta, so it never reads as a plain hit
-  if (w.kind === 'slash' || w.kind === 'slam' || w.kind === 'sweep' || w.kind === 'seize' || w.kind === 'backhand') { fillBox(w.box); wardenWarnArt(ctx, w, p, rgb, edge, d, time); }
+  if (w.kind === 'slash' || w.kind === 'slam' || w.kind === 'sweep' || w.kind === 'seize' || w.kind === 'backhand' || w.kind === 'turnslash') { fillBox(w.box); wardenWarnArt(ctx, w, p, rgb, edge, d, time); }
   if (w.kind === 'charge') {
     fillBox(w.box); const l = w.line; ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 2; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d;
     ctx.beginPath(); ctx.moveTo(Math.round(l.x1), Math.round(l.y1)); ctx.lineTo(Math.round(l.x2), Math.round(l.y2)); ctx.stroke(); ctx.setLineDash([]);
