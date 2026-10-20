@@ -24,7 +24,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
     else if (e.type === 'hurt' && cur) cur.taken += e.amount;
     else if (e.type === 'frenzy' && cur) cur.frenzies++;
     else if (e.type === 'swing' && cur && e.move !== 'plunge') { if (pending && pending.set.size === 0) cur.whiffs++; cur.swings++; pending = { t: game.time, set: game.hitSet }; }
-    else if (e.type === 'death') deathCause = e.cause === 'toll' ? 'toll' : cause;
+    else if (e.type === 'death') deathCause = e.cause === 'toll' || e.cause === 'debt' ? e.cause : cause;
   }, seed, 'castle');
   const realHurt = game.hurt.bind(game);
   game.hurt = (amount, dir, hazard = false, heavy = false) => { // remember what hit the hero, for the death cause

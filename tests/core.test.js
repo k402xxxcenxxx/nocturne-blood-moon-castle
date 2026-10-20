@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
+import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3890,4 +3890,146 @@ test('king: loadFloor(50) jumps straight to him in castle mode (?test), the Moon
   game.addPool(600, FLOOR, true); game.pools[0].life = 3.5; b.superArmor = 100;
   game.state = 'paused'; advance(game, 3); assert.equal(game.pools[0].life, 3.5, 'paused: the Tithe waits');
   game.state = 'playing'; game.portalX = player.x; advance(game, .1); assert.equal(game.portalOpen, false);
+});
+
+// --- Weapon frenzies (#61) ---
+function frenzied(weapon, blood = 195) {
+  const t = castle(); t.game.setWeapon(weapon);
+  Object.assign(t.player, { blood, frenzy: true, x: 600, invulnerable: 0 });
+  return t;
+}
+const calm = (e, cd = 99) => Object.assign(e, { cd });
+
+test('frenzy heavy: damage becomes debt (no blood loss, no knockback), paid in full when the frenzy ends; the event carries it', () => {
+  const { game, player, events } = frenzied('heavy');
+  game.hurt(12, 1); player.invulnerable = 0; game.hurt(15, 1);
+  assert.equal(player.blood, 195); assert.equal(player.debt, 27); assert.equal(player.x, 600, 'no knockback');
+  assert.equal(events.findLast(e => e.type === 'hurt').debt, 27);
+  advance(game, 20); // burns down to 100, then the debt comes due
+  assert.equal(player.frenzy, false); assert.equal(player.debt, 0); assert.equal(player.blood, 100 - 27);
+  assert.deepEqual(events.find(e => e.type === 'debt').amount, 27);
+  assert.deepEqual([events.findLast(e => e.type === 'frenzyEnd').weapon, events.findLast(e => e.type === 'frenzyEnd').debt], ['heavy', 27]);
+});
+
+test('frenzy heavy: a debt of 100 or more kills at the end; other weapons and normal blood loss are untouched', () => {
+  const { game, player } = frenzied('heavy');
+  game.hurt(HEAVY_DAMAGE, 1); assert.equal(game.state, 'playing', 'debt kills only when it is paid'); assert.equal(player.debt, 100);
+  advance(game, 20); assert.equal(game.state, 'dead');
+  const t = frenzied('spear'); t.game.hurt(20, 1);
+  assert.equal(t.player.blood, 175); assert.equal(t.player.debt, 0); assert.notEqual(t.player.x, 600, 'knockback outside the Greatsword frenzy');
+  const u = frenzied('heavy'); u.player.frenzy = false; u.game.hurt(20, 1);
+  assert.equal(u.player.blood, 175, 'no frenzy, no debt'); assert.equal(u.player.debt, 0);
+});
+
+test('frenzy heavy: dash and Eclipse i-frames still avoid the hit (no debt); death and the Vigil clear debt unpaid', () => {
+  const { game, player, events } = frenzied('heavy');
+  game.dash(); game.hurt(30, 1); assert.equal(player.debt, 0);
+  player.invulnerable = 0; player.dash = 0; player.magicCd = 0; game.magic(); game.hurt(30, 1); assert.equal(player.debt, 0);
+  player.invulnerable = 0; game.hurt(30, 1); assert.equal(player.debt, 30);
+  game.heroDown(false);
+  assert.equal(player.debt, 0); assert.equal(events.findLast(e => e.type === 'frenzyEnd').debt, 0); assert.ok(!events.some(e => e.type === 'debt'));
+  const t = frenzied('heavy'); t.game.hurt(40, 1); t.game.enterVigil(); assert.equal(t.player.debt, 0); assert.equal(t.player.blood, 100);
+});
+
+test('frenzy heavy: the Gate Toll becomes debt with no knockback, and the gauge still refills', () => {
+  const { game, player, b, events } = warden();
+  Object.assign(player, { blood: 160, frenzy: true, weapon: 'heavy' }); b.superArmor = 10;
+  game.wardenToll(b);
+  assert.equal(player.blood, 160); assert.equal(player.debt, 60); assert.equal(b.superArmor, 70); assert.equal(player.x, 940);
+  assert.equal(events.find(e => e.type === 'toll').debt, true);
+  const t = warden(); Object.assign(t.player, { blood: 160, frenzy: true, weapon: 'spear' }); t.game.wardenToll(t.b);
+  assert.equal(t.player.blood, 100); assert.equal(t.player.debt, 0);
+});
+
+test('frenzy twin: grounded swings start on their own, ignoring input, and not in the air', () => {
+  const { game, player, events } = frenzied('twin');
+  enemy(game, 660); advance(game, 1);
+  const swings = events.filter(e => e.type === 'swing' && e.move !== 'plunge').length;
+  assert.ok(swings >= 3, 'attacks fired with no input');
+  assert.ok(events.every(e => e.type !== 'swing' || e.cost === 0), 'free in frenzy');
+  const air = frenzied('twin'); air.player.grounded = false; air.player.y = FLOOR - 200; air.player.vy = -1;
+  air.game.update(1 / 120, {}); assert.equal(air.events.filter(e => e.type === 'swing').length, 0, 'nothing automatic in the air');
+  const calmHero = frenzied('twin'); calmHero.player.frenzy = false; advance(calmHero.game, .5);
+  assert.equal(calmHero.events.filter(e => e.type === 'swing').length, 0, 'normal play still needs the button');
+});
+
+test('frenzy twin: cooldown is x0.6 on top, full speed while attacking, facing turns to the nearest enemy within 260 and holds otherwise', () => {
+  const normal = castle(); normal.game.setWeapon('twin'); normal.player.attackCd = 0; normal.game.attack();
+  const { game, player } = frenzied('twin');
+  player.attackCd = 0; player.dir = 1; calm(enemy(game, 450)); calm(enemy(game, 800)); game.attack();
+  assert.equal(player.dir, -1, 'the nearest in range is behind');
+  assert.ok(player.attackCd < normal.player.attackCd);
+  game.update(1 / 120, { right: true });
+  assert.equal(player.vx, player.speed, 'no 65% slow while swinging'); assert.equal(player.dir, -1, 'walking forward does not turn the facing mid-swing');
+  const far = frenzied('twin'); far.player.dir = -1; calm(enemy(far.game, 1000)); far.player.attackCd = 0; far.game.attack();
+  assert.equal(far.player.dir, -1, 'nothing within 260 keeps the facing');
+});
+
+test('frenzy twin: dash is ignored and not buffered, jump and plunge still work', () => {
+  const { game, player, events } = frenzied('twin');
+  game.update(1 / 120, { dash: true }); assert.equal(player.dash, 0); assert.equal(player.dashBuf, 0); assert.ok(!events.some(e => e.type === 'dash'));
+  advance(game, .5, {}); assert.ok(!events.some(e => e.type === 'dash'), 'no buffered dash fires later');
+  game.update(1 / 120, { jump: true }); assert.ok(events.some(e => e.type === 'jump'));
+  const n = castle(); n.game.setWeapon('twin'); n.game.dash(); assert.ok(n.events.some(e => e.type === 'dash'), 'dash works outside the frenzy');
+  const t = frenzied('twin'); t.player.grounded = false; t.player.y = FLOOR - 150; t.player.attackCd = 0; t.game.attack();
+  assert.equal(t.player.plunge, 1);
+});
+
+test('frenzy spear: dash cooldown is 0 but one dash at a time; no i-frames, no perfect dodge; +6 burn per dash; the thrust window follows', () => {
+  const { game, player, events } = frenzied('spear');
+  game.dash();
+  assert.equal(player.dashCd, 0); assert.equal(player.invulnerable, 0); assert.equal(player.perfect, 0);
+  assert.equal(player.blood, 195 - ASSAULT_BURN); assert.equal(events.find(e => e.type === 'dash').assault, true);
+  game.dash(true); assert.equal(player.blood, 195 - ASSAULT_BURN, 'no second dash while one is running');
+  game.hurt(15, 1); assert.equal(player.blood, 195 - ASSAULT_BURN - 15, 'a hit mid-dash lands');
+  advance(game, .4); assert.ok(player.thrustWindow > 0);
+  const blood = player.blood; game.dash(); assert.equal(events.filter(e => e.type === 'dash').length, 2, 'chained again at once'); assert.ok(player.blood <= blood - ASSAULT_BURN + 1e-9);
+  const n = castle(); n.game.setWeapon('spear'); n.game.dash();
+  assert.ok(n.player.dashCd > 0 && n.player.invulnerable > 0 && n.events.find(e => e.type === 'dash').assault === false, 'outside the frenzy a dash is unchanged');
+});
+
+test('frenzy spear: the extra burn can end the frenzy but never kills', () => {
+  const { game, player } = frenzied('spear', 103);
+  game.dash(); assert.equal(player.blood, 100); assert.equal(player.frenzy, false); assert.equal(game.state, 'playing');
+});
+
+test('frenzy spear: an assault dash hits every overlapped enemy once with heavy knockback, poise and blood; wide spacing is missed', () => {
+  const { game, player, events } = frenzied('spear', 150);
+  const a = calm(enemy(game, 640)), b = calm(enemy(game, 700)), c = calm(enemy(game, 1100));
+  player.crit = 0; game.dash(); const poise = a.poise;
+  advance(game, .25);
+  for (const e of [a, b]) { assert.equal(e.hp, 500 - player.damage, '1.0 x damage, once'); assert.ok(e.poise < (e === a ? poise : e.maxPoise)); }
+  assert.equal(c.hp, 500);
+  assert.equal(events.filter(e => e.type === 'assaultHit').length, 2);
+  assert.ok(player.blood > 150 - ASSAULT_BURN - 12 * .25, 'a sword hit pays blood (halved)');
+  advance(game, .3); const before = a.hp; advance(game, .3); assert.equal(a.hp, before, 'no more hits without a new dash');
+  player.x = 600; game.dash(); advance(game, .25); assert.equal(a.hp < before, true, 'a new dash hits again');
+});
+
+test('frenzy spear: a shield bearer blocks the assault from the front and the dash ends; from behind it lands', () => {
+  const { game, player } = frenzied('spear', 150);
+  const s = calm(enemy(game, 650, { type: 'shield' })); s.dir = -1;
+  player.crit = 0; game.dash(); advance(game, .25);
+  assert.ok(s.hp > 500 - player.damage, 'blocked: chip damage only'); assert.equal(player.dash, 0);
+  const t = frenzied('spear', 150); const s2 = calm(enemy(t.game, 650, { type: 'shield' })); s2.dir = 1; t.player.crit = 0;
+  t.game.dash(); advance(t.game, .25); assert.equal(s2.hp, 500 - t.player.damage);
+});
+
+test('frenzy spear: an assault dash breaks the Warden armor in phase 1 and chips FRENZY_CHIP in phase 2', () => {
+  const { game, player, b } = warden(1000, 900);
+  Object.assign(player, { blood: 190, frenzy: true }); player.crit = 0;
+  game.dash(); advance(game, .2);
+  assert.equal(b.superArmor, 0); assert.ok(game.fightStats.breaks === 1);
+  const t = warden(1000, 900); Object.assign(t.player, { blood: 190, frenzy: true, crit: 0 }); t.b.bossPhase = 2;
+  t.game.dash(); advance(t.game, .2); assert.equal(t.b.superArmor, ARMOR_MAX - FRENZY_CHIP);
+});
+
+test('weapon frenzies are castle only: normal and Endless runs ignore weapon and frenzy', () => {
+  for (const mode of ['normal', 'endless']) {
+    const game = new Game(() => {}, 42, mode); game.start(); game.state = 'playing'; game.enemies = [];
+    Object.assign(game.player, { frenzy: true, weapon: 'twin', x: 600 });
+    game.update(1 / 120, { dash: true }); assert.ok(game.player.dash > 0 || game.player.dashCd > 0, `${mode}: dash works`);
+    const before = game.player.hp; game.player.invulnerable = 0; game.player.weapon = 'heavy'; game.hurt(10, 1);
+    assert.equal(game.player.hp, before - 10); assert.equal(game.player.debt, 0);
+  }
 });
