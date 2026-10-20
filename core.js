@@ -214,6 +214,8 @@ export class Game {
       for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, tier).required = true; }
       if (castle) { // no chests; floors 8-9 add one bonus elite (no reward pick)
         this.chests = [];
+        const pool = this.floor >= 8 ? ELITE_POOL : ELITE_POOL.slice(0, 4), picks = this.floor >= 7 ? this.enemies.slice(0, regular).filter(e => pool.includes(e.type)) : [];
+        if (picks.length) this.makeElite(picks[Math.floor(this.rand() * picks.length)], tier).bonus = true; // floors 7-9: one rolled regular gets its twist (teach before test: floors 1-6 stay plain); priest and mage only from floor 8
         if (this.floor >= 8) Object.assign(this.makeElite(this.spawnEnemy('knight', spot.x, tier), tier), { bonus: true, y: spot.y, plat: spot.plat });
       } else {
       const guard = this.spawnEnemy(index === 0 ? 'skeleton' : this.rand() < .5 ? 'knight' : 'shield', spot.x, index); // tougher guard of the optional chest

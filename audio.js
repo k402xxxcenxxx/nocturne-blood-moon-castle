@@ -92,7 +92,7 @@ export class AudioSystem {
   }
 
   // Delayed-heavy hold: a quiet low creak loop. game.js flips it on edges only; it also dies on pause, mute and suspend.
-  setHold(on) { on = Boolean(on); if (on === this._holding) return; this._holding = on; this._syncHold(); }
+  setHold(on, kind) { on = on ? (kind || true) : false; if (on === this._holding) return; this._holding = on; this._hold?.(); this._hold = null; this._syncHold(); } // kind: 'rite' chant, 'ray' hum, else creak
 
   _syncHold() {
     const active = this._holding && this.context?.state === 'running' && !this._paused && !this.muted;
@@ -101,10 +101,11 @@ export class AudioSystem {
     const ctx = this.context, now = ctx.currentTime;
     const noise = ctx.createBufferSource(), band = ctx.createBiquadFilter(), tone = ctx.createOscillator(), lfo = ctx.createOscillator();
     const lfoGain = ctx.createGain(), out = ctx.createGain();
+    const k = this._holding; // rite: breathy minor chant, slow swell; ray: steady narrow hum
     noise.buffer = this._noiseBuffer; noise.loop = true;
-    band.type = 'bandpass'; band.frequency.value = 700; band.Q.value = 4;
-    tone.type = 'sawtooth'; tone.frequency.value = 78;
-    lfo.frequency.value = 9; lfoGain.gain.value = 0.03; // flutter, so the hold reads as strain rather than a drone
+    band.type = 'bandpass'; band.frequency.value = k === 'rite' ? 420 : k === 'ray' ? 1800 : 700; band.Q.value = k === 'ray' ? 12 : 4;
+    tone.type = k === 'rite' ? 'triangle' : k === 'ray' ? 'sine' : 'sawtooth'; tone.frequency.value = k === 'rite' ? 156 : k === 'ray' ? 220 : 78;
+    lfo.frequency.value = k === 'rite' ? 3.2 : k === 'ray' ? 28 : 9; lfoGain.gain.value = 0.03; // flutter, so the hold reads as strain rather than a drone
     out.gain.setValueAtTime(0.0001, now); out.gain.exponentialRampToValueAtTime(0.06, now + 0.05);
     lfo.connect(lfoGain); lfoGain.connect(out.gain);
     noise.connect(band); band.connect(out); tone.connect(out); out.connect(this._master);
@@ -645,6 +646,57 @@ export class AudioSystem {
       case 'hitTurnswipe': // knight turnswipe contact: quick wide metal swish
         tone('noise', 3400, 0.14, 0.2, 800);
         tone('triangle', 420, 0.1, 0.08, 200);
+        break;
+      // Castle priest / mage / elite cues. Tells are fixed pitch; the two bolt casters and each elite twist get their own sound.
+      case 'tellBoltPriest': // priest bolt: low breathy intone with a dull rising hiss
+        tone('sine', 196, 0.2, 0.12, 233);
+        tone('noise', 900, 0.14, 0.06, 1800);
+        break;
+      case 'tellBoltMage': // mage bolt: thin electric crackle, bright and short
+        tone('square', 1500, 0.07, 0.05, 2400);
+        tone('noise', 5000, 0.1, 0.09, 2500);
+        tone('triangle', 900, 0.08, 0.05, 1300, 0.05);
+        break;
+      case 'tellSlash2': // duelist second strike: a quick lighter double whisk
+        tone('noise', 3200, 0.07, 0.1, 1400);
+        tone('noise', 3800, 0.07, 0.1, 1700, 0.07);
+        break;
+      case 'tellRite': // priest rite: a falling bell-tone under a low minor drone (the chant hold follows)
+        tone('sine', 262, 0.4, 0.12, 247);
+        tone('triangle', 156, 0.4, 0.09, 147);
+        tone('sine', 1047, 0.3, 0.03, 1040, 0.04);
+        break;
+      case 'tellRay': // mage ray: a rising charged whine
+        tone('sawtooth', 220, 0.45, 0.06, 880);
+        tone('sine', 1760, 0.4, 0.04, 2640);
+        break;
+      case 'tellSkewer': // impaler skewer: slow metal draw back, a ratchet tick
+        tone('noise', 2400, 0.22, 0.09, 4200);
+        tone('triangle', 520, 0.2, 0.07, 780);
+        [0.1, 0.17].forEach(dl => tone('square', 1700, 0.02, 0.04, 1700, dl));
+        break;
+      case 'tellBounce': // shrieker dive that will strike again: a sharp shriek with a second chirp
+        tone('sawtooth', 2200, 0.1, 0.05, 3000);
+        tone('square', 2700, 0.06, 0.04, 3400, 0.11);
+        tone('noise', 6000, 0.08, 0.08, 3000);
+        break;
+      case 'mageShimmer': // mage blink start: glassy shimmer climbing
+        tone('sine', 1320, 0.3, 0.05, 2640);
+        tone('sine', 1760, 0.3, 0.04, 3520, 0.05);
+        tone('noise', 7000, 0.28, 0.05, 4000);
+        break;
+      case 'mageBlink': // mage lands: a soft airy pop
+        tone('sine', 520, 0.08, 0.14, 160);
+        tone('noise', 4200, 0.1, 0.1, 900);
+        break;
+      case 'priestStep': // priest backstep: soft cloth drag and a low pat
+        tone('noise', 1200, 0.14, 0.07, 500);
+        tone('sine', 130, 0.08, 0.1, 85);
+        break;
+      case 'hierophant': // posture blessing: warm bright upper fifth over a low root
+        tone('sine', 523, 0.5, 0.08, 523);
+        tone('sine', 784, 0.5, 0.06, 784, 0.06);
+        tone('triangle', 262, 0.5, 0.06, 262);
         break;
       // Gate Warden cues. Tells are fixed pitch (no detune); impacts and footfalls detune a little so they do not repeat.
       case 'tellSweep': // wide arm drawn back: low scrape rising into a dull stone knock; lower and slower than tellSlash
