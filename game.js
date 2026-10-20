@@ -176,25 +176,25 @@ function handleEvent(e) {
       burst(e.x, e.y, '#e0584c', 34, 280); burst(e.x, e.y, '#ffd0a0', 12, 180, 0, 3);
       effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 });
       break;
-    case 'wardenPhase': audio.play('roar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); burst(e.x, e.y, '#ff7a52', 24, 200, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: '#ff5a44', r: 200 }); break; // phase 2: ember seams light up (art.js)
+    case 'wardenPhase': audio.play('wardenRoar', 1); audio.setIntensity(2); toast(t('boss.warden.phase2')); phaseTime = 1.6; rumble(10, .5); burst(e.x, e.y, '#b8c4d8', 30, 260); burst(e.x, e.y, '#ff7a52', 24, 200, 0, 3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 300, life: .6, max: .6 }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .6, max: .6, color: '#ff5a44', r: 200 }); break; // phase 2: ember seams light up (art.js)
     case 'toll': // the Gate Toll: blood torn out of the hero (placeholder feedback; dedicated art and audio come from their roles)
-      audio.play('hurt'); audio.play('heavyHit'); damageFlash = .35; rumble(9, .3); hitCount = 0; comboTime = 0; audio.setHeartbeat(false);
+      audio.play('hurt'); audio.play('tollDrain'); damageFlash = .35; rumble(9, .3); hitCount = 0; comboTime = 0; audio.setHeartbeat(false);
       flashNumber({ ...e, amount: t('float.toll', { n: Math.round(e.amount) }) }, '#d8445a'); burst(e.x, e.y, '#a93959', 26, 220);
       { const w = game.enemies.find(o => o.warden && o.hp > 0); // the blood streams out of the hero into the Warden's chest, then its shell flares crimson
         if (w) { effects.push({ type: 'toll', x: e.x, y: e.y, x2: w.x, y2: w.y - 62, n: Math.min(16, 5 + Math.round(e.amount / 6)), life: .8, max: .8 }); effects.push({ type: 'ringIn', x: w.x, y: w.y - 56, life: .5, max: .5, color: '#d8445a', r: 90, delay: .35 }); } }
       break;
-    case 'armorChip': audio.play('block', .9); flashNumber({ ...e, amount: t('float.armorChip') }, '#9aa3b5'); burst(e.x, e.y, '#cfd6e6', 8, 170); burst(e.x, e.y, '#ffffff', 4, 110, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .22, max: .22, color: '#cfd6e6', r: 50 }); break;
-    case 'armorBreak': audio.play('guardBreak', 1.2); rumble(9, .3); if (settings.shake) whiteFlash = .06; flashNumber({ ...e, amount: t('float.armorBreak') }, '#ffd36e'); burst(e.x, e.y, '#8e99a8', 18, 260, 0, 4); burst(e.x, e.y, '#ffd36e', 14, 220); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .4, max: .4, color: '#ffd36e', r: 120 });
+    case 'armorChip': audio.play('stoneCrack', .9); flashNumber({ ...e, amount: t('float.armorChip') }, '#9aa3b5'); burst(e.x, e.y, '#cfd6e6', 8, 170); burst(e.x, e.y, '#ffffff', 4, 110, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .22, max: .22, color: '#cfd6e6', r: 50 }); break;
+    case 'armorBreak': audio.play('plateShatter', 1.1); rumble(9, .3); if (settings.shake) whiteFlash = .06; flashNumber({ ...e, amount: t('float.armorBreak') }, '#ffd36e'); burst(e.x, e.y, '#8e99a8', 18, 260, 0, 4); burst(e.x, e.y, '#ffd36e', 14, 220); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .4, max: .4, color: '#ffd36e', r: 120 });
       { const plates = []; for (let i = 0; i < 16; i++) plates.push({ a: i / 16 * Math.PI * 2 + Math.random() * .4, d: 50 + Math.random() * 70, s: 5 + (Math.random() * 7 | 0), r: Math.random() * 6 }); effects.push({ type: 'shards', x: e.x, y: e.y, radius: 70, shards: plates, life: .7, max: .7, c1: '#aab4c8', c2: '#586070' }); } // the shell bursts into stone plates
       break;
-    case 'armorRestore': burst(e.x, e.y, '#8e99a8', 10, 120); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .45, max: .45, color: '#aab4c8', r: 80 }); break; // the shell closes round the Warden again
-    case 'bloodPool': burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
-    case 'poolTaken': audio.play('chestHeal', .6); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
+    case 'armorRestore': audio.play('armorForm', .8); burst(e.x, e.y, '#8e99a8', 10, 120); effects.push({ type: 'ringIn', x: e.x, y: e.y, life: .45, max: .45, color: '#aab4c8', r: 80 }); break; // the shell closes round the Warden again
+    case 'bloodPool': audio.play('poolSplash', .8); burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
+    case 'poolTaken': audio.play('poolGulp', 1); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; break; // metric for the #44 playtest; the result screen may show it later
-    case 'enemyHeavy': audio.play('heavyWarn'); break;
+    case 'enemyHeavy': audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
     case 'enemyGlint': audio.play('glint'); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
-      const cue = { slash: 'tellSlash', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
+      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter' }[e.kind] || 'tellGeneric';
       audio.play(cue, game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5); break;
     }
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
@@ -612,19 +612,19 @@ function wardenSwing(e) { // contact visuals per Warden move; each reads differe
   const d = e.dir === -1 ? -1 : 1, fx = e.x + d * 60;
   if (e.kind === 'sweep' || e.kind === 'backhand') { const sd = e.kind === 'backhand' ? -d : d; effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: sd, life: .3, max: .3, boss: true, big: true }); rumble(4, .12); }
   else if (e.kind === 'slam') { // maul meets the floor: shock ring, cracks and debris, the big shake
-    rumble(12, .35); audio.play('plunge', 1.2); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
+    rumble(12, .35); audio.play('wardenSlam', 1); effects.push({ type: 'dust', x: fx, y: FLOOR, radius: 130, life: .45, max: .45 });
     const pts = []; for (let i = 0, x = fx, y = FLOOR; i < 7; i++) { pts.push([x, y]); x += d * (22 + Math.random() * 16); y = FLOOR - 1 + (Math.random() * 6 | 0); }
     effects.push({ type: 'crack', pts, life: 1.2, max: 1.2 }); burst(fx, FLOOR - 4, '#9a8c77', 18, 240, 0, 3); burst(fx, FLOOR - 4, '#e4dccb', 8, 160);
-  } else if (e.kind === 'seize') effects.push({ type: 'grab', x: e.x + d * 52, y: e.y - 40, dir: d, life: .35, max: .35 }); // two crescents snap shut
+  } else if (e.kind === 'seize') { audio.play('wardenSeize', .9); effects.push({ type: 'grab', x: e.x + d * 52, y: e.y - 40, dir: d, life: .35, max: .35 }); } // two crescents snap shut
   else if (e.kind === 'charge') { rumble(5, .2); burst(e.x - d * 30, e.y - 2, '#9a8c77', 10, 150, -d, 3); }
 }
-let wardenX = null, wardenStep = 0; // footfall shake: one thud per stride of the Warden's own movement (walking 56 px, charging 90 px), only near the hero and with the shake setting on
+let wardenX = null, wardenStep = 0, wardenRun = false; // footfall shake: one thud per stride of the Warden's own movement (walking 56 px, charging 90 px), only near the hero and with the shake setting on
 function wardenSteps(e) {
   if (wardenX === null || e.stun > 0 || e.pause > 0 || Math.abs(e.x - wardenX) > 60) { wardenX = e.x; return; }
-  const run = e.travel > 0; wardenStep += Math.abs(e.x - wardenX); wardenX = e.x;
+  const run = e.travel > 0; if (wardenRun && !run && Math.abs(e.x - game.player.x) <= 700) audio.play('wardenSkid', .9); wardenRun = run; wardenStep += Math.abs(e.x - wardenX); wardenX = e.x;
   if (wardenStep < (run ? 90 : 56)) return;
   wardenStep = 0; if (Math.abs(e.x - game.player.x) > 700) return;
-  rumble(run ? 4 : 2, .09); burst(e.x + e.dir * 14, e.y - 2, '#9a8c77', run ? 4 : 2, 70, 0, 3);
+  audio.play('wardenStep', run ? 1.3 : .8); rumble(run ? 4 : 2, .09); burst(e.x + e.dir * 14, e.y - 2, '#9a8c77', run ? 4 : 2, 70, 0, 3);
 }
 function render(dt) {
   const title = game.state === 'title', p = game.player;
