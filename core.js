@@ -296,7 +296,7 @@ export class Game {
   }
   // pay = the frenzy ran out (burn, skill or dash cost): the Greatsword's blood debt comes due at once and kills at 100 or more. Death, a Vigil and a floor reset clear it unpaid.
   endFrenzy(pay = false) {
-    const p = this.player, debt = pay ? Math.round(p.debt) : 0;
+    const p = this.player, debt = pay && !this.bossDown() ? Math.round(p.debt) : 0; // a boss kill forgives the debt
     if (!p.frenzy) return;
     p.frenzy = false; p.debt = 0;
     this.emit('frenzyEnd', { weapon: p.weapon, debt });
@@ -305,6 +305,9 @@ export class Game {
     this.emit('debt', { amount: debt, x: p.x, y: p.y - 30 });
     if (p.blood <= 0) this.heroDown(false, 'debt');
   }
+  bossDown() { return this.vigilT > 0 || this.kingT > 0; } // the 1.6 s after the Warden or King dies: burn frozen, debt not paid
+  // True when the debt would kill at the worst moment the player can pick: Eclipse ends the frenzy below 100 and pays from the blood left. Used by every lethal cue, so it may warn early, never late.
+  debtLethal() { const p = this.player; return p.debt > 0 && p.debt >= Math.min(p.blood >= SKILL_MIN ? p.blood - SKILL_COST : p.blood, BLOOD_HALF); }
   // True while this weapon's frenzy effect is on (castle only; frenzy exists only there).
   frenzyOf(weapon) { const p = this.player; return p.frenzy && p.weapon === weapon && this.mode === 'castle'; }
   // Frenzy ends once blood is back at the life half (burn, damage or the skill).
@@ -431,7 +434,7 @@ export class Game {
     if (this.kingT > 0 && (this.kingT -= dt) <= 0) { this.leaveKing(true); return; }
     if (this.fightOn && this.enemies.some(e => e.armored && e.engaged)) this.fightStats.time += dt;
     this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
-    if (p.frenzy) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
+    if (p.frenzy && !this.bossDown()) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
@@ -641,12 +644,13 @@ export class Game {
     for (const e of this.enemies) {
       if (e.hp <= 0 || this.assaulted.has(e) || Math.abs(e.x - p.x) > (e.w + p.w) / 2 + 8 || e.y < p.y - p.h || e.y - e.h > p.y) continue;
       this.assaulted.add(e);
-      const crit = this.rand() < p.crit, amount = Math.round(p.damage * p.swordMul * (crit ? 2 : 1));
+      const crit = this.rand() < p.crit, punish = this.punishing(e), rip = this.takeRiposte(e), amount = Math.round(p.damage * p.swordMul * (crit ? 2 : 1) * (rip ? RIPOSTE_MUL : 1));
       const blocked = e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
       p.whiff = 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, true, blocked, POISE_DAMAGE.thrust);
       p.mp = Math.min(p.maxMp, p.mp + 2);
-      if (this.bloodOk(e)) this.gainBlood(blocked ? 1 : 3);
+      if (this.bloodOk(e)) this.gainBlood(blocked ? 1 : 3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+      if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
       this.emit('assaultHit', { x: e.x, y: e.y - e.h * .55, dir: p.dir, blocked });
       if (blocked) p.dash = 0;
     }
@@ -1552,7 +1556,7 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'counter' });
       if (this.heavyHits(e, w.box)) {
         this.hurt(dmg, e.dir);
-        if (was <= 0 && this.state === 'playing') { p.x = clamp(p.x + e.dir * 100, 25, this.worldWidth - 30); this.keepBeside(p, from); } // hurt pushes 20; the shove makes it 120
+        if (was <= 0 && this.state === 'playing' && !this.frenzyOf('heavy')) { p.x = clamp(p.x + e.dir * 100, 25, this.worldWidth - 30); this.keepBeside(p, from); } // hurt pushes 20; the shove makes it 120
       }
       e.action++;
       return;

@@ -3119,6 +3119,8 @@ test('castle shield: two blocked hits within 1 s trigger a counter shove (tell, 
   const x = player.x; advance(game, .5);
   assert.ok(events.some(ev => ev.type === 'enemySwing' && ev.kind === 'counter'));
   assert.ok(player.blood < 150 && x - player.x >= 110, `hero shoved ${x - player.x}`);
+  { const n = lightFoe('shield', 50); Object.assign(n.player, { frenzy: true, weapon: 'heavy', blood: 150, x: 600 }); Object.assign(n.e, { x: 650, dir: -1, move: 'counter', warn: { box: { x: 500, w: 200 } } });
+    const nx = n.player.x; n.game.enemyAttack?.(n.e); assert.ok(Math.abs(n.player.x - nx) < 1, 'numb hero is not shoved'); }
   assert.ok(e.recover > 0 && e.punishable);
   const { game: g, e: s } = lightFoe('shield', 50);
   g.damageEnemy(s, 5, 1, false, false, true, 5); advance(g, 1.2); g.damageEnemy(s, 5, 1, false, false, true, 5);
@@ -3318,7 +3320,7 @@ test('warden blood: hits during a heavy recovery pay even while armored, and so 
 });
 
 // Known gap (QA #61 re-check, P3): a toll taken at fractional blood adds fractional debt, while the HUD shows Math.round(debt) and the lethal cue compares the raw value.
-// Rule: debt is whole, so the number shown is the number paid. Drop `todo` once the engineer rounds the debt when it is added.
+// Rule: debt is whole, so the number shown is the number paid.
 test('greatsword debt stays whole: a Warden toll at fractional blood adds a whole amount', () => {
   const { game, player, b } = warden(1000, 1060);
   b.dir = 1; b.superArmor = 20; player.blood = 150.4; player.frenzy = true; player.weapon = 'heavy';
@@ -4059,4 +4061,37 @@ test('weapon frenzies are castle only: normal and Endless runs ignore weapon and
     const before = game.player.hp; game.player.invulnerable = 0; game.player.weapon = 'heavy'; game.hurt(10, 1);
     assert.equal(game.player.hp, before - 10); assert.equal(game.player.debt, 0);
   }
+});
+
+test('debtLethal: the cue counts Eclipse, which ends the frenzy below 100 and pays from the blood left', () => {
+  const { game, player } = castle(42, 3);
+  Object.assign(player, { frenzy: true, weapon: 'heavy', blood: 110, debt: 95 });
+  assert.equal(game.debtLethal(), true, '110 - 18 = 92 <= 95');
+  player.debt = 91; assert.equal(game.debtLethal(), false);
+  player.blood = 150; player.debt = 99; assert.equal(game.debtLethal(), false, 'Eclipse leaves 132, the burn stops at 100');
+  player.debt = 100; assert.equal(game.debtLethal(), true);
+  player.blood = 30; player.debt = 30; assert.equal(game.debtLethal(), true, 'cannot cast below SKILL_MIN: plain blood');
+  player.debt = 0; assert.equal(game.debtLethal(), false);
+  Object.assign(player, { frenzy: true, blood: 110, debt: 95, magicCd: 0, dir: 1 }); game.magic();
+  assert.equal(game.state, 'dead');
+});
+
+test('warden kill: the burn freezes and the debt is not paid in the 1.6 s window; the Vigil clears it', () => {
+  const { game, player, b } = warden(1000, 940);
+  Object.assign(player, { blood: 115, frenzy: true, weapon: 'heavy', debt: 120 });
+  game.damageEnemy(b, 9999, 1, false, false);
+  const k = player.blood; advance(game, 1.0);
+  assert.equal(game.state, 'playing'); assert.ok(player.frenzy && player.blood === k && player.debt === 120, `frozen ${k} ${player.blood} ${player.debt}`);
+  advance(game, 1.0);
+  assert.equal(game.state, 'rest'); assert.equal(game.vigil, 2); assert.equal(player.debt, 0);
+});
+
+test('king kill: the burn freezes and the debt is not paid in the window; the slice end clears it', () => {
+  const { game, player, b, events } = kingFight();
+  Object.assign(player, { blood: 115, frenzy: true, weapon: 'heavy', debt: 120 });
+  game.damageEnemy(b, 99999, 1, false, false);
+  const k = player.blood; advance(game, 1.0);
+  assert.equal(game.state, 'playing'); assert.ok(player.frenzy && player.blood === k && player.debt === 120, `frozen ${k} ${player.blood} ${player.debt}`);
+  advance(game, 1.0);
+  assert.equal(game.state, 'sliceEnd'); assert.ok(events.some(e => e.type === 'sliceEnd' && e.king === 'won'));
 });
