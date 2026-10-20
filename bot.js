@@ -74,7 +74,8 @@ function hitTime(e, px, py) {
     }
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
   }
-  if ((e.move === 'stepcut' || e.move === 'overhead') && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge, knight overhead: tell, then a 0.15 s step
+  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
+  if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
   if (e.move === 'counter' && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // castle shield shove
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
