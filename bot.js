@@ -14,6 +14,7 @@ export const SKILLS = {
 };
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
 const ATTACK_RESERVE = 3, MOVE_RESERVE = 2, DODGE_RESERVE = 1; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
+const EDGE_MARGIN = 25, CLIP_PATIENCE = 3;
 const WEAPON_PICK = 'spear';
 const HEAVY_DEBT_CAP = 30; // Greatsword frenzy: the bot stops trading light hits once debt plus the hit would pass this (debt of 100 kills)
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
@@ -97,7 +98,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
   const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
-  let greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
+  let fightN = 0, clipSince = -1, greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
   const greedyOn = now => now < greedyUntil;
   const rollGreedy = now => { if (skill.greedy && rng() < skill.greedy) greedyUntil = now + 1.5; };
   const rolled = new WeakMap(); // enemy -> attack count of the punish window already rolled for greed
@@ -122,13 +123,16 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         if (presses.length >= cap) return false;
         presses.push(now); return true;
       };
-      for (const key of ['jump', 'dash', 'magic', 'attack']) if (want[key] && !prev[key] && allow(key, key)) out[key] = true;
       let dir = want.dir;
       const held = prev.right ? 1 : prev.left ? -1 : 0;
       if (dir !== held && !want.urgent && now - dirSince < MIN_HOLD) dir = held;
-      if (dir && dir !== held && !allow('dir', dir > 0 ? 'right' : 'left')) dir = held;
+      if (dir && dir !== held && !allow('dir', dir > 0 ? 'right' : 'left')) dir = 0; // no press left for the turn: stop rather than keep walking the wrong way
       if (dir !== held) dirSince = now;
       if (dir) out[dir > 0 ? 'right' : 'left'] = true;
+      for (const key of ['jump', 'dash', 'magic', 'attack']) {
+        if (key === 'dash' && want.dir && dir !== want.dir && !want.urgent) continue; // an assault or chase dash goes where the hero faces: wait for the turn
+        if (want[key] && !prev[key] && allow(key, key)) out[key] = true;
+      }
       prev = out; last = out;
       return out;
     },
@@ -234,6 +238,10 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const trapHot = (tr, extra = .8) => !tr.disabled && (tr.state !== 'idle' || tr.period - tr.t < extra);
     const trapIn = (x, tr) => Math.abs(x - tr.x) < tr.w / 2 + 18;
     const safeSpot = x => game.traps.every(tr => !trapIn(x, tr) || !trapHot(tr)) && game.obstacles.every(ob => Math.abs(x - ob.x) >= (ob.w + 28) / 2 || p.y <= ob.y - ob.h);
+    const rm = game.rooms?.find(r => p.x >= r.x && p.x < r.x + r.w), inRoom = castle && rm ? foes.filter(e => e.type === 'skeleton' && e.x >= rm.x && e.x < rm.x + rm.w).length : 0;
+    fightN = inRoom ? Math.max(fightN, inRoom) : 0; // a group fight (3+ skeletons) stays in its room: running out of it only gets the hero flanked
+    const fenced = inRoom > 0 && fightN >= 3;
+    const lo = fenced ? rm.x + 45 : 25, hi = fenced ? rm.x + rm.w - 45 : W - 30;
     // --- threats at the hero's current spot, soonest first
     const threats = [];
     for (const e of foes) if (api.reacts(e, now)) { const t = hitTime(e, p.x, p.y); if (t < Infinity) threats.push({ e, t }); }
@@ -255,7 +263,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const flinches = e => !castle && !e.heavy && e.type !== 'knight' && e.type !== 'boss' && e.armor <= 0 && !blockedBy(e) && e.frozen <= 0;
     const dirAway = e => Math.sign(p.x - e.x) || -p.dir;
     // A dash covers 131 px: take the side whose landing spot no other announced attack covers (a dash into a second skeleton's lunge box is the dash trap).
-    const dashSide = d => { const lands = x => threats.some(th => th.e && th.t > .2 && hitTime(th.e, Math.max(25, Math.min(W - 30, x)), p.y) < Infinity); return lands(p.x + d * 131) && !lands(p.x - d * 131) ? -d : d; };
+    const dashSide = d => { const lands = x => threats.some(th => th.e && th.t > .2 && hitTime(th.e, Math.max(25, Math.min(W - 30, x)), p.y) < Infinity), out = x => fenced && (x < rm.x + 20 || x > rm.x + rm.w - 20), cost = x => (lands(x) ? 2 : 0) + (out(x) ? 1 : 0); return cost(p.x - d * 131) < cost(p.x + d * 131) ? -d : d; };
     let danger = Infinity;
     if (threats.length) {
       const { e, t } = threats[0]; danger = t;
@@ -266,7 +274,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       else { // walk out of the area if the time allows
         let best = null;
         for (let d = 10; d <= 320 && !best; d += 10) for (const s of [1, -1]) {
-          const x = Math.max(25, Math.min(W - 30, p.x + s * d));
+          const x = Math.max(25, Math.min(W - 30, p.x + s * d)); if (x < lo && s < 0 || x > hi && s > 0) continue;
           if (d / speed < t - .05 && safeSpot(x) && threats.every(th => th.e ? hitTime(th.e, x, p.y) === Infinity : Math.abs(th.b.x + th.b.vx * th.t - x) > 14 + th.b.r)) { best = { dir: s }; break; }
         }
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
@@ -283,7 +291,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
       const swing = known.find(e => canHit(e) && !blockedBy(e) && hitTime(e, p.x, p.y) === Infinity);
-      const lane = fw === 'spear' && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40;
+      const lane = fw === 'spear' && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
       if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)
       else if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
       else if (target && Math.abs(target.x - p.x) < 620) {
@@ -299,6 +307,10 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         const far = !game.portalOpen && !guard && pool[0]; // nothing required and the gate shut (a duel room): chase the foe that kited off instead of walking out
         goal = far ? far.x : game.portalOpen || !guard ? game.portalX : guard.x; tol = game.portalOpen ? 20 : far ? 100 : 120;
       }
+      if (goal !== null && fenced) { // chasing past the room edge only gets the hero flanked: clamp the goal, but give up after a stand-off of CLIP_PATIENCE s (a skeleton that kites out of the room must still be followed)
+        const clamped = Math.max(lo + EDGE_MARGIN, Math.min(hi - EDGE_MARGIN, goal));
+        if (clamped === goal) clipSince = -1; else { if (clipSince < 0) clipSince = now; if (now - clipSince < CLIP_PATIENCE) goal = clamped; }
+      } else clipSince = -1;
       if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
       const perch = p.grounded && p.y < FLOOR - 5 && (p.on || game.obstacles.find(ob => p.y === ob.y - ob.h && Math.abs(p.x - ob.x) < (ob.w + p.w) / 2));
       if (perch && !o.attack) { // stranded on a platform or barricade (a jump landed there): walk off toward the goal, else the nearer edge

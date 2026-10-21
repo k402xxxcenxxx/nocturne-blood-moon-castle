@@ -173,3 +173,10 @@ test('the expert bot can still beat a castle apex skeleton 1v1 with every weapon
     assert.ok(runs.every(r => !r.dead && r.unanswerable === 0), `${weapon}: a death or an unanswerable hit`);
   }
 });
+
+test('the expert bot fights a three-skeleton apex group inside its room and wins some seeds without taking the room exit', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  let wins = 0;
+  for (let seed = 1; seed <= 6; seed++) { const r = playDuel(seed, { n: 3, weapon: 'heavy' }); wins += r.win; assert.equal(r.unanswerable, 0); }
+  assert.ok(wins >= 1, `won ${wins} of 6`);
+});
