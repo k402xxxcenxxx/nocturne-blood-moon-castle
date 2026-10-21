@@ -72,6 +72,8 @@ function hitTime(e, px, py) {
       }
       return Infinity;
     }
+    if (w.kind === 'ray') return w.box && rectHit(px, py, w.box) ? Math.max(0, e.tell) : Infinity; // mage ray: a 0.15 s contact window after the tell (a jump clears the 16 px line)
+    if (w.kind === 'rite') { const c = w.circles[0]; return e.tell > 0 && Math.abs(px - c.x) < c.r + 14 && py > c.y - c.r ? e.tell : Infinity; } // priest rite: a ground disc, walk out of it
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
   }
   if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
@@ -266,7 +268,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           if (d / speed < t - .05 && safeSpot(x) && threats.every(th => th.e ? hitTime(th.e, x, p.y) === Infinity : Math.abs(th.b.x + th.b.vx * th.t - x) > 14 + th.b.r)) { best = { dir: s }; break; }
         }
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
-        else if (e && e.move === 'sweep' && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep is 30 px tall: no room to walk out, so jump it
+        else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray') && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
     // --- offence and navigation when nothing is about to land

@@ -130,13 +130,13 @@ Roles interact through tokens: a tank in front holding the token while a zoner w
 Per 10-floor theme (from #43):
 
 - **Teach (floors 1-4)**: one new enemy per floor, with the floor's other enemies already known. No variants. The new enemy appears first alone or with one known enemy.
-- **Combine (floors 5-7)**: mixes of two or three roles; variants at 30%. One combine floor may preview the anchor enemy alone among known enemies, so the test floors do not introduce it.
-- **Test (floors 8-9)**: the full cast, variants at 50%, one elite.
+- **Combine (floors 5-7)**: mixes of two or three roles; variants at 30%. **Each combine floor may preview one new enemy**, alone among known enemies (never a gate guard), so the test floors introduce nothing. In the Gate: the priest on floor 5, the mage on 6, the anchor knight on 7. A previewed enemy's heavy is not delayed on its preview floor. Elite twists start on the last combine floor (7), only on types already taught and combined on an earlier floor (the priest and mage from floor 8).
+- **Test (floors 8-9)**: the full cast, variants at 50%, elites (one promoted from the roll, plus the anchor's bonus elite).
 - **Floor 10**: a mini-boss that tests the theme's lessons (each of its moves echoes a minion lesson) and adds one signature mechanic.
 
-## Elites: a rule twist, not stat inflation (planned, #50)
+## Elites: a rule twist, not stat inflation (#50)
 
-An elite is the same enemy with **one rule changed**, which the player must read anew. Health at most ×1.5, damage unchanged (heavies stay 100, so "above 100 blood survives a heavy" stays true). Examples of good twists: a probe becomes a two-hit string; it turns without a delay; it protects an ally; it re-aims once with a cue. Bad twists: more health, more damage, shorter tells, no tells. The elite banner names the twist. Today castle elites still deal ×1.3 damage (a heavy does 130, so 101 blood does not survive it) and the Swift affix shortens tells; #50 replaces both.
+An elite is the same enemy with **one rule changed**, which the player must read anew. Health at most ×1.5, damage unchanged (heavies stay 100, so "above 100 blood survives a heavy" stays true). Examples of good twists: a probe becomes a two-hit string; it turns without a delay; it protects an ally; it re-aims once with a cue. Bad twists: more health, more damage, shorter tells, no tells. The elite banner names the twist. Castle elites follow this since #50 PR 3 (twist table and placement in `docs/game-design.md`); the other modes keep the affixes.
 
 ## Bosses
 

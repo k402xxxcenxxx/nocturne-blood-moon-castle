@@ -95,9 +95,11 @@ function flashNumber(e, color = '#f0ddaa') { numbers.push({ x: e.x + Math.random
 function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math.max(shakePower, power); shakeTime = duration; } }
 function recordResult(win) { if (game.mode === 'castle') return; if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
+  const sfx = { enemyBlink: 'mageShimmer', enemyBlinked: 'mageBlink', enemyRecoil: 'priestStep' }[e.type]; if (sfx) audio.play(sfx, 1); // castle caster cues that need no other feedback
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
+      for (let i = bannerQueue.length; i--;) if (bannerQueue[i].elite) bannerQueue.splice(i, 1); // an elite sighted on the last floor is not on this one
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
       $('stage-number').textContent = stageLabel(e.stage, e.floor); $('stage-name').textContent = t(`stage.${e.stage}.name`);
       const announcement = $('stage-announcement');
@@ -132,7 +134,7 @@ function handleEvent(e) {
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
       if (e.boss) { rumble(9, .4); toast(t(e.warden ? 'toast.wardenDown' : e.king ? 'toast.kingDown' : 'toast.bossDown')); }
       break;
-    case 'eliteKill': lastEliteAffix = e.affix; // big purple burst, ring and shake
+    case 'eliteKill': lastEliteAffix = eliteLabel(e).split(/[:：]/)[0]; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'hurt':
@@ -215,13 +217,16 @@ function handleEvent(e) {
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; lastFightKing = game.floor === KING_FLOOR; break; // metric for the #44 playtest; the result screen shows a compact line
     case 'enemyHeavy':
       if (e.enemy === 'king') { if (!e.branch) audio.play('heavyWarn'); const c = { slam: 'kingTellSlam', charge: 'kingTellCharge', descent: 'kingTellDescent' }[e.kind]; if (c) audio.play(c, .8); break; } // a string's charge branch already has glint + commit
-      audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8); break;
+      audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8);
+      { const c = { rite: 'tellRite', ray: 'tellRay', skewer: 'tellSkewer' }[e.kind] || (e.bounce && 'tellBounce') || (e.follow && 'knightCommit'); if (c) audio.play(c, .9); }
+      if (e.bounce || e.follow) effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Shrieker second dive / Oathsworn third hit: one white ring, the knight string's commit cue
     case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
       if (e.enemy === 'king') { audio.play({ slash: 'kingTellSlash', string: 'kingTellString', turnslash: 'kingTellTurn', volley: 'kingTellVolley', ritual: 'kingTellRitual' }[e.kind] || 'tellGeneric', 1); break; }
-      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe' }[e.kind] || 'tellGeneric';
+      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe', slash2: 'tellSlash2' }[e.kind] || 'tellGeneric';
       const v = game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5;
-      audio.play(e.enemy === 'spear' && e.kind === 'sweep' ? 'tellLow' : cue, v); if (e.enemy === 'knight' && e.follow) audio.play('knightCommit', v); break;
+      audio.play(e.enemy === 'spear' && e.kind === 'sweep' ? 'tellLow' : e.kind === 'bolt' ? (e.enemy === 'mage' ? 'tellBoltMage' : 'tellBoltPriest') : cue, v); if (e.enemy === 'knight' && e.follow) audio.play('knightCommit', v);
+      if (e.kind === 'slash2') effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Duelist second strike: the same white ring
     }
     case 'enemyCross': audio.play('batWing', 1); burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
@@ -242,6 +247,13 @@ function handleEvent(e) {
         if (kd === 'swoop') { L('claw', { life: .24, max: .24 }); break; }
         if (kd === 'overhead') { L('chop', { x: e.x + e.dir * 40, y: e.y + e.h * .5, life: .39, max: .39, delay: .15 }); rumble(3, .1); break; }
         if (kd === 'turnswipe') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -e.dir, life: .24, max: .24, boss: false, big: false }); break; }
+      }
+      if (e.heavy && e.area && (e.kind === 'ray' || e.kind === 'rite' || e.kind === 'skewer')) { // castle ranged heavies show their contact on the exact warn area
+        const a = e.area;
+        if (e.kind === 'ray') effects.push({ type: 'rayBeam', x1: a.line.x1, y1: a.line.y1, x2: a.line.x2, y2: a.line.y2, life: .3, max: .3 });
+        else if (e.kind === 'rite') effects.push({ type: 'flameCol', x: a.circles[0].x, y: a.circles[0].y - 18, radius: a.circles[0].r, life: .5, max: .5 });
+        else effects.push({ type: 'spikes', x: a.box.x, y: a.box.y + a.box.h, w: a.box.w, life: .3, max: .3 });
+        rumble(6, .16); break;
       }
       if (!(e.heavy && (e.kind === 'rush' || e.kind === 'dive'))) effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: e.dir, life: e.heavy ? .36 : .24, max: e.heavy ? .36 : .24, boss: e.boss || e.heavy, big: e.heavy }); // rush and dive draw their own streak on the body
       if (e.heavy) rumble(6, .16); break;
@@ -285,7 +297,11 @@ function handleEvent(e) {
       break;
     case 'trapWarn': if (Math.abs(e.x - game.player.x) < 600) audio.play('trapWarn'); break;
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
-    case 'enemyBuff': audio.play('bless', .8); break;
+    case 'enemyBuff': audio.play(e.posture ? 'hierophant' : 'bless', .8);
+      if (e.posture) for (const o of e.targets) { effects.push({ type: 'postureBless', x: o.x, y: o.y, life: .7, max: .7 }); burst(o.x, o.y, '#9fd8ff', 6, 70, 0, 2); } break; // Hierophant: a pale-blue shield ring and rising chevrons on each ally whose posture refilled
+    case 'enemyBlink': effects.push({ type: 'ringIn', x: e.x, y: e.y, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }, { type: 'ringIn', x: e.toX, y: e.toY, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }); burst(e.x, e.y, '#cdb8ff', 6, 60); burst(e.toX, e.toY, '#cdb8ff', 6, 60); break;
+    case 'enemyBlinked': effects.push({ type: 'wardBreak', x: e.fromX, y: e.y, life: .3, max: .3, color: '#cdb8ff', r: 50 }, { type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#e4d8ff', r: 60 }); burst(e.fromX, e.y, '#cdb8ff', 10, 120); burst(e.x, e.y, '#e4d8ff', 10, 120); break;
+    case 'enemyRecoil': burst(e.x, e.y + 20, '#b3a68f', 7, 90, e.dir); effects.push({ type: 'wardBreak', x: e.x, y: e.y + 20, life: .2, max: .2, color: '#b3a68f', r: 30 }); break;
     case 'noMana': toast(t(game.mode === 'castle' ? 'toast.noBlood' : 'toast.noMana')); break;
     case 'frenzy': audio.play('frenzy', 1); audio.play('frenzy_' + e.weapon); audio.setHeartbeat(true); rumble(8, .3); if (e.weapon === 'heavy' && !debtHinted) { debtHinted = true; toast(t('hint.debt')); } else if ($('boss-hud').hidden) toast(t('hud.frenzy')); burst(e.x, e.y - 30, '#e0584c', 30, 240);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .5, max: .5, color: FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', r: 150 }); burst(e.x, e.y - 30, FRENZY_TINT[e.weapon] ? FRENZY_TINT[e.weapon].ring : '#e0584c', 16, 200, 0, 3); break; // the boss HUD (armor gauge) sits where the toast lands; placeholder feedback, vignette, aura and heartbeat belong to art and audio
@@ -303,7 +319,7 @@ function handleEvent(e) {
     case 'chest': audio.play(e.kind === 'heal' ? 'chestHeal' : 'chestOpen', e.optional ? 1.25 : 1); burst(e.x, e.y - 14, e.kind === 'heal' ? '#82c9a3' : '#c5b6f4', 22, 170); if (e.optional) burst(e.x, e.y - 24, '#e0bd6a', 12, 120); break;
     case 'unseal': burst(e.x, e.y - 18, '#8f6be0', 18, 140); break;
     case 'guards': audio.play('guardDown', e.n === e.total ? 1.4 : .9); flashNumber({ x: game.player.x, y: game.player.y - 90, amount: t('hud.guards', { n: e.n, total: e.total }) }, '#e8d9a8'); break;
-    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: t(`affix.${e.affix}`) }), time: 3.6, elite: true }); break;
+    case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: eliteLabel(e) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
     case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
@@ -372,9 +388,11 @@ let lastFightKing = false; let lastFight = null; // last Warden fightStats, show
 let kingResult = ''; // 'won' or 'dead' when the slice-end screen follows a Fallen King attempt
 let deathDebt = false, deathToll = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
+// castle elites have a twist and no affix
+const eliteLabel = e => e.affix ? t(`affix.${e.affix}`) : t(`elite.${e.twist}`);
 let lastEliteAffix = ''; // affix of the elite just slain; the 'elite' pick follows its event
 function openUpgrade(choices) {
-  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: t(`affix.${lastEliteAffix}`).toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
+  openModal(`<div class="modal-eyebrow">${game.pickReason === 'start' ? t('decor.start') : game.pickReason === 'chest' ? t('decor.chest') : game.pickReason === 'elite' ? t('decor.elite', { affix: lastEliteAffix.toUpperCase() }) : game.mode === 'endless' ? t('decor.floorCleared', { n: game.floor }) : t('decor.upgrade', { stage: roman[game.stage] })}</div><h2 id="modal-title">${t(game.pickReason === 'start' ? 'upgrade.start' : game.pickReason === 'chest' ? 'upgrade.chestTitle' : game.pickReason === 'elite' ? 'upgrade.eliteTitle' : 'upgrade.title')}</h2><p>${t('upgrade.text')}</p><div class="relic-choices">${choices.map((r,i) => `<button class="relic-card"${r.cursed ? ' data-cursed' : ''} data-relic="${r.id}"${game.synergyPartners(r.id).length ? ' data-synergy' : ''}${ELEMENTS.includes(r.id) ? ` data-element="${r.id}"` : ''}><span class="card-number">0${i+1}</span>${icon(r.icon)}<small>${t(`relic.${r.id}.type`)}</small><strong>${t(`relic.${r.id}.name`)}</strong><p>${t(`relic.${r.id}.text`)}</p>${r.cursed ? `<p class="card-cost"><b>${t('upgrade.cost')}</b> ${t(`relic.${r.id}.cost`)}</p>` : ''}${synergyLine(r.id)}</button>`).join('')}</div><p class="modal-footnote">${t(game.pickReason === 'start' ? 'upgrade.startFootnote' : game.pickReason === 'chest' ? 'upgrade.chestFootnote' : game.pickReason === 'elite' ? 'upgrade.eliteFootnote' : 'upgrade.footnote')}</p>`, 'upgrade', false);
 }
 function openVigil() { // rest point: one weapon card each, choosing one starts floor 1
   openModal(`<div class="modal-eyebrow">${t(vigilNo === 2 ? 'rest.title2' : 'rest.title')}</div><h2 id="modal-title">${t(vigilNo === 2 ? 'rest.choose2' : 'rest.choose')}</h2>${vigilNo === 2 ? `<p>${t('rest.text2')}</p>` : ''}<div class="relic-choices">${Object.keys(WEAPONS).map((id, i) => `<button class="relic-card" data-weapon="${id}"><span class="card-number">0${i + 1}</span>${icon('sword')}<strong>${t(`weapon.${id}.name`)}</strong><p>${t(`weapon.${id}.desc`)}</p><p>${t(`weapon.${id}.frenzy`)}</p><p class="card-cost">${t('weapon.stats', { damage: WEAPONS[id].damage, speed: Math.round(100 / WEAPONS[id].cd), reach: WEAPONS[id].reach })}</p></button>`).join('')}</div>`, 'vigil', false);
@@ -685,6 +703,15 @@ function drawEffects(dt) {
       ctx.strokeStyle = '#e9dcc8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(10, 0, 92 * k, 9, 0, -Math.PI * .5, Math.PI * .5); ctx.stroke(); // flat half-crescent growing out
       
       ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(Math.round(14 + 90 * k), 0); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'rayBeam') { // mage ray contact: a white core and red band along the exact line
+      ctx.save(); ctx.globalAlpha = 1 - progress; ctx.lineCap = 'round'; ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = 16 * (1 - progress * .5); ctx.beginPath(); ctx.moveTo(Math.round(fx.x1), Math.round(fx.y1)); ctx.lineTo(Math.round(fx.x2), Math.round(fx.y2)); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'spikes') { // impaler skewer: spikes shoot up along the zone's floor edge
+      const n = Math.max(2, Math.round(fx.w / 24)), k = Math.min(1, progress * 3); ctx.save(); ctx.globalAlpha = 1 - progress * progress; ctx.fillStyle = '#ffe0d0';
+      for (let i = 0; i < n; i++) { const sx = Math.round(fx.x + fx.w * (i + .5) / n); ctx.beginPath(); ctx.moveTo(sx - 6, fx.y); ctx.lineTo(sx, fx.y - 14 - 36 * k); ctx.lineTo(sx + 6, fx.y); ctx.fill(); } ctx.restore();
+    } else if (fx.type === 'postureBless') { // Hierophant: pale-blue shield ring round the ally and three chevrons rising
+      ctx.save(); ctx.globalAlpha = Math.sin(progress * Math.PI); ctx.strokeStyle = '#9fd8ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(Math.round(fx.x), Math.round(fx.y), 24, 38, 0, 0, 7); ctx.stroke();
+      for (let i = 0; i < 3; i++) { const cx = Math.round(fx.x) + (i - 1) * 12, cy = Math.round(fx.y + 20 - progress * 50 - (i & 1) * 8); ctx.beginPath(); ctx.moveTo(cx - 5, cy + 3); ctx.lineTo(cx, cy - 3); ctx.lineTo(cx + 5, cy + 3); ctx.stroke(); } ctx.restore();
     } else if (fx.type === 'streak') { // spear thrust: a thin bright line along the hit area that fades from the base
       const k = Math.min(1, progress * 3); ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = '#f2ecd8'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Math.round(fx.x + fx.dir * (10 + 90 * progress)), Math.round(fx.y)); ctx.lineTo(Math.round(fx.x + fx.dir * (10 + 184 * k)), Math.round(fx.y)); ctx.stroke(); ctx.restore();
     } else if (fx.type === 'chop') { // knight overhead: a falling crescent in front of the blade, landing after the 0.15 s step
@@ -841,9 +868,9 @@ function watchBlood() {
   prevBlood = live ? p.blood : null;
 }
 function watchHold() { // delayed-heavy hold loop: on only while a delayed heavy waits before its glint; no allocation
-  let hold = false;
-  if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = true; break; }
-  audio.setHold(hold);
+  let hold = null;
+  if (game.state === 'playing') for (const e of game.enemies) if (e.delayed && e.heavy && e.hp > 0 && e.tell > 0 && !e.glinted) { hold = e.heavyKind || 'creak'; break; }
+  audio.setHold(hold, hold);
 }
 function watchLethal() { // lethal-debt tone: same rule as the HUD band; no allocation
   const p = game.player;
