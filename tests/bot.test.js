@@ -164,3 +164,13 @@ test('the apex duel harness is deterministic for a fixed seed', async () => {
   assert.deepEqual(a, b);
   assert.ok(a.win || a.dead || a.timeout);
 });
+
+test('the expert bot beats a castle apex skeleton 1v1 with every weapon, answering the stepcut lunge (dash, walk-out or jump) instead of trading', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  for (const weapon of Object.keys(WEAPONS)) for (const seed of [1, 2, 3]) {
+    const r = playDuel(seed, { n: 1, weapon, cap: 40 });
+    assert.ok(r.win, `${weapon} seed ${seed}: the duel was won`);
+    assert.ok(r.hits <= 1, `${weapon} seed ${seed}: took ${r.hits} hits`);
+    assert.equal(r.unanswerable, 0);
+  }
+});
