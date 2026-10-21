@@ -231,6 +231,9 @@ function handleEvent(e) {
       if (e.kind === 'slash2') effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Duelist second strike: the same white ring
     }
     case 'enemyCross': audio.play('batWing', 1); burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
+    case 'apexStep': burst(e.x - e.dir * 6, FLOOR, '#b3a68f', 6, 90, -e.dir); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 36, life: .25, max: .25 }); break; // backstep: a small scrape of dust at the heels
+    case 'apexGuard': if (e.blocked) { effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: 0, color: '#e8f6ff', s: .7 }); burst(e.x, e.y, '#cfe3f2', 8, 200); } break; // block spark (the guard stance itself is drawn on the body)
+    case 'apexCrush': rumble(5, .16); burst(e.x, e.y, '#ffd36e', 16, 240); burst(e.x, e.y, '#ffffff', 6, 150, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .35, max: .35, color: '#ffd36e', r: 70 }); break; // guard broken: the gold opening ring
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
