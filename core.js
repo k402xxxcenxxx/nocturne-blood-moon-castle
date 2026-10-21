@@ -95,7 +95,7 @@ export const ATTACK_TOKENS = 2, TOKEN_GAP = .3, STARVED = 2; // tokens for the w
 export const STEADY = .5, POISE_REGEN_DELAY = 1.5, POISE_REGEN = .25, STAGGER_STUN = 1.5, RIPOSTE_MUL = 1.5, RIPOSTE_BLOOD = 5, GLINT_LEAD = .4, DELAY_EXTRA = .4;
 export const SCREEN_LEFT = 320, SCREEN_RIGHT = 560; // a tell may only start within this many px left / right of the hero
 const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40 };
-const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5 }; // castle light-attack recovery (standing still, punishable); the priest and mage join with their kits
+const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5 }; // castle light-attack recovery (standing still, punishable); the priest and mage bolts have none
 const LIGHT_CD = { skeleton: 1 }; // castle light-attack cooldown overrides (s); others keep the stage-based cooldown
 const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt' };
 const TRIGGER = { bat: 170, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460 }; // distance at which a ready enemy asks for a token
@@ -244,9 +244,9 @@ export class Game {
     const open = () => plan.map((t, i) => t ? -1 : i).filter(i => i >= 0), count = t => plan.filter(x => x === t).length;
     if (f === 5 || f === 6) { const slots = open().filter(i => i < n - 2); plan[slots[Math.floor(this.rand() * slots.length)]] = f === 5 ? 'priest' : 'mage'; } // the lesson of the floor is never a gate guard
     for (const i of open()) { // priest / mage join the roll from floor 6: at most one of each, at most one of the two on floor 7, so a floor never holds more than 2 ranged or support enemies
-      const pool = base.slice();
-      if (f >= 6 && !count('priest') && (f !== 7 || !count('mage'))) pool.push('priest');
-      if (f >= 7 && !count('mage') && (f !== 7 || !count('priest'))) pool.push('mage');
+      const pool = base.slice(), guard = i >= n - 2; // priest and mage are never required gate guards
+      if (!guard && f >= 6 && !count('priest') && (f !== 7 || !count('mage'))) pool.push('priest');
+      if (!guard && f >= 7 && !count('mage') && (f !== 7 || !count('priest'))) pool.push('mage');
       plan[i] = pool[Math.floor(this.rand() * pool.length)];
     }
     return plan;
@@ -653,6 +653,7 @@ export class Game {
     const thrust = p.move === 'thrust';
     const reach = thrust ? 155 + Math.min(60, 20 * this.stacks('pierce')) : p.reach + (p.combo === 3 ? 24 : 0);
     const mul = thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo];
+    this.shieldDone = new Set();
     for (const e of this.enemies.concat(this.obstacles)) {
       const dx = (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
@@ -673,10 +674,12 @@ export class Game {
       if (this.bloodOk(e)) this.gainBlood((blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
     }
+    this.shieldDone = null;
   }
   // Spear frenzy: the dashing hero hits every enemy it overlaps once per dash (1.0 x damage, heavy knockback, 35 poise); a sword hit for blood, statuses and armor break. A shield front stops the dash.
   assault() {
     const p = this.player;
+    this.shieldDone = new Set();
     for (const e of this.enemies) {
       if (e.hp <= 0 || this.assaulted.has(e) || Math.abs(e.x - p.x) > (e.w + p.w) / 2 + 8 || e.y < p.y - p.h || e.y - e.h > p.y) continue;
       this.assaulted.add(e);
@@ -693,6 +696,7 @@ export class Game {
       this.emit('assaultHit', { x: e.x, y: e.y - e.h * .55, dir: p.dir, blocked });
       if (blocked) p.dash = 0;
     }
+    this.shieldDone = null;
   }
   // Castle Phalanx (elite shield bearer): while its guard is up, frontal sword hits on the nearest living ally within 80 behind it are blocked too. Returns that shield, else null.
   coverFor(e) {
@@ -777,6 +781,9 @@ export class Game {
     const hold = castle && !eclipse && (e.recover > 0 || e.steady > 0 || e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0 || e.twist === 'oathsworn'); // castle: no flinch during recovery, the steady window after a flinch, a crossover / blink / recoil, or ever for an Oathsworn
     if (blocked) {
       const b = this.cover || e; // the shield doing the blocking: e itself, or the Phalanx covering an ally
+      const dup = !shot && this.shieldDone?.has(b); // one swing or dash hitting a Phalanx and its covered ally blocks once per shield
+      if (!shot) this.shieldDone?.add(b);
+      if (!dup) {
       if (castle && b.type === 'shield' && !shot) { b.blocks = b.blocks.filter(t => this.time - t < 1).concat(this.time); if (b.blocks.length >= 2) b.counterT = 1; }
       // A block keeps the enemy's footing and its bash wind-up, and pushes the player away from the shield.
       const p = this.player;
@@ -788,6 +795,7 @@ export class Game {
         this.freeze = Math.max(this.freeze, .035);
       }
       this.emit('block', { x: b.x + b.dir * b.w / 2, y: b.y - b.h * .55, amount, dir: b.dir });
+      }
     } else {
       const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold || warden; // Eclipse still interrupts armored non-bosses
       if (!quiet && (!keepsTell || e.type === 'boss')) {
@@ -965,7 +973,7 @@ export class Game {
   // Does o ask for a token right now: ready, not busy, and the hero is inside its trigger range?
   wantsToken(o) {
     const p = this.player;
-    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && !(o.crossT > 0) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
+    return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && !(o.crossT > 0) && !(o.blinkT > 0) && !(o.recoilT > 0) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
       && Math.abs(o.x - p.x) < (this.provoked(o) ? PROVOKED_REACH : TRIGGER[o.type]) && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
   }
   // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
@@ -1856,7 +1864,7 @@ export class Game {
       return;
     }
     if (e.heavyKind === 'rush' || e.heavyKind === 'dive') {
-      Object.assign(e, { strikeT: e.heavyKind === 'rush' ? .35 : .3, strikeMax: e.heavyKind === 'rush' ? .35 : .3, struck: false, from: { x: e.x, y: e.y }, dmg });
+      Object.assign(e, { strikeT: e.heavyKind === 'rush' ? .35 : .3, strikeMax: e.heavyKind === 'rush' ? .35 : .3, struck: false, dealt: false, from: { x: e.x, y: e.y }, dmg });
       return;
     }
     if (this.heavyHits(e, w.box)) this.hurt(dmg, e.dir, false, true);
@@ -1876,12 +1884,12 @@ export class Game {
       if (!e.struck && this.heavyHits(e, { x: e.x - e.w / 2, y: e.y - e.h, w: e.w, h: e.h })) { e.struck = true; this.hurt(e.dmg, e.dir, false, true); }
     } else {
       e.x = e.from.x + (w.line.x2 - e.from.x) * k; e.y = e.from.y + (w.line.y2 + e.h / 2 - e.from.y) * k; e.vx = (e.x - prevX) / dt;
-      if (!e.struck && this.heavyHits(e, { x: e.x - e.w / 2, y: e.y - e.h, w: e.w, h: e.h }, w.r)) { e.struck = true; this.hurt(e.dmg, Math.sign(p.x - e.x) || 1, false, true); }
+      if (!e.struck && this.heavyHits(e, { x: e.x - e.w / 2, y: e.y - e.h, w: e.w, h: e.h }, w.r)) { e.struck = true; e.dealt = p.invulnerable <= 0; this.hurt(e.dmg, Math.sign(p.x - e.x) || 1, false, true); } // i-frames make it a miss: the bounce still comes
     }
     if (e.strikeT <= 0 && this.state === 'playing') this.heavyEnd(e);
   }
   heavyEnd(e) {
-    if (this.mode === 'castle' && e.twist === 'shrieker' && e.heavyKind === 'dive' && !e.struck && !e.bounced && this.state === 'playing') { // Shrieker: a missed dive bounces once, a second dive from the landing point
+    if (this.mode === 'castle' && e.twist === 'shrieker' && e.heavyKind === 'dive' && !e.dealt && !e.bounced && this.state === 'playing') { // Shrieker: a dive that dealt no damage (missed, dashed through or absorbed) bounces once, a second dive from the landing point
       const warn = { kind: 'dive', ...this.diveLine(e) };
       Object.assign(e, { warn, tell: BOUNCE_TELL, strikeT: 0, heavy: true, heavyKind: 'dive', delayed: false, glinted: false, glint: 0, bounced: true, vx: 0, punishable: false });
       this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: 'dive', enemy: 'bat', area: warn, delayed: false, bounce: true });

@@ -937,7 +937,7 @@ function drawBossWarn(ctx, e, time) {
 function drawHeavyWarn(ctx, e, time) {
   const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0 || e.cutT > 0; if (!w || !(tl || strike)) return;
   if (tl && !tellMax.has(w)) tellMax.set(w, e.tell);
-  const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / (e.move === 'slash2' ? .45 : tellMax.get(w)))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
+  const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
   ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; // light moves (stepcut, counter) get a thinner outline than a heavy
   const b = w.box;
   if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter' || w.kind === 'sweep' || w.kind === 'slash' || w.kind === 'overhead' || w.kind === 'turnswipe' || w.kind === 'ray' || w.kind === 'skewer') {
@@ -1051,7 +1051,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     ctx.restore();
   }
   if (e.blinkT > 0 && e.blinkTo != null) { // mage blink: a ghost and a rising light column on the spot it will take
-    const q = 1 - e.blinkT / .4; ctx.save(); ctx.translate(Math.round(e.blinkTo), y); ctx.globalAlpha = .15 + .4 * q; ctx.strokeStyle = '#cdb8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, -1, 26, 6, 0, 0, 7); ctx.stroke();
+    const q = 1 - e.blinkT / .4; ctx.save(); ctx.translate(Math.round(e.blinkTo), FLOOR); ctx.globalAlpha = .15 + .4 * q; ctx.strokeStyle = '#cdb8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, -1, 26, 6, 0, 0, 7); ctx.stroke();
     ctx.fillStyle = '#cdb8ff55'; ctx.fillRect(-12, -84 * q - 6, 24, 84 * q + 6); ctx.scale(e.dir === -1 ? -1 : 1, 1); mage(ctx, e, time, '#cdb8ff'); ctx.restore();
   }
   const wd = !!e.warden, kg = !!e.king, wb = wd || kg, wtm = wb ? tellMax.get(e.warn) || e.tell || 1 : 1, wpw = wb && e.tell > 0 ? Math.min(1, (wtm - e.tell) / (e.delayed ? Math.max(.1, wtm - .8) : wtm)) : 0, whold = wb && e.tell > 0 && e.delayed && wpw >= 1 && !e.glinted, wturn = wb && wardenTurn(e), wk = wb && e.tell > 0 ? Math.min(1, (wtm - e.tell) / (wtm * .5)) : 1;

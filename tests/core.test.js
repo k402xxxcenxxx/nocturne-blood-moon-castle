@@ -4368,7 +4368,8 @@ test('castle floors (PR 3): no priest or mage on floors 1-4; the priest is taugh
     }
     const five = plan(5); assert.equal(n(five, 'priest'), 1); assert.equal(n(five, 'mage'), 0);
     assert.ok(!ranged(five.at(-1)) && !ranged(five.at(-2)), 'the lesson is a regular enemy, not a gate guard');
-    const six = plan(6); assert.equal(n(six, 'mage'), 1); assert.ok(!ranged(six.at(-1)) || n(six, 'priest') <= 1);
+    const six = plan(6); assert.equal(n(six, 'mage'), 1);
+    for (let floor = 5; floor <= 9; floor++) { const q = plan(floor); assert.ok(!ranged(q.at(-1)) && !ranged(q.at(-2)), `floor ${floor}: no priest or mage gate guard: ${q}`); }
     assert.equal(plan(5)[1], 'bat'); assert.ok(!plan(5).includes('mage') && !plan(5).includes('knight'));
   }
   const g = new Game(() => {}, 5, 'castle'); g.loadFloor(5);
@@ -4555,6 +4556,7 @@ test('castle elite Shrieker: a missed dive bounces once (tell 0.6 s, glint 0.4 s
   advance(c.game, 1.5); assert.equal(swings(c.events).filter(ev => ev.heavy).length, 2, 'only one bounce');
   const plain = dive(false); plain.player.x += 200; advance(plain.game, 2.5); assert.equal(swings(plain.events).filter(ev => ev.heavy).length, 1, 'a plain bat dives once');
   const landed = dive(true); advance(landed.game, 1.5); assert.equal(swings(landed.events).filter(ev => ev.heavy).length, 1, 'a dive that lands does not bounce'); assert.equal(landed.player.blood, 50);
+  const dodged = dive(true); dodged.player.invulnerable = 99; advance(dodged.game, 3); assert.equal(swings(dodged.events).filter(ev => ev.heavy).length, 2, 'a dive that deals no damage (i-frames) still bounces'); assert.equal(dodged.player.blood, 150);
 });
 
 test('castle elite Phalanx: with its guard up, frontal sword hits on the nearest ally within 80 behind it are blocked; a broken guard, a far ally or a hero behind it are not', () => {
@@ -4572,6 +4574,17 @@ test('castle elite Phalanx: with its guard up, frontal sword hits on the nearest
   assert.equal(run({ broken: true }), plain, 'guard broken: full damage');
   assert.equal(run({ behind: true }), plain, 'from behind the Phalanx: full damage');
   assert.equal(run({ gap: 90 }), plain, 'an ally 90 px behind is out of cover');
+});
+
+test('castle elite Phalanx: one swing hitting the Phalanx and its covered ally counts one block and one pushback', () => {
+  const { game, player, events } = castle(42, 2); game.rand = () => .99;
+  const ally = enemy(game, 640); ally.cd = 99; ally.maxPoise = ally.poise = 1e6;
+  const s = enemy(game, 600, { type: 'shield' }); s.cd = 99; s.dir = -1; game.makeElite(s, 0);
+  Object.assign(player, { x: 540, dir: 1, combo: 0 }); const hp = ally.hp; game.attack();
+  assert.ok(ally.hp < hp && ally.hp > hp - 20, 'both were hit, the ally through the shield');
+  assert.equal(events.filter(ev => ev.type === 'block').length, 1);
+  assert.equal(s.blocks.length, 1); assert.ok(!(s.counterT > 0), 'no counter from one swing');
+  assert.equal(player.x, 540 - 40, 'pushed once');
 });
 
 test('castle elite Impaler: a hero in the air within 240 draws the skewer (tell 0.9 s, box 10-160 in front, 54-180 above its feet); walking out answers it; a grounded hero does not draw it', () => {
