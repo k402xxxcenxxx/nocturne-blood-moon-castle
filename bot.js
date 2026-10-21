@@ -14,7 +14,7 @@ export const SKILLS = {
 };
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
 const ATTACK_RESERVE = 3, MOVE_RESERVE = 2, DODGE_RESERVE = 1; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
-const EDGE_MARGIN = 25, CLIP_PATIENCE = 3;
+const JUMP_AT = .4, EDGE_MARGIN = 25, CLIP_PATIENCE = 3;
 const WEAPON_PICK = 'spear';
 const HEAVY_DEBT_CAP = 30; // Greatsword frenzy: the bot stops trading light hits once debt plus the hit would pass this (debt of 100 kills)
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
@@ -279,7 +279,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         }
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
         else if (e && e.type === 'skeleton' && !e.heavy && e.move !== 'stepcut' && !dashReady && p.grounded && t <= .38 + jit(e) && t >= .18) { o.jump = true; o.urgent = true; } // slash, counter or chain with no dash and no room: the 77 px hit height is cleared 0.17-0.57 s after the press
-        else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= .4 + jit(e) && t >= .2) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
+        else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= JUMP_AT + jit(e) && t >= .19) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
         else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray') && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
