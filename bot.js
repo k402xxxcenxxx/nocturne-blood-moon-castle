@@ -78,7 +78,7 @@ function hitTime(e, px, py) {
   }
   if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
   if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
-  if (e.move === 'counter' && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // castle shield shove
+  if ((e.move === 'counter' || e.move === 'rising') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove, apex skeleton counter and rising slash: the drawn box
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
