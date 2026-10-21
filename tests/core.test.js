@@ -4507,8 +4507,23 @@ test('castle elites (PR 3): health x1.5, no affix, no damage bonus, one twist pe
   game.makeElite(e, 0); assert.equal(game.delayHeavy(e, 'cleave'), true, 'an elite: 50% on any floor');
   game.rand = () => .6; assert.equal(game.delayHeavy(e, 'cleave'), false);
   const events = [], g = new Game(ev => events.push(ev), 42, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(8);
-  const o = g.enemies.find(x => x.elite); assert.ok(o.bonus && o.type === 'knight' && o.twist === 'oathsworn', 'the floors 8-9 bonus elite');
+  const o = g.enemies.find(x => x.elite && x.required === false && x.type === 'knight'); assert.ok(o.bonus && o.type === 'knight' && o.twist === 'oathsworn', 'the floors 8-9 bonus elite');
   g.player.x = o.x - 100; advance(g, .05); assert.equal(events.find(ev => ev.type === 'elite').twist, 'oathsworn');
+});
+
+test('castle elite placement: none on floors 1-6; floors 7-9 promote one regular (never a gate guard or the knight), priest and mage only from floor 8; floors 8-9 keep the Oathsworn bonus', () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 40; seed++) for (let floor = 1; floor <= 9; floor++) {
+    const g = new Game(() => {}, seed, 'castle'); g.start(); g.descend(); g.loadFloor(floor);
+    const elites = g.enemies.filter(e => e.elite), promoted = elites.filter(e => e.twist !== 'oathsworn');
+    if (floor <= 6) { assert.equal(elites.length, 0, `floor ${floor}`); continue; }
+    assert.equal(promoted.length, 1, `floor ${floor} seed ${seed}`);
+    const e = promoted[0]; seen.add(e.twist);
+    assert.ok(e.bonus && !e.required && e.type !== 'knight', 'a regular, no reward pick');
+    if (floor === 7) assert.ok(!['priest', 'mage'].includes(e.type), 'no Hierophant or Prism before floor 8');
+    assert.equal(elites.length - promoted.length, floor >= 8 ? 1 : 0, 'the Oathsworn bonus');
+  }
+  assert.deepEqual([...seen].sort(), ['duelist', 'hierophant', 'impaler', 'phalanx', 'prism', 'shrieker'], 'every non-knight twist appears');
 });
 
 test('castle elite Duelist: the slash strikes again 0.45 s after the first contact, with its own tell; a plain skeleton strikes once', () => {

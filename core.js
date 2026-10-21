@@ -83,7 +83,7 @@ const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14 }
 const HEAVY = {
   skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .1, reads: { whiff: .8, dashSpent: .5 } },
   bat: { kind: 'dive', tell: .9, recover: 1, base: .5, reads: { airborne: .6, frenzy: .5 } },
-  shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 } },
+  shield: { kind: 'rush', tell: .9, recover: 1, base: .15, reads: { approach: .55, cast: .6 }, lateReads: { approach: 1, cast: .6 } },
   spear: { kind: 'lunge', tell: .9, recover: 1, base: .2, reads: { dashSpent: .55, approach: .45 }, lateReads: { dashSpent: .8, approach: 1 } }, // lateReads: from LATE_READS_FLOOR on
   knight: { kind: 'greatswing', tell: 1, recover: 1.2, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
   priest: { kind: 'rite', tell: 1, recover: 1, base: .25, reads: { dashSpent: .5, frenzy: .5 } },
@@ -110,6 +110,7 @@ const BOLT_TELL = { priest: .7, mage: .65 }, RITE_R = 56, RITE_RANGE = 400, RAY 
 const RECOIL = { range: 120, dist: 100, time: .3, cd: 4 }, BLINK = { range: 120, dist: 220, time: .4, cd: 6 };
 // Castle elites (#50 section 4): no affix, no extra damage, health x1.5 and one rule twist per type.
 const CASTLE_TWIST = { skeleton: 'duelist', bat: 'shrieker', shield: 'phalanx', spear: 'impaler', knight: 'oathsworn', priest: 'hierophant', mage: 'prism' }, ELITE_HP = 1.5, ELITE_DELAY = .5;
+const ELITE_FROM = 7, ELITE_POOL = ['skeleton', 'bat', 'shield', 'spear', 'priest', 'mage']; // from ELITE_FROM one regular is promoted from these types (the knight is the Oathsworn bonus); the first four on floor 7
 const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, recover: 1, range: 240, reach: 160, low: 54, high: 180 }, PRISM_FAN = [-.3, 0, .3], PHALANX_COVER = 80;
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
@@ -214,7 +215,7 @@ export class Game {
       for (let g = 0; g < 2; g++) { const type = rollType(regular + g); this.spawnEnemy(type === 'bat' ? 'skeleton' : type, this.portalX - 230 - g * 150 + this.rand() * 30, tier).required = true; }
       if (castle) { // no chests; floors 8-9 add one bonus elite (no reward pick)
         this.chests = [];
-        const pool = this.floor >= 8 ? ELITE_POOL : ELITE_POOL.slice(0, 4), picks = this.floor >= 7 ? this.enemies.slice(0, regular).filter(e => pool.includes(e.type)) : [];
+        const pool = this.floor >= 8 ? ELITE_POOL : ELITE_POOL.slice(0, 4), picks = this.floor >= ELITE_FROM ? this.enemies.slice(0, regular).filter(e => pool.includes(e.type)) : [];
         if (picks.length) this.makeElite(picks[Math.floor(this.rand() * picks.length)], tier).bonus = true; // floors 7-9: one rolled regular gets its twist (teach before test: floors 1-6 stay plain); priest and mage only from floor 8
         if (this.floor >= 8) Object.assign(this.makeElite(this.spawnEnemy('knight', spot.x, tier), tier), { bonus: true, y: spot.y, plat: spot.plat });
       } else {
