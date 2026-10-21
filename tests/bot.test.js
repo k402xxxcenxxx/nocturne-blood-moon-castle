@@ -4,7 +4,7 @@ import { Game, FLOOR, RELICS, WEAPONS } from '../core.js';
 import { createBot, chooseWeapon, chooseRelic, resolveModal, REACTION_DELAY, MAX_PRESSES_PER_SECOND, SKILLS } from '../bot.js';
 
 const DT = 1 / 60;
-const castle = (seed = 1) => { const game = new Game(() => {}, seed, 'castle'); game.start(); resolveModal(game); return game; }; // Vigil weapon pick, then floor 1
+const castle = (seed = 1, apex = false) => { const game = new Game(() => {}, seed, 'castle'); game.apex = apex; game.start(); resolveModal(game); return game; }; // Vigil weapon pick, then floor 1 (apex skeletons off: these tests cover the bot's limits, not the arms race)
 
 test('modal decisions go through the core methods the UI uses', () => {
   const game = new Game(() => {}, 3, 'castle');

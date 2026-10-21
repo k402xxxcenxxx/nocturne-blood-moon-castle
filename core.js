@@ -114,7 +114,8 @@ const ELITE_FROM = 7, ELITE_POOL = ['skeleton', 'bat', 'shield', 'spear', 'pries
 const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, recover: 1, range: 240, reach: 160, low: 54, high: 180 }, PRISM_FAN = [-.3, 0, .3], PHALANX_COVER = 80;
 // Apex skeleton (#66): every castle skeleton decides from a snapshot of the hero taken APEX_REACT s ago (never the live frame, input or future rolls). Playtest starting points.
 export const APEX_REACT = .12;
-const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 2, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6 };
+const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 1.5, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6,
+  hp: 8, dmg: 6, poise: 6, speed: 2, cutReach: 200 }; // stat levers (round 2): hp x8, light damage x6, posture x6, speed x2; the stepcut reaches 200 px
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
@@ -453,6 +454,9 @@ export class Game {
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
     if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0 }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
+      e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
+    }
     return e;
   }
   update(dt, input = {}) {
@@ -1252,9 +1256,9 @@ export class Game {
       e.stepT = Math.max(0, e.stepT - dt); e.vx = e.stepV; e.x = clamp(e.x + e.stepV * dt, 30, this.worldWidth - 40);
       if (this.collideEnemy(e, prevX, dt)) e.stepT = 0; // a barricade ends the backstep
       if (e.stepT > 0) return;
-      const d = e.dir, to = clamp(e.x + d * 80, 30, this.worldWidth - 40);
+      const d = e.dir, reach = this.apexOn(e) ? APEX.cutReach : 100, to = clamp(e.x + d * 80, 30, this.worldWidth - 40);
       e.vx = 0; e.tell = .5;
-      e.warn = { kind: 'stepcut', to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + d * 10, to + d * 100), y: e.y - 70, w: 90, h: 70 } };
+      e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + d * 10, to + d * reach), y: e.y - 70, w: reach - 10, h: 70 } };
       return;
     }
     const w = e.warn, d = e.dir;
@@ -1351,8 +1355,8 @@ export class Game {
       if (e.cd > 0 || !(high ? Math.abs(s.y - e.y) < 220 : near) || heroCool >= len || !this.canWindUp(e)) return false;
       e.dir = toward; e.vx = 0; fn(); return true;
     };
-    const slash = (bait = false) => (bait ? d <= 150 : d <= 82) && begin(APEX.lightTell, () => Object.assign(e, { tell: APEX.lightTell, cd: APEX.lightCd, follows: 0 }));
-    const stepcut = () => d <= 110 && d > 40 && e.stepRoll <= 0 && begin(APEX.lightTell + .4, () => Object.assign(e, { stepT: .25, move: 'stepcut', stepV: -toward * 280, cd: APEX.lightCd, follows: 0 }));
+    const slash = (max = 82) => d <= max && begin(APEX.lightTell, () => Object.assign(e, { tell: APEX.lightTell, cd: APEX.lightCd, follows: 0 }));
+    const stepcut = (max = APEX.cutReach + 10) => d <= max && d > 40 && e.stepRoll <= 0 && begin(APEX.lightTell + .4, () => Object.assign(e, { stepT: .25, move: 'stepcut', stepV: -toward * 280, cd: APEX.lightCd, follows: 0 }));
     const noHeavy = eclipseReady && d < 230; // Eclipse cancels a heavy: lights only inside its range
     const cleave = () => !noHeavy && d <= 260 && near && heroCool < HEAVY.skeleton.tell && (e.dir = toward, this.startHeavy(e, d, true)) && (e.vx = 0, e.follows = 0, true);
     const rising = () => begin(APEX.risingTell, () => { const x0 = Math.min(e.x, e.x + toward * 70); Object.assign(e, { tell: APEX.risingTell, move: 'rising', cd: APEX.lightCd, follows: 0, warn: { kind: 'rising', box: { x: x0, y: e.y - 150, w: 70, h: 110 } } }); }, true);
@@ -1360,10 +1364,10 @@ export class Game {
     if (e.armor > 0 && slash()) return;
     // 2. an ally stunned and the hero closing on it: time a hit into the riposte swing
     const down = this.enemies.find(o => o !== e && o.hp > 0 && o.type === 'skeleton' && o.stun > 0 && o.riposte && Math.abs(s.x - o.x) < 160);
-    if (down && (slash(true) || stepcut())) return;
+    if (down && (slash(150) || stepcut())) return;
     // 3. dash trap: a peer's tell is about to land, so this contact falls 0.5 s later, inside the hero's dash cooldown
     const lead = this.enemies.find(o => o !== e && o.hp > 0 && o.type === 'skeleton' && !o.heavy && o.tell > 0 && o.tell < .08 && Math.abs(s.x - o.x) < 140);
-    if (lead && slash(true)) return;
+    if (lead && slash(150)) return;
     // 4. the hero in the air
     if (s.plunge === 3 && (slash() || stepcut())) return; // the landing
     if (s.plunge) { if (d < s.plungeRadius + 30) retreat(); else hold(s.plungeRadius + 30); return; }
@@ -1392,11 +1396,11 @@ export class Game {
     if ((s.whiff > 0 || s.attackCd > .15) && d < 140) { if ((s.dashCd > .45 || !dashReady) && cleave()) return; if (slash() || stepcut()) return; }
     // 13. the hero walking in: meet the charge with a guard (its first two hits are blocked); then a bait slash while the dash is ready (a dash draws the chain), else the stepcut
     if (s.vx * (e.x - s.x) > 100 && d > reach - 14 && d <= 230 && this.apexGuard(e)) return;
-    if (s.vx * (e.x - s.x) > 100) { if (dashReady ? slash(true) : stepcut() || slash()) return; }
+    if (s.vx * (e.x - s.x) > 100) { if (stepcut(260) || (dashReady ? slash(150) : slash())) return; } // a lunge aimed where the charging hero will stand
     // 14. the hero retreating: follow it
     if (s.vx * (e.x - s.x) < -100) { if (stepcut()) return; hold(reach + 15); return; }
     // 15. idle at mid range: hold the line, mixing a bait every 0.8 s
-    if (e.mixT <= 0) { e.mixT = .8; if (this.rand() < .5 && (!eclipseReady && cleave() || stepcut() || slash(true))) return; }
+    if (e.mixT <= 0) { e.mixT = .8; if (!eclipseReady && cleave() || stepcut() || slash(150)) return; }
     hold(reach + 15);
   }
   // Mage `blink` (read: the hero within 120): not an attack, so no tell, token or hyper armor. A 0.4 s shimmer on the spot it stands on and the spot it will take (220 px from the hero, on the floor,

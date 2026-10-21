@@ -29,7 +29,9 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   const sigOf = e => e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
   const realHurt = game.hurt.bind(game);
   game.hurt = (amount, dir, hazard = false, heavy = false) => {
-    const near = [...game.enemies].filter(e => e.hp > 0).sort((a, b) => Math.abs(a.x - game.player.x) - Math.abs(b.x - game.player.x))[0];
+    // the attacker: the enemy whose tell ends this frame, else one mid-lunge, else the one whose tell ended last (several skeletons can be attacking at once)
+    const live = [...game.enemies].filter(e => e.hp > 0), st = e => start.get(e);
+    const near = live.find(e => st(e)?.sig[0] === 't' && !(e.tell > 0)) || live.find(e => e.cutT > 0 || e.strikeT > 0) || live.sort((a, b) => (st(b)?.end ?? -9) - (st(a)?.end ?? -9))[0];
     ctx = { move: hazard ? 'trap' : heavy ? `heavy:${near?.heavyKind ?? '?'}` : near?.move || 'light', age: near && start.has(near) ? game.time - start.get(near).t : -1 };
     realHurt(amount, dir, hazard, heavy);
   };
@@ -44,7 +46,7 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
     if (game.elapsed - t0 > capSeconds) { r.timeout = true; break; }
     if (r.kills >= n) { r.win = true; break; }
     game.update(DT, bot.input(game));
-    for (const e of game.enemies) { const sig = sigOf(e), s = start.get(e) || { sig: '', t: -1 }; if (sig && sig !== s.sig && !(s.sig[0] === 't' && sig === 's')) s.t = game.time; s.sig = sig; start.set(e, s); }
+    for (const e of game.enemies) { const sig = sigOf(e), s = start.get(e) || { sig: '', t: -1 }; if (sig && sig !== s.sig && !(s.sig[0] === 't' && sig === 's')) s.t = game.time; if (s.sig[0] === 't' && sig[0] !== 't') s.end = game.time; s.sig = sig; start.set(e, s); }
     if (pending && game.time - pending.t > .3) { if (pending.set.size === 0) r.whiffs++; pending = null; }
     r.gained += Math.max(0, p.blood - last); last = p.blood;
   }
