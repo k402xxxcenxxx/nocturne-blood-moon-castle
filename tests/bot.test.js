@@ -156,3 +156,11 @@ test('the expert bot answers the PR 2 moves (sweep, knight string, bat swoop) wi
     assert.ok(p.blood >= 150 - 4, `${type}: the bot took ${150 - p.blood} blood`);
   }
 });
+
+test('the apex duel harness is deterministic for a fixed seed', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  const opt = { n: 3, weapon: 'spear', cap: 20 };
+  const a = playDuel(4, opt), b = playDuel(4, opt);
+  assert.deepEqual(a, b);
+  assert.ok(a.win || a.dead || a.timeout);
+});
