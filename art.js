@@ -601,7 +601,7 @@ function shieldBearer(c, e, time, white) {
   }
   // Tower shield on the facing side: tall slab, cold rim light on the front edge.
   // Bash wind-up rears the shield back and tilts it within 0.15 s; the bash itself thrusts it forward.
-  const ctr = e.move === 'counter' && (e.tell || 0) > 0, k = !ctr && (e.tell || 0) > 0 ? Math.min(1, (.55 - e.tell) / .15) : 0, thrust = (e.turn || 0) > .45 ? 6 : 0;
+  const ctr = e.move === 'counter' && (e.tell || 0) > 0, k = !ctr && (e.tell || 0) > 0 ? Math.max(0, Math.min(1, (.55 - e.tell) / .15)) : 0, thrust = (e.turn || 0) > .45 ? 6 : 0;
   const pull = Math.round(-12 * k + thrust + (ctr ? 5 : 0) - ((e.reface || 0) > 0 ? 3 : 0));
   c.save(); c.translate(17 + pull, ctr ? -8 : -2); c.rotate(-.32 * k); c.translate(-17, 2); // counter: shield braced forward and lifted, not reared back like the bash
   poly(c, '#0c101b', [[8, -74], [27, -71], [28, -6], [17, 1], [7, -5]]);

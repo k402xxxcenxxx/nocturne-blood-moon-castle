@@ -99,6 +99,7 @@ function handleEvent(e) {
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
+      for (let i = bannerQueue.length; i--;) if (bannerQueue[i].elite) bannerQueue.splice(i, 1); // an elite sighted on the last floor is not on this one
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
       $('stage-number').textContent = stageLabel(e.stage, e.floor); $('stage-name').textContent = t(`stage.${e.stage}.name`);
       const announcement = $('stage-announcement');
