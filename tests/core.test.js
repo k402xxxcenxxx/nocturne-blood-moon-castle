@@ -4790,21 +4790,17 @@ test('apex rising: a hero in the air within 90 px draws a 0.45 s anti-air slash 
   advance(g.game, .1); assert.ok(!g.events.some(ev => ev.type === 'hurt'), 'a hero standing on the floor is not hit');
 });
 
-test('apex chain: a hero whose dash is cooling draws one follow-up 0.45 s after contact (cleave if the heavy token is free), never two', () => {
-  const run = heavyTaken => {
-    const { game, player, e, events } = apexFoe(60); player.invulnerable = 99; e.tell = .02;
-    if (heavyTaken) { const o = enemy(game, 1500, { hp: 1e5 }); Object.assign(o, { heavy: true, heavyKind: 'cleave', tell: 9, warn: { kind: 'cleave', box: { x: 0, y: 0, w: 1, h: 1 } } }); }
-    for (let i = 0; i < 120 * 2.2; i++) { player.dashCd = .8; game.update(1 / 120, {}); }
-    return { game, e, events };
-  };
-  const light = run(true);
-  assert.equal(light.events.filter(ev => ev.type === 'enemyTell' && ev.kind === 'chain').length, 1, 'one chained slash');
-  assert.ok(light.events.find(ev => ev.type === 'enemyTell' && ev.kind === 'chain').follow);
-  const heavy = run(false);
-  const h = heavy.events.filter(ev => ev.type === 'enemyHeavy' && ev.follow);
-  assert.equal(h.length, 1, 'one chained cleave'); assert.equal(h[0].kind, 'cleave');
-  assert.ok(heavy.events.some(ev => ev.type === 'enemyGlint'), 'it glints 0.4 s before contact');
-  assert.equal(apexSwings(heavy.events).filter(ev => ev.heavy).length, 1);
+test('apex chain: a hero whose dash is cooling draws one lunge 0.45 s after contact whose box covers a dash landing, never two', () => {
+  const { game, player, e, events } = apexFoe(60); player.invulnerable = 99; e.tell = .02;
+  for (let i = 0; i < 120 * 2.4; i++) { player.dashCd = .8; game.update(1 / 120, {}); }
+  const chains = events.filter(ev => ev.type === 'enemyTell' && ev.kind === 'chain');
+  assert.equal(chains.length, 1, 'one chained lunge'); assert.ok(chains[0].follow);
+  assert.equal(apexSwings(events).filter(ev => ev.kind === 'stepcut').length, 1, 'the lunge strikes once');
+  const w = apexFoe(60); w.player.invulnerable = 99; w.e.tell = .02;
+  for (let i = 0; i < 6; i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }
+  advance(w.game, .03); for (let i = 0; i < 60 && !(w.e.move === 'stepcut' && w.e.tell > .3); i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }
+  assert.ok(w.e.tell > .3 && w.e.tell <= .45 && w.e.follows === 1, 'tell 0.45 s');
+  const b = w.e.warn.box; assert.ok(Math.abs(b.w + 10 - w.e.warn.reach) < 1e-6 && w.e.warn.reach >= 131 + 80, 'the box reaches a 131 px dash landing');
   const none = apexFoe(60); none.player.invulnerable = 99; none.e.tell = .02; advance(none.game, .3);
   assert.ok(!none.events.some(ev => ev.type === 'enemyTell' && ev.kind === 'chain') && none.e.follows === 0, 'no dash on cooldown, no chain');
 });

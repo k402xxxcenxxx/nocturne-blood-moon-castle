@@ -115,7 +115,7 @@ const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, rec
 // Apex skeleton (#66): every castle skeleton decides from a snapshot of the hero taken APEX_REACT s ago (never the live frame, input or future rolls). Playtest starting points.
 export const APEX_REACT = .12;
 const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 1.5, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6,
-  hp: 8, dmg: 6, poise: 6, speed: 2, cutReach: 200 }; // stat levers (round 2): hp x8, light damage x6, posture x6, speed x2; the stepcut reaches 200 px
+  hp: 12, dmg: 8, poise: 12, speed: 2.5, cutReach: 280, tokens: 3 }; // stat levers (rounds 2-3): hp x12, light damage x8, posture x12, speed x2.5; the stepcut reaches 280 px; 3 attack tokens
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
@@ -1007,7 +1007,7 @@ export class Game {
     if (this.mode === 'castle' && e.type !== 'boss') {
       if (e.x - p.x < -SCREEN_LEFT || e.x - p.x > SCREEN_RIGHT) return false; // nothing attacks from off screen
       if (kind === 'support') return !this.enemies.some(o => o !== e && o.hp > 0 && o.blessRadius && o.tell > 0);
-      const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = ATTACK_TOKENS - holders.length - this.gaps.length;
+      const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = this.tokenCap() - holders.length - this.gaps.length;
       const deny = () => { e.wait += this.step; return false; };
       if (free <= 0) return deny();
       if (kind === 'heavy' && holders.some(o => o.token === 'heavy')) return false; // one heavy token; the light attack that follows still asks
@@ -1226,7 +1226,8 @@ export class Game {
   // ring, inside the hero's reach) and may start its light tell from PROVOKED_REACH, so a hero who pokes from a distance always meets a tell.
   provoked(e) { return this.mode === 'castle' && !!HOLD_RING[e.type] && e.provoke > 0 && e.recover <= 0; }
   ready(e) { return e.cd <= 0 || this.provoked(e); }
-  tokensFree() { return ATTACK_TOKENS - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
+  tokenCap() { return this.apex && this.mode === 'castle' ? APEX.tokens : ATTACK_TOKENS; } // an apex field attacks with 3 tokens (still at most 1 heavy)
+  tokensFree() { return this.tokenCap() - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
   // A token is taken when a tell (or the stepcut backstep) starts and released once the whole attack, recovery included, is over or cancelled.
   syncToken(e) {
     if (!e.token && !e.blessRadius && (e.tell > 0 || e.stepT > 0)) {
@@ -1324,21 +1325,16 @@ export class Game {
     const d = e.dir, box = { x: Math.min(e.x + d * 10, e.x + d * 82), y: e.y - 70, w: 72, h: 70 };
     Object.assign(e, { tell: APEX.counterTell, move: 'counter', cd: Math.max(e.cd, APEX.lightCd), follows: 0, warn: { kind: 'counter', box } });
   }
-  // Chain: at the contact of a slash or stepcut, a hero whose snapshot shows a dash on cooldown draws a follow-up inside that cooldown: a cleave (needs the one heavy token) if it is
-  // within 150, else a slash. One per string, never delayed; the hit area is fixed now. Returns true if a follow-up started.
+  // Chain: at the contact of a slash or stepcut, a hero whose snapshot shows a dash on cooldown (or in the air) within 260 px draws a lunge with no backstep, 0.45 s after the contact.
+  // Its 200+ px box covers where a dash lands (131 px) and the walk-out, and it falls inside the dash cooldown; a jump still clears it. One per string, never delayed.
   apexChain(e) {
     const s = this.snap(), dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1;
-    if (this.state !== 'playing' || s.dashCd <= 0 || d > 150 || Math.abs(s.y - e.y) >= 82) return false;
+    if (this.state !== 'playing' || s.dashCd <= 0 || d > 260 || Math.abs(s.y - e.y) >= 82) return false;
     e.dir = toward; e.vx = 0;
-    const heavy = e.heavyCd <= 0 && !this.enemies.some(o => o !== e && o.hp > 0 && o.token === 'heavy');
-    if (heavy) {
-      const warn = { kind: 'cleave', box: { x: Math.min(e.x + toward * 10, e.x + toward * 125), y: e.y - 90, w: 115, h: 90 } };
-      Object.assign(e, { heavy: true, heavyKind: 'cleave', tell: HEAVY.skeleton.tell, warn, move: '', delayed: false, glinted: false, glint: 0, punishable: false, recover: 0, token: 'heavy', follows: 1, cd: 1.2 });
-      this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: 'cleave', enemy: 'skeleton', area: warn, delayed: false, follow: true });
-    } else {
-      Object.assign(e, { tell: APEX.chainTell, move: 'chain', warn: null, punishable: false, recover: 0, follows: 1 });
-      this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'skeleton', kind: 'chain', dir: e.dir, follow: true });
-    }
+    const to = clamp(e.x + toward * 80, 30, this.worldWidth - 40), reach = APEX.cutReach;
+    e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + toward * 10, to + toward * reach), y: e.y - 70, w: reach - 10, h: 70 } };
+    Object.assign(e, { tell: APEX.chainTell, move: 'stepcut', punishable: false, recover: 0, follows: 1 });
+    this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'skeleton', kind: 'chain', dir: e.dir, follow: true });
     return true;
   }
   // The brain. Rows run top to bottom and the first that acts wins (see the Issue's state-read -> answer table). Every attack it starts is a normal tell through canWindUp (token, on screen).
