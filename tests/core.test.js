@@ -4872,7 +4872,7 @@ test('apex review: a forced cleave judges the hero by its snapshot; a guard cut 
   assert.equal(c.game.tokenCap(), 3); assert.equal(off.game.tokenCap(), ATTACK_TOKENS);
   for (const k of [0, 1, 2, 3]) { const e = enemy(c.game, c.player.x + 100 + k * 40, { hp: 1e5 }); e.dir = -1; }
   let heavy = 0, holders = 0;
-  for (let i = 0; i < 120 * 6; i++) { c.player.invulnerable = 99; c.game.update(1 / 120, {}); const h = c.game.enemies.filter(e => e.token); holders = Math.max(holders, h.length); heavy = Math.max(heavy, h.filter(e => e.token === 'heavy').length); }
-  assert.ok(holders <= 3 && heavy <= 1, `${holders} holders, ${heavy} heavy`);
+  for (let i = 0; i < 120 * 6; i++) { Object.assign(c.player, { invulnerable: 0, blood: 150 }); c.game.update(1 / 120, {}); const h = c.game.enemies.filter(e => e.token); holders = Math.max(holders, h.length); heavy = Math.max(heavy, h.filter(e => e.token === 'heavy').length); }
+  assert.ok(holders >= 2 && holders <= 3 && heavy <= 1, `${holders} holders, ${heavy} heavy`);
   assert.equal(off.game.snaps.length, 0, 'no snapshots with apex off');
 });
