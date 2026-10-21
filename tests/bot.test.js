@@ -4,7 +4,7 @@ import { Game, FLOOR, RELICS, WEAPONS } from '../core.js';
 import { createBot, chooseWeapon, chooseRelic, resolveModal, REACTION_DELAY, MAX_PRESSES_PER_SECOND, SKILLS } from '../bot.js';
 
 const DT = 1 / 60;
-const castle = (seed = 1) => { const game = new Game(() => {}, seed, 'castle'); game.start(); resolveModal(game); return game; }; // Vigil weapon pick, then floor 1
+const castle = (seed = 1, apex = false) => { const game = new Game(() => {}, seed, 'castle'); game.apex = apex; game.start(); resolveModal(game); return game; }; // Vigil weapon pick, then floor 1 (apex skeletons off: these tests cover the bot's limits, not the arms race)
 
 test('modal decisions go through the core methods the UI uses', () => {
   const game = new Game(() => {}, 3, 'castle');
@@ -154,5 +154,38 @@ test('the expert bot answers the PR 2 moves (sweep, knight string, bat swoop) wi
     for (let t = 0; t < 8; t += DT) game.update(DT, bot.input(game));
     assert.ok(kinds.some(k => seen.has(k)), `${type}: the move happened (${[...seen]})`);
     assert.ok(p.blood >= 150 - 4, `${type}: the bot took ${150 - p.blood} blood`);
+  }
+});
+
+test('the apex duel harness is deterministic for a fixed seed', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  const opt = { n: 3, weapon: 'spear', cap: 20 };
+  const a = playDuel(4, opt), b = playDuel(4, opt);
+  assert.deepEqual(a, b);
+  assert.ok(a.win || a.dead || a.timeout || a.left);
+});
+
+test('the expert bot can still beat a castle apex skeleton 1v1 with every weapon (some seed per weapon), taking no unanswerable hit', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  for (const weapon of Object.keys(WEAPONS)) {
+    const runs = [1, 2, 3].map(seed => playDuel(seed, { n: 1, weapon, cap: 40 }));
+    assert.ok(runs.some(r => r.win), `${weapon}: no seed was won`);
+    assert.ok(runs.every(r => !r.dead && r.unanswerable === 0), `${weapon}: a death or an unanswerable hit`);
+  }
+});
+
+test('the expert bot fights a three-skeleton apex group inside its room and wins some seeds without taking the room exit', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  let wins = 0;
+  for (let seed = 1; seed <= 6; seed++) { const r = playDuel(seed, { n: 3, weapon: 'heavy' }); wins += r.win; assert.equal(r.unanswerable, 0); }
+  assert.ok(wins >= 1, `won ${wins} of 6`);
+});
+
+test('replayable apex wins: the expert bot beats the round 4 skeletons on known seeds (1v1 and 1v3)', async () => {
+  const { playDuel } = await import('../tools/bot-run.mjs');
+  for (const [n, weapon, seed] of [[1, 'heavy', 1], [1, 'twin', 3], [1, 'spear', 1], [3, 'heavy', 8], [3, 'twin', 5], [3, 'spear', 7]]) {
+    const r = playDuel(seed, { n, weapon });
+    assert.ok(r.win, `${n}v${n === 1 ? 1 : 3} ${weapon} seed ${seed}: won`);
+    assert.equal(r.unanswerable, 0);
   }
 });

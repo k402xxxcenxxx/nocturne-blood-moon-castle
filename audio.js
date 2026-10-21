@@ -212,7 +212,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -647,6 +647,47 @@ export class AudioSystem {
         tone('noise', 3400, 0.14, 0.2, 800);
         tone('triangle', 420, 0.1, 0.08, 200);
         break;
+      // Apex skeleton cues (#66, castle only). Tells are fixed pitch; rising climbs, counter rings low and flat, chain double-ticks.
+      case 'tellRising': // rising slash (anti-air): a steep upward bone-and-steel sweep, higher and longer than tellSlash's two clicks
+        tone('noise', 2400, 0.22, 0.1, 7000);
+        tone('triangle', 500, 0.22, 0.09, 1800);
+        tone('sine', 2400, 0.1, 0.04, 3200, 0.16);
+        break;
+      case 'tellApexCounter': // counter after a guard: a held low bony knock, flat pitch, nothing climbing
+        tone('sine', 240, 0.16, 0.18, 200);
+        tone('square', 780, 0.05, 0.04, 760);
+        tone('noise', 2200, 0.05, 0.1, 900, 0.1);
+        tone('sine', 240, 0.1, 0.14, 190, 0.12);
+        break;
+      case 'tellChain': // chain lunge: a quick rattle of three ticks then a short low scrape, "it is coming again"
+        [0, 0.05, 0.1].forEach(dl => tone('noise', 4600, 0.025, 0.1, 2200, dl));
+        tone('triangle', 1100, 0.12, 0.06, 1500, 0.15);
+        tone('noise', 1400, 0.1, 0.07, 500, 0.15);
+        break;
+      case 'apexGuard': { // block clank: bone-white blade on iron; intensity 1 = guarded hit, lower = parried air
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 5600, 0.05, 0.16, 1700);
+        tone('sine', 190 * d, 0.1, 0.16, 110);
+        tone('square', 1320 * d, 0.1, 0.04, 1250 * d);
+        tone('triangle', 2100 * d, 0.2, 0.07, 2040 * d);
+        break;
+      }
+      case 'apexCrush': { // guard breaks: heavy crack, falling shard cascade, low thud (satisfying, under guardBreak's weight)
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 6800, 0.2, 0.28, 400);
+        tone('sine', 100 * d, 0.32, 0.42, 36);
+        [2600, 1900, 3300, 1500].forEach((f, i) => tone('triangle', f * d, 0.16, 0.06, f * 0.88 * d, 0.03 * i));
+        tone('square', 700, 0.08, 0.04, 300, 0.02);
+        break;
+      }
+      case 'apexStep': { // quiet backstep: bone scrape over a soft pat; throttled and detuned
+        if (ctx.currentTime - (this._lastApexStep ?? -1) < 0.1) return;
+        this._lastApexStep = ctx.currentTime;
+        const d = 0.9 + Math.random() * 0.2;
+        tone('noise', 2000 * d, 0.12, 0.06, 600);
+        tone('sine', 150 * d, 0.07, 0.08, 95);
+        break;
+      }
       // Castle priest / mage / elite cues. Tells are fixed pitch; the two bolt casters and each elite twist get their own sound.
       case 'tellBoltPriest': // priest bolt: low breathy intone with a dull rising hiss
         tone('sine', 196, 0.2, 0.12, 233);

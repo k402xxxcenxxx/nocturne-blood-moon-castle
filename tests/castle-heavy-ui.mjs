@@ -22,7 +22,7 @@ async function check(name, fn) {
 function install() {
   const g = window.__nocturne.game;
   if (!g.__wrapped) {
-    g.__wrapped = true; g.__log = [];
+    g.__wrapped = true; g.__log = []; g.apex = false; // these checks cover the #50 heavy rules, not the apex skeleton (#66)
     const orig = g.emit.bind(g);
     g.emit = (type, data) => { g.__log.push({ type, kind: data && data.kind, heavy: data && data.heavy }); return orig(type, data); };
   }

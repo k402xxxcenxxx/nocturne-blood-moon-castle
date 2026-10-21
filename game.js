@@ -30,7 +30,7 @@ function applySettings() {
 const endlessUnlocked = () => records.wins >= 1;
 const stageLabel = (stage, floor = game.floor) => game.mode === 'castle' ? floor === KING_FLOOR ? t('hud.floorKing') : t('hud.floorOf', { n: floor, total: 10 }) : game.mode === 'endless' ? t('hud.floor', { n: floor }) : `${roman[stage]} — V`;
 function updateBest() {
-  const eb = $('endless-button'), on = endlessUnlocked(); eb.setAttribute('aria-disabled', String(!on)); eb.querySelector('span').textContent = t(on ? 'title.endlessHint' : 'title.endlessLocked'); eb.querySelector('em').textContent = on && records.bestFloor ? t('title.endlessBest', { n: records.bestFloor }) : ''; $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
+  const eb = $('endless-button'), on = endlessUnlocked(); eb.setAttribute('aria-disabled', String(!on)); eb.querySelector('span').textContent = t(on ? 'title.endlessHint' : 'title.endlessLocked'); eb.querySelector('em').textContent = on && records.bestFloor ? t('title.endlessBest', { n: records.bestFloor }) : ''; $('castle-button').querySelector('span').textContent = t('castle.apexNote'); $('best-label').textContent = records.best ? t('best.record', { stage: roman[Math.min(records.best, 5) - 1], wins: records.wins }) : t('best.none'); }
 function relicTray() { return game.relics.map(id => { const r = RELICS.find(x => x.id === id); return `<span class="relic-icon"${r.cursed ? ' data-cursed' : ''} title="${t(`relic.${id}.name`)}: ${t(`relic.${id}.text`)}${r.cursed ? ` ${t('upgrade.cost')}: ${t(`relic.${id}.cost`)}` : ''}">${icon(r.icon)}</span>`; }).join(''); }
 function applyLanguage() {
   setLanguage(settings.lang); document.documentElement.lang = language();
@@ -96,6 +96,7 @@ function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math
 function recordResult(win) { if (game.mode === 'castle') return; if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
   const sfx = { enemyBlink: 'mageShimmer', enemyBlinked: 'mageBlink', enemyRecoil: 'priestStep' }[e.type]; if (sfx) audio.play(sfx, 1); // castle caster cues that need no other feedback
+  { const ax = { apexStep: ['apexStep', .8], apexGuard: ['apexGuard', e.blocked ? 1 : .7], apexCrush: ['apexCrush', 1] }[e.type]; if (ax) audio.play(ax[0], ax[1]); } // apex skeleton guard / crush / backstep (#66)
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
@@ -107,6 +108,7 @@ function handleEvent(e) {
       announcement.querySelector('strong').textContent = t(`stage.${e.stage}.name`);
       announcement.querySelector('span').textContent = t(`stage.${e.stage}.subtitle`);
       announcement.classList.add('show'); announceTime = 2.8;
+      if (e.mode === 'castle' && e.floor === 1) toast(t('toast.apex')); // the skeletons are apex-trained from floor 1
       [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === e.stage ? 'current' : i < e.stage ? 'done' : ''; });
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
       $('relic-tray').innerHTML = relicTray();
@@ -223,12 +225,15 @@ function handleEvent(e) {
     case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
       if (e.enemy === 'king') { audio.play({ slash: 'kingTellSlash', string: 'kingTellString', turnslash: 'kingTellTurn', volley: 'kingTellVolley', ritual: 'kingTellRitual' }[e.kind] || 'tellGeneric', 1); break; }
-      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: 'tellCounter', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe', slash2: 'tellSlash2' }[e.kind] || 'tellGeneric';
+      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: e.enemy === 'skeleton' ? 'tellApexCounter' : 'tellCounter', rising: 'tellRising', chain: 'tellChain', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe', slash2: 'tellSlash2' }[e.kind] || 'tellGeneric';
       const v = game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5;
       audio.play(e.enemy === 'spear' && e.kind === 'sweep' ? 'tellLow' : e.kind === 'bolt' ? (e.enemy === 'mage' ? 'tellBoltMage' : 'tellBoltPriest') : cue, v); if (e.enemy === 'knight' && e.follow) audio.play('knightCommit', v);
       if (e.kind === 'slash2') effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Duelist second strike: the same white ring
     }
     case 'enemyCross': audio.play('batWing', 1); burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
+    case 'apexStep': burst(e.x - e.dir * 6, FLOOR, '#b3a68f', 6, 90, -e.dir); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 36, life: .25, max: .25 }); break; // backstep: a small scrape of dust at the heels
+    case 'apexGuard': if (e.blocked) { effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: 0, color: '#e8f6ff', s: .7 }); burst(e.x, e.y, '#cfe3f2', 8, 200); } break; // block spark (the guard stance itself is drawn on the body)
+    case 'apexCrush': rumble(5, .16); burst(e.x, e.y, '#ffd36e', 16, 240); burst(e.x, e.y, '#ffffff', 6, 150, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .35, max: .35, color: '#ffd36e', r: 70 }); break; // guard broken: the gold opening ring
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);

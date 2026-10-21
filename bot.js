@@ -13,7 +13,8 @@ export const SKILLS = {
   average: { reaction: .3, presses: 6, mistime: .15, mistimeBy: .12, greedy: .1, misread: .05 },
 };
 const DASH_LEAD = .12; // dash when a hit is this close: the 0.23 s of i-frames cover it with +-0.1 s of slack (no frame-perfect timing)
-const ATTACK_RESERVE = 3, MOVE_RESERVE = 2; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
+const ATTACK_RESERVE = 3, MOVE_RESERVE = 2, DODGE_RESERVE = 1; // attack and non-urgent direction presses stop this far under the cap, so a jump, dash or Eclipse never waits for the budget
+const JUMP_AT = .4, EDGE_MARGIN = 25, CLIP_PATIENCE = 3;
 const WEAPON_PICK = 'spear';
 const HEAVY_DEBT_CAP = 30; // Greatsword frenzy: the bot stops trading light hits once debt plus the hit would pass this (debt of 100 kills)
 const RELIC_ORDER = ['armor', 'dash', 'edge', 'haste', 'reach', 'crit', 'wave', 'pierce', 'fire', 'frost', 'shock', 'bleed', 'plunge', 'vortex'];
@@ -76,9 +77,9 @@ function hitTime(e, px, py) {
     if (w.kind === 'rite') { const c = w.circles[0]; return e.tell > 0 && Math.abs(px - c.x) < c.r + 14 && py > c.y - c.r ? e.tell : Infinity; } // priest rite: a ground disc, walk out of it
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
   }
-  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
+  if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box, 4) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
   if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
-  if (e.move === 'counter' && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // castle shield shove
+  if ((e.move === 'counter' || e.move === 'rising') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove, apex skeleton counter and rising slash: the drawn box
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
@@ -97,7 +98,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
   const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
-  let greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
+  let fightN = 0, clipSince = -1, greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
   const greedyOn = now => now < greedyUntil;
   const rollGreedy = now => { if (skill.greedy && rng() < skill.greedy) greedyUntil = now + 1.5; };
   const rolled = new WeakMap(); // enemy -> attack count of the punish window already rolled for greed
@@ -118,17 +119,20 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const out = {};
       const allow = (kind, key) => { // rising edges cost budget; attacks and non-urgent steps leave a reserve for dodges
         if (prev[key]) return true;
-        const cap = skill.presses - (kind === 'attack' ? ATTACK_RESERVE : kind === 'dir' && !want.urgent ? MOVE_RESERVE : 0);
+        const cap = skill.presses - (kind === 'attack' ? ATTACK_RESERVE : kind === 'dir' ? (want.urgent ? DODGE_RESERVE : MOVE_RESERVE) : 0);
         if (presses.length >= cap) return false;
         presses.push(now); return true;
       };
-      for (const key of ['jump', 'dash', 'magic', 'attack']) if (want[key] && !prev[key] && allow(key, key)) out[key] = true;
       let dir = want.dir;
       const held = prev.right ? 1 : prev.left ? -1 : 0;
       if (dir !== held && !want.urgent && now - dirSince < MIN_HOLD) dir = held;
-      if (dir && dir !== held && !allow('dir', dir > 0 ? 'right' : 'left')) dir = held;
+      if (dir && dir !== held && !allow('dir', dir > 0 ? 'right' : 'left')) dir = 0; // no press left for the turn: stop rather than keep walking the wrong way
       if (dir !== held) dirSince = now;
       if (dir) out[dir > 0 ? 'right' : 'left'] = true;
+      for (const key of ['jump', 'dash', 'magic', 'attack']) {
+        if (key === 'dash' && want.dir && dir !== want.dir && !want.urgent) continue; // an assault or chase dash goes where the hero faces: wait for the turn
+        if (want[key] && !prev[key] && allow(key, key)) out[key] = true;
+      }
       prev = out; last = out;
       return out;
     },
@@ -137,7 +141,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.cutT > 0 ? 's' : '') : '';
       if (sig && sig !== r.sig && !(r.sig[0] === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
@@ -234,6 +238,10 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const trapHot = (tr, extra = .8) => !tr.disabled && (tr.state !== 'idle' || tr.period - tr.t < extra);
     const trapIn = (x, tr) => Math.abs(x - tr.x) < tr.w / 2 + 18;
     const safeSpot = x => game.traps.every(tr => !trapIn(x, tr) || !trapHot(tr)) && game.obstacles.every(ob => Math.abs(x - ob.x) >= (ob.w + 28) / 2 || p.y <= ob.y - ob.h);
+    const rm = game.rooms?.find(r => p.x >= r.x && p.x < r.x + r.w), inRoom = castle && rm ? foes.filter(e => e.type === 'skeleton' && e.x >= rm.x && e.x < rm.x + rm.w).length : 0;
+    fightN = inRoom ? Math.max(fightN, inRoom) : 0; // a group fight (3+ skeletons) stays in its room: running out of it only gets the hero flanked
+    const fenced = inRoom > 0 && fightN >= 3;
+    const lo = fenced ? rm.x + 45 : 25, hi = fenced ? rm.x + rm.w - 45 : W - 30;
     // --- threats at the hero's current spot, soonest first
     const threats = [];
     for (const e of foes) if (api.reacts(e, now)) { const t = hitTime(e, p.x, p.y); if (t < Infinity) threats.push({ e, t }); }
@@ -254,20 +262,24 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     // castle attacks have hyper armor from tell start, so a light hit cancels nothing
     const flinches = e => !castle && !e.heavy && e.type !== 'knight' && e.type !== 'boss' && e.armor <= 0 && !blockedBy(e) && e.frozen <= 0;
     const dirAway = e => Math.sign(p.x - e.x) || -p.dir;
+    // A dash covers 131 px: take the side whose landing spot no other announced attack covers (a dash into a second skeleton's lunge box is the dash trap).
+    const dashSide = d => { const lands = x => threats.some(th => th.e && th.t > .2 && hitTime(th.e, Math.max(25, Math.min(W - 30, x)), p.y) < Infinity), out = x => fenced && (x < rm.x + 20 || x > rm.x + rm.w - 20), cost = x => (lands(x) ? 2 : 0) + (out(x) ? 1 : 0); return cost(p.x - d * 131) < cost(p.x + d * 131) ? -d : d; };
     let danger = Infinity;
     if (threats.length) {
       const { e, t } = threats[0]; danger = t;
       if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; } // a greedy extra swing instead of dodging
       else if (e && flinches(e) && canHit(e) && ready && t > .05) o.attack = true; // a landed light hit cancels the swing
-      else if (t <= DASH_LEAD + jit(e || threats[0].b) && dashReady) { o.dash = true; o.urgent = true; o.dir = e ? (e.heavy ? flip(e, dirAway(e)) : dirAway(e)) : -Math.sign(threats[0].b.vx); } // i-frames; the dash direction is picked by the core on the same frame
+      else if (t <= DASH_LEAD + jit(e || threats[0].b) && dashReady) { o.dash = true; o.urgent = true; o.dir = e ? (e.heavy ? flip(e, dashSide(dirAway(e))) : dashSide(dirAway(e))) : -Math.sign(threats[0].b.vx); } // i-frames; the dash direction is picked by the core on the same frame
       else if (t <= .25 && !dashReady && canCast && (e ? e.heavy && Math.hypot(e.x - p.x, e.y - p.y) < 205 : true)) o.magic = true; // Eclipse cancels a heavy and clears projectiles
       else { // walk out of the area if the time allows
         let best = null;
         for (let d = 10; d <= 320 && !best; d += 10) for (const s of [1, -1]) {
-          const x = Math.max(25, Math.min(W - 30, p.x + s * d));
+          const x = Math.max(25, Math.min(W - 30, p.x + s * d)); if (x < lo && s < 0 || x > hi && s > 0) continue;
           if (d / speed < t - .05 && safeSpot(x) && threats.every(th => th.e ? hitTime(th.e, x, p.y) === Infinity : Math.abs(th.b.x + th.b.vx * th.t - x) > 14 + th.b.r)) { best = { dir: s }; break; }
         }
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
+        else if (e && e.type === 'skeleton' && !e.heavy && e.move !== 'stepcut' && !dashReady && p.grounded && t <= .38 + jit(e) && t >= .18) { o.jump = true; o.urgent = true; } // slash, counter or chain with no dash and no room: the 77 px hit height is cleared 0.17-0.57 s after the press
+        else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= JUMP_AT + jit(e) && t >= .19) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
         else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray') && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
@@ -279,7 +291,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
       const swing = known.find(e => canHit(e) && !blockedBy(e) && hitTime(e, p.x, p.y) === Infinity);
-      const lane = fw === 'spear' && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40;
+      const lane = fw === 'spear' && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
       if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)
       else if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
       else if (target && Math.abs(target.x - p.x) < 620) {
@@ -292,8 +304,13 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         else if (p.dir !== face) o.dir = face; // turn to face
       } else {
         const guard = foes.filter(e => e.required).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
-        goal = game.portalOpen || !guard ? game.portalX : guard.x; tol = game.portalOpen ? 20 : 120;
+        const far = !game.portalOpen && !guard && pool[0]; // nothing required and the gate shut (a duel room): chase the foe that kited off instead of walking out
+        goal = far ? far.x : game.portalOpen || !guard ? game.portalX : guard.x; tol = game.portalOpen ? 20 : far ? 100 : 120;
       }
+      if (goal !== null && fenced) { // chasing past the room edge only gets the hero flanked: clamp the goal, but give up after a stand-off of CLIP_PATIENCE s (a skeleton that kites out of the room must still be followed)
+        const clamped = Math.max(lo + EDGE_MARGIN, Math.min(hi - EDGE_MARGIN, goal));
+        if (clamped === goal) clipSince = -1; else { if (clipSince < 0) clipSince = now; if (now - clipSince < CLIP_PATIENCE) goal = clamped; }
+      } else clipSince = -1;
       if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
       const perch = p.grounded && p.y < FLOOR - 5 && (p.on || game.obstacles.find(ob => p.y === ob.y - ob.h && Math.abs(p.x - ob.x) < (ob.w + p.w) / 2));
       if (perch && !o.attack) { // stranded on a platform or barricade (a jump landed there): walk off toward the goal, else the nearer edge
@@ -313,6 +330,10 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       }
     }
     if (o.dir && p.grounded && !o.jump) { const nx = p.x + o.dir * 16; if (!safeSpot(nx) && game.traps.some(tr => trapIn(nx, tr) && !trapIn(p.x, tr))) o.dir = 0; }
+    if (o.dir && p.grounded && !o.jump) { // never walk back into a box that was just left (step out, step in, hit): hold at its edge until the attack resolves
+      const inBox = x => foes.some(e => api.reacts(e, now) && hitTime(e, x, p.y) < Infinity);
+      if (!inBox(p.x) && inBox(p.x + o.dir * 24)) o.dir = 0;
+    }
     if (!p.grounded || fw === 'twin') o.attack = false; // an air attack would be a plunge; twin frenzy swings on its own
     return o;
   }

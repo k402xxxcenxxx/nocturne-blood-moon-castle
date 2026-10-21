@@ -451,15 +451,19 @@ function skeleton(c, e, time, white) {
   for (let y = -40; y < -27; y += 4) { rect(c, bone, -7, y, 14, 2); rect(c, shade, -8, y, 2, 3); }
   poly(c, shade, [[-8, -26], [-1, -23], [6, -26], [8, -22], [2, -18], [-6, -20]]);
   rect(c, '#161c26', -9, -61, 18, 18); rect(c, shade, -8, -59, 15, 14); rect(c, bone, -6, -60, 13, 11); rect(c, bone, -5, -49, 11, 6);
-  rect(c, dark, -5, -55, 4, 4); rect(c, dark, 3, -55, 4, 4); rect(c, white || '#de7665', -3, -54, 2, 2); rect(c, white || '#de7665', 4, -54, 2, 2); rect(c, '#30313b', 0, -51, 2, 3);
+  const apex = e.gT !== undefined, eye = white || (apex ? '#ffb04a' : '#de7665'); // apex (castle) skeletons: amber eyes and a gold circlet mark the x12 body
+  rect(c, dark, -5, -55, 4, 4); rect(c, dark, 3, -55, 4, 4); rect(c, eye, -3, -54, 2, 2); rect(c, eye, 4, -54, 2, 2); rect(c, '#30313b', 0, -51, 2, 3);
+  if (apex && !white) { c.globalAlpha = .35; rect(c, '#ffb04a', -4, -55, 4, 4); rect(c, '#ffb04a', 3, -55, 4, 4); c.globalAlpha = 1; rect(c, '#c9a24a', -8, -62, 17, 2); rect(c, '#c9a24a', -6, -65, 2, 3); rect(c, '#c9a24a', 0, -66, 2, 4); rect(c, '#c9a24a', 5, -65, 2, 3); }
   for (let x = -4; x < 6; x += 3) rect(c, '#394047', x, -46, 1, 3);
   line(c, shade, -9, -40, -14, -29, 4); line(c, bone, -14, -29, -7, -23, 3);
-  const cocked = e.move === 'stepcut' && (e.tell || 0) > 0, raised = (e.tell || 0) > 0 && !cocked; // stepcut: blade drawn back low, a lunge not an overhead cut
-  const ex = cocked ? 13 : 16, ey = raised ? -49 : cocked ? -37 : -31, hx = raised ? 10 : cocked ? 7 : 23, hy = raised ? -62 : cocked ? -38 : -32;
+  const guard = apex && e.gT > 0, rise = e.move === 'rising' && (e.tell || 0) > 0, cocked = e.move === 'stepcut' && (e.tell || 0) > 0, raised = (e.tell || 0) > 0 && !cocked && !rise; // stepcut: blade drawn back low, a lunge not an overhead cut
+  const ex = guard ? 14 : cocked ? 13 : rise ? 14 : 16, ey = guard ? -44 : raised ? -49 : cocked ? -37 : rise ? -24 : -31, hx = guard ? 12 : raised ? 10 : cocked ? 7 : rise ? 14 : 23, hy = guard ? -48 : raised ? -62 : cocked ? -38 : rise ? -14 : -32;
   line(c, bone, 9, -41, ex, ey, 4);
   line(c, bone, ex, ey, hx, hy, 3);
-  if (cocked) { poly(c, shade, [[8, -40], [-26, -47], [-24, -42], [8, -35]]); line(c, '#e2ddc4', 8, -40, -26, -47, 1); rect(c, '#ad9260', 8, -44, 3, 12); }
-  else if (raised) { line(c, '#a7aaa9', 10, -62, 0, -85, 4); line(c, '#eee3c5', 9, -63, -1, -85, 1); line(c, '#a18c5d', 5, -62, 14, -65, 3); }
+  if (guard) { line(c, '#a7aaa9', 6, -30, 26, -78, 4); line(c, '#eee3c5', 7, -31, 26, -78, 1); line(c, '#a18c5d', 8, -50, 20, -44, 3); } // front guard: the blade held up across the body
+  else if (rise) { poly(c, shade, [[13, -15], [52, -2], [48, 2], [13, -11]]); line(c, '#e2ddc4', 13, -15, 52, -2, 1); rect(c, '#ad9260', 11, -20, 3, 12); } // rising: blade drawn low, ready to sweep up
+  else if (cocked) { poly(c, shade, [[8, -40], [-26, -47], [-24, -42], [8, -35]]); line(c, '#e2ddc4', 8, -40, -26, -47, 1); rect(c, '#ad9260', 8, -44, 3, 12); }
+  else if (raised) { line(c, e.move === 'counter' ? '#cfe3f2' : '#a7aaa9', 10, -62, 0, -85, 4); line(c, e.move === 'counter' ? '#ffffff' : '#eee3c5', 9, -63, -1, -85, 1); line(c, '#a18c5d', 5, -62, 14, -65, 3); }
   else { poly(c, shade, [[21, -34], [52, -39], [48, -34], [22, -31]]); line(c, '#e2ddc4', 22, -34, 52, -39); rect(c, '#ad9260', 20, -38, 3, 12); }
 }
 const PS = { pw: 0, k: 0, km: '', slump: false, calm: false }; // k: progress of the current tell, km: knight sword pose, pw: heavy wind-up
@@ -940,7 +944,7 @@ function drawHeavyWarn(ctx, e, time) {
   const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
   ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; // light moves (stepcut, counter) get a thinner outline than a heavy
   const b = w.box;
-  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter' || w.kind === 'sweep' || w.kind === 'slash' || w.kind === 'overhead' || w.kind === 'turnswipe' || w.kind === 'ray' || w.kind === 'skewer') {
+  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter' || w.kind === 'rising' || w.kind === 'sweep' || w.kind === 'slash' || w.kind === 'overhead' || w.kind === 'turnswipe' || w.kind === 'ray' || w.kind === 'skewer') {
     const fw = Math.round(b.w * p), g = w.kind === 'turnswipe' ? -d : d; ctx.fillStyle = 'rgba(255,74,60,.14)'; ctx.fillRect(b.x, b.y, b.w, b.h); // turnswipe: the box is behind the knight, so the fill grows backwards
     ctx.fillStyle = `rgba(255,74,60,${hot})`; ctx.fillRect(g === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h); ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
     if (w.kind === 'sweep') { // low: a bright ground line, chevrons running along it and a hop arrow above, so "jump it" reads before "step back"
@@ -957,6 +961,10 @@ function drawHeavyWarn(ctx, e, time) {
       ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 3; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, my); ctx.lineTo(b.x + b.w, my); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.lineWidth = 2;
       for (let i = 0; i + 8 < b.w; i += 40) { const cx = Math.round(x0 + g * Math.min(b.w - 8, i + off)); ctx.beginPath(); ctx.moveTo(cx - g * 7, my - 6); ctx.lineTo(cx, my); ctx.lineTo(cx - g * 7, my + 6); ctx.stroke(); }
       for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); }
+    } else if (w.kind === 'rising') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up) is hit; the band below it is safe ground
+      const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, 40);
+      ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, ly); ctx.lineTo(b.x + b.w, ly); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
+      for (let i = 0; i < 3; i++) { const cx = Math.round(b.x + b.w * (i + .5) / 3), cy = Math.round(ly - 6 - ((off + i * 8) % 24)); ctx.beginPath(); ctx.moveTo(cx - 7, cy + 6); ctx.lineTo(cx, cy - 2); ctx.lineTo(cx + 7, cy + 6); ctx.stroke(); }
     } else if (w.kind === 'skewer') { // spikes rising through the zone: only a hero in the air is inside it
       const n = Math.max(2, Math.round(b.w / 24)); ctx.fillStyle = '#ffe0d0';
       for (let i = 0; i < n; i++) { const sx = Math.round(b.x + b.w * (i + .5) / n), sy = b.y + b.h; ctx.beginPath(); ctx.moveTo(sx - 6, sy); ctx.lineTo(sx, sy - 22); ctx.lineTo(sx + 6, sy); ctx.fill(); }
@@ -1026,7 +1034,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (!boss && e.warn && e.tell > 0) { if (!tellMax.has(e.warn)) tellMax.set(e.warn, e.tell); lastWarn.set(e, e.warn.kind); }
   const lk = !boss && !heavy && e.warn ? e.warn.kind : '', lw = lk === 'sweep' || lk === 'slash' || lk === 'overhead' || lk === 'turnswipe'; // castle light moves that draw their warn area through drawHeavyWarn
   const tm = tellMax.get(e.warn) || (e.type === 'spear' ? .64 : e.tell || 1), pw = windup ? Math.min(1, (tm - e.tell) / (e.delayed ? Math.max(.1, tm - .8) : tm)) : 0; // delayed: wind-up completes 0.8 s before contact (GLINT_LEAD + DELAY_EXTRA), then holds
-  const hold = windup && e.delayed && pw >= 1 && !e.glinted, mv = !boss && !heavy && (e.move === 'stepcut' || e.move === 'counter' || e.move === 'overhead');
+  const hold = windup && e.delayed && pw >= 1 && !e.glinted, mv = !boss && !heavy && (e.move === 'stepcut' || e.move === 'counter' || e.move === 'overhead' || e.move === 'rising');
   PS.pw = pw; PS.calm = calm; PS.slump = slump; PS.k = windup ? pw : e.tell > 0 ? Math.min(1, (tm - e.tell) / .2) : 0; // pose inputs for the body drawers
   const kn = e.type === 'knight' && !boss, ov = lk === 'overhead';
   PS.km = !kn ? '' : windup ? 'great' : e.tell > 0 ? (lk === 'turnswipe' ? 'turn' : lw ? lk : '') : e.cutT > 0 && ov ? 'roverhead' : slump ? 'r' + (heavy ? 'great' : lastWarn.get(e) === 'turnswipe' ? 'turn' : lastWarn.get(e) === 'overhead' ? 'overhead' : 'slash') : '';
@@ -1039,6 +1047,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   }
   if (windup) { ctx.save(); ctx.globalAlpha = hold && !calm ? .5 + .2 * Math.sin(time * 40) : .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
   if (windup && e.type === 'bat') { const ay = Math.round(y + 14 + (calm ? 0 : Math.sin(time * 12) * 3)); ctx.save(); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 10, ay); ctx.lineTo(x + 10, ay); ctx.lineTo(x, ay + 14); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } // down arrow under the bat: it is about to drop
+  if (e.gT > 0) { ctx.save(); ctx.strokeStyle = '#cfe3f2'; ctx.lineWidth = 3; ctx.globalAlpha = calm ? .7 : .5 + .3 * Math.sin(time * 18); ctx.beginPath(); ctx.arc(x + (e.dir === -1 ? -1 : 1) * 16, y - 52, 30, e.dir === -1 ? Math.PI * .65 : -Math.PI * .35, e.dir === -1 ? Math.PI * 1.35 : Math.PI * .35); ctx.stroke(); ctx.restore(); } // apex guard: a pale arc in front, so a blocked hit reads as a block
   if (slump) { ctx.save(); ctx.globalAlpha = calm ? .7 : .55 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 28, e.h / 2 + 5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke(); ctx.restore(); } // gold shimmer: open to punish
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? (e.king ? 96 : 72) : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? (e.king ? 84 : 70) : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
@@ -1087,9 +1096,9 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
   else if (slump && e.type !== 'spear' && e.type !== 'bat') { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward (the spearman leans in its own pose, the bat flutters)
   else if (e.recoilT > 0) ctx.rotate(-.28); // priest recoil: leans away from the hero
-  else if (e.stepT > 0) ctx.rotate(-.22); // stepcut backstep: leans away
+  else if (e.stepT > 0 || e.bsT > 0) ctx.rotate(-.22); // stepcut backstep: leans away
   else if (e.cutT > 0) ctx.rotate(.3); // stepcut lunge: all weight forward
-  else if (mv && e.move === 'stepcut' && e.tell > 0) { ctx.rotate(.1); ctx.scale(1, .94); } // crouched behind the cocked blade
+  else if (mv && (e.move === 'stepcut' || e.move === 'rising') && e.tell > 0) { ctx.rotate(.1); ctx.scale(1, .94); } // crouched behind the cocked blade
   else if (e.tell > 0 && lk === 'sweep') { ctx.rotate(.1); ctx.scale(1, .94); } // low sweep: crouched, the spear held down by the shins
   else if (e.tell > 0 && ov) ctx.rotate(-.1); // overhead: leans back under the raised blade
   else if (e.tell > 0 && lk === 'turnswipe') ctx.rotate(-.06); // turnswipe: shoulders already coming round
@@ -1113,7 +1122,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     rect(ctx, '#ffffff', g[0] - r, g[1] - 1, 2 * r, 2); rect(ctx, '#ffffff', g[0] - 1, g[1] - r, 2, 2 * r); line(ctx, '#ffffff', g[0] - r * .6, g[1] - r * .6, g[0] + r * .6, g[1] + r * .6, 1); line(ctx, '#ffffff', g[0] - r * .6, g[1] + r * .6, g[0] + r * .6, g[1] - r * .6, 1); circle(ctx, '#ffffff', g[0], g[1], 4); }
   ctx.restore();
   if (wb && e.hp > 0) { ctx.save(); ctx.translate(x, y); wardenShell(ctx, e, time, calm); ctx.restore(); if (wturn) wardenTurnArrow(ctx, x, y, wk, time); }
-  if (e.move === 'counter' && e.tell > 0) { const q = Math.min(1, 1 - e.tell / .45), r = Math.round(36 - 20 * q), rx = Math.round(x + (e.dir === -1 ? -1 : 1) * 24), ry = y - 40; ctx.save(); ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 4; ctx.globalAlpha = .75 + .25 * q; ctx.beginPath(); ctx.arc(rx, ry, r, 0, 7); ctx.stroke(); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(rx, ry, 20, 0, 7); ctx.stroke(); ctx.restore(); } // ring closes onto the raised shield: a pale-blue shove cue, unlike the red slash / bash
+  if (e.move === 'counter' && e.tell > 0 && e.type !== 'skeleton') { const q = Math.min(1, 1 - e.tell / .45), r = Math.round(36 - 20 * q), rx = Math.round(x + (e.dir === -1 ? -1 : 1) * 24), ry = y - 40; ctx.save(); ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 4; ctx.globalAlpha = .75 + .25 * q; ctx.beginPath(); ctx.arc(rx, ry, r, 0, 7); ctx.stroke(); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(rx, ry, 20, 0, 7); ctx.stroke(); ctx.restore(); } // ring closes onto the raised shield: a pale-blue shove cue, unlike the red slash / bash
 }
 const KN_TIP = [-50, -72]; // the great swing's blade tip at the hold
 const GLINT_TIP = { skeleton: [0, -85], shield: [24, -40], knight: [55, -59], spear: [110, -30], bat: [0, -14], priest: [10, -92], mage: [18, -70] }; // weapon tip in local (facing +x) coordinates

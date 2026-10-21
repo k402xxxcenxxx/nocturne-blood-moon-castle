@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED } from '../core.js';
+import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -2528,9 +2528,10 @@ test('#30 QA regression: a killing blow on a lone shocked enemy credits one kill
 });
 
 // ---- Castle Descent (#44 step 1) ----
-function castle(seed = 42, floor = 1) {
+function castle(seed = 42, floor = 1, apex = false) { // apex off by default: the pre-#66 skeleton rules stay covered; apex tests pass true
   const events = [];
   const game = new Game(event => events.push(event), seed, 'castle');
+  game.apex = apex;
   game.start();
   assert.equal(game.state, 'rest');
   game.setWeapon('spear');
@@ -3170,7 +3171,7 @@ test('castle poke: the answer to a poke from 90 px never hits a stationary hero 
   // and enemyGlint 0.4 s before the hit. Seed 11 at 90 px reproduces the cleave answer.
   const events = [];
   let steps = 0;
-  const game = new Game(event => events.push({ ...event, at: steps }), 11, 'castle');
+  const game = new Game(event => events.push({ ...event, at: steps }), 11, 'castle'); game.apex = false;
   game.start(); game.setWeapon('spear'); game.descend(); game.loadFloor(1);
   game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
   const player = game.player; player.blood = 100;
@@ -4685,4 +4686,193 @@ test('castle PR 3: tokens and the single heavy hold with priests, mages and elit
     const p = enemy(g, g.player.x + 300, { type: 'priest' }), m = enemy(g, g.player.x + 700, { type: 'mage' }); p.cd = m.cd = 0; p.dir = m.dir = -1; g.player.invulnerable = 99;
     advance(g, .02); assert.ok(p.tell > .85 && p.tell <= .9, `${mode}: old priest tell`); assert.ok(!('blinkT' in m) && !('recoilT' in p), `${mode}: no castle fields`);
   }
+});
+
+// ---- Apex skeleton (#66): castle skeletons read a 0.12 s old snapshot and answer with backstep, guard, counter, rising and chain ----
+function apexFoe(gap = 100, { floor = 1, hp = 1e5 } = {}) {
+  const c = castle(42, floor, true);
+  c.game.rand = () => .99; // no mixed-strategy baits, no heavy rolls
+  c.player.x = 700; c.player.invulnerable = 0;
+  const e = enemy(c.game, c.player.x + gap, { hp }); e.dir = -1; e.maxPoise = e.poise = 500;
+  return { ...c, e };
+}
+const apexSwings = events => events.filter(ev => ev.type === 'enemySwing');
+
+test('apex: the skeleton decides from a snapshot 0.12 s old and never sees input or buffers', () => {
+  const { game, player } = castle(42, 1, true);
+  player.x = 300; advance(game, .3);
+  player.x = 900; game.update(1 / 120, {});
+  assert.equal(game.snap().x, 300, 'the move to 900 is not visible yet');
+  advance(game, APEX_REACT + .02);
+  assert.equal(game.snap().x, 900, 'visible once 0.12 s have passed');
+  for (const key of ['buffer', 'dashBuf', 'heldDir']) assert.ok(!(key in game.snap()), `${key} is not in the snapshot`);
+  assert.ok(APEX_REACT >= .1 && APEX_REACT < .18, 'faster than the expert bot, never zero');
+  const { game: g2, e } = apexFoe(300); e.cd = 0;
+  g2.player.x = 700; advance(g2, .3); const x0 = e.x; g2.player.x = e.x + 400; // teleport behind it: for 0.1 s it still walks toward where the hero was
+  for (let i = 0; i < 12; i++) g2.update(1 / 120, {});
+  assert.ok(e.x <= x0, 'no reaction inside the 0.12 s');
+});
+
+test('apex: a hero on combo hit 3 is met by a backstep: no tell, no token, 80 px in 0.22 s, once per 0.9 s', () => {
+  const { game, player, e, events } = apexFoe(100);
+  const x0 = e.x; let first = -1;
+  for (let i = 0; i < 120 * .6; i++) { player.combo = 2; player.comboWindow = .8; game.update(1 / 120, {}); if (first < 0 && e.bsT > 0) { first = i; assert.equal(e.tell, 0, 'not an attack: no tell'); assert.equal(e.token, '', 'no token'); } }
+  const steps = events.filter(ev => ev.type === 'apexStep');
+  assert.equal(steps.length, 1, 'cooldown 0.9 s: one step in 0.6 s'); assert.equal(steps[0].dir, 1, 'away from a hero on its left');
+  assert.ok(first >= 0 && e.x - x0 >= 70, `moved ${e.x - x0} px away`);
+  assert.ok(!events.some(ev => ev.type === 'hurt'), 'a backstep never hurts');
+  const { game: g2, e: w, player: p2 } = apexFoe(100); w.x = g2.worldWidth - 45; p2.x = w.x - 100; // against the wall it guards instead
+  for (let i = 0; i < 60; i++) { p2.combo = 2; p2.comboWindow = .8; g2.update(1 / 120, {}); }
+  assert.ok(w.gT > 0 || w.gCd > 0, 'wall: guard instead of a backstep');
+});
+
+test('apex guard: front sword hits cost x0.25 damage and x0.5 posture, no flinch, +1 blood; hits from behind land normally', () => {
+  const { game, player, e, events } = apexFoe(60);
+  e.gT = .6; e.poise = e.maxPoise = 60; const hp = e.hp;
+  game.damageEnemy(e, 30, 1, false, false, false, 17);
+  assert.equal(hp - e.hp, Math.round(30 * .25)); assert.equal(e.poise, 60 - 17 * .5); assert.equal(e.stun, 0, 'no flinch');
+  assert.ok(events.some(ev => ev.type === 'apexGuard' && ev.blocked === 1));
+  game.damageEnemy(e, 30, -1, false, false, false, 17);
+  assert.equal(hp - e.hp, 8 + 30, 'from behind: full damage'); assert.ok(e.stun > 0, 'and it flinches');
+  const gain = guarded => { const c = apexFoe(60); c.e.gT = guarded ? .6 : 0; c.player.dir = 1; c.player.blood = 100; const b = c.player.blood; c.game.attack(); return c.player.blood - b; };
+  assert.equal(gain(false) - gain(true), 2, 'a guarded hit pays 1 blood instead of 3');
+  const c = apexFoe(60); c.e.gT = .6; c.player.dir = 1; c.player.blood = 100; c.game.shots = []; const hp0 = c.e.hp;
+  c.game.damageEnemy(c.e, 8, 1, false, false, false, 8, false, 1, true);
+  assert.equal(hp0 - c.e.hp, 8, 'a projectile is not a sword hit: the guard ignores it');
+});
+
+test('apex guard break: combo hit 3 (front), a plunge, and Eclipse break it into a 0.6 s punishable recovery; a thrust does not', () => {
+  const crush = (hit, label) => {
+    const { game, e, events } = apexFoe(60); e.gT = .6; e.gHit = 1;
+    hit(game, e);
+    assert.equal(e.gT, 0, label); assert.equal(e.recover, .6, label); assert.ok(e.punishable, label);
+    assert.ok(e.gCd >= 1.5, 'guard cooldown'); assert.ok(events.some(ev => ev.type === 'apexCrush'), label);
+    const poise = e.poise; game.damageEnemy(e, 1, 1, false, false, false, 17); assert.equal(poise - e.poise, 34, 'punishable: posture x2');
+  };
+  crush((g, e) => g.damageEnemy(e, 54, 1, false, true, false, 62), 'hit 3');
+  crush((g, e) => g.damageEnemy(e, 38, -1, false, true, false, 45), 'plunge, even from behind');
+  crush((g, e) => g.damageEnemy(e, 58, 1, false, true, false, 55, true), 'Eclipse');
+  const { game, e } = apexFoe(60); e.gT = .6;
+  game.damageEnemy(e, 40, 1, false, true, false, 35); assert.ok(e.gT > 0, 'a thrust is blocked, not breaking');
+  game.damageEnemy(e, 54, -1, false, true, false, 62); assert.ok(e.stun > 0 || e.gT === 0, 'hit 3 from behind is a plain hit (it ends the guard by flinching)');
+  const { game: g2, e: e2, events } = apexFoe(60); e2.gT = .6;
+  g2.damageEnemy(e2, 1, 1, false, false, false, 17); g2.damageEnemy(e2, 1, 1, false, false, false, 17);
+  assert.ok(e2.gT > 0 && !events.some(ev => ev.type === 'apexCrush'), 'combo hits 1-2 never break it');
+});
+
+test('apex counter: a guard that blocked a hit ends in a 0.45 s counter with a fixed 10-82 box; no block, no counter', () => {
+  const { game, player, e, events } = apexFoe(60);
+  e.gT = .3; e.gHit = 1; advance(game, .4);
+  assert.equal(e.move, 'counter'); assert.ok(e.tell > .3 && e.tell <= .45, 'tell 0.45 s'); assert.equal(e.token, 'light');
+  const b = e.warn.box; assert.equal(b.x, e.x - 82); assert.equal(b.w, 72); assert.equal(b.h, 70); assert.equal(b.y, e.y - 70);
+  assert.ok(events.some(ev => ev.type === 'enemyTell' && ev.kind === 'counter'));
+  advance(game, .5);
+  assert.ok(events.some(ev => ev.type === 'hurt'), 'a hero inside the box is hit'); assert.ok(e.recover > 0 && e.punishable, 'punishable recovery');
+  const far = apexFoe(60); far.player.x = far.e.x - 120; far.e.gT = .3; far.e.gHit = 1; advance(far.game, .4);
+  assert.notEqual(far.e.move, 'counter', 'a hero out of the 82 px box draws no counter');
+  const calm = apexFoe(60); calm.e.gT = .3; calm.e.gHit = 0; advance(calm.game, .4);
+  assert.notEqual(calm.e.move, 'counter');
+  const miss = apexFoe(60); miss.e.gT = .3; miss.e.gHit = 1; advance(miss.game, .4); miss.player.x -= 90; advance(miss.game, .5);
+  assert.ok(!miss.events.some(ev => ev.type === 'hurt'), 'outside 82 px the counter misses');
+});
+
+test('apex rising: a hero in the air within 90 px draws a 0.45 s anti-air slash with a fixed box; it never meets a grounded hero', () => {
+  const { game, player, e, events } = apexFoe(60);
+  const air = () => { player.y = FLOOR - 100; player.vy = 0; player.invulnerable = 0; game.update(1 / 120, {}); };
+  for (let i = 0; i < 6; i++) air();
+  assert.equal(e.move, 'rising'); assert.ok(e.tell > .3 && e.tell <= .45); assert.equal(e.token, 'light');
+  assert.deepEqual(e.warn.box, { x: e.x - 70, y: e.y - 150, w: 70, h: 110 });
+  assert.ok(events.some(ev => ev.type === 'enemyTell' && ev.kind === 'rising'));
+  const dir = e.dir; for (let i = 0; i < 120 * .6; i++) air();
+  assert.equal(e.dir, dir, 'facing locked'); assert.ok(events.some(ev => ev.type === 'hurt'), 'an airborne hero in the box is hit');
+  assert.ok(apexSwings(events).some(ev => ev.kind === 'rising'));
+  const g = apexFoe(60); const ev0 = g.e; Object.assign(ev0, { move: 'rising', tell: .01, token: 'light', warn: { kind: 'rising', box: { x: ev0.x - 70, y: ev0.y - 150, w: 70, h: 110 } } });
+  advance(g.game, .1); assert.ok(!g.events.some(ev => ev.type === 'hurt'), 'a hero standing on the floor is not hit');
+});
+
+test('apex chain: a hero whose dash is cooling draws a lunge 0.45 s after contact whose box covers a dash landing, at most two per string', () => {
+  const { game, player, e, events } = apexFoe(60); e.tell = .02; // the hero dodged each lunge: no i-frames in view, blood kept topped up
+  for (let i = 0; i < 120 * 2.4; i++) { Object.assign(player, { dashCd: .8, invulnerable: 0, blood: 1e6 }); game.update(1 / 120, {}); }
+  const chains = events.filter(ev => ev.type === 'enemyTell' && ev.kind === 'chain');
+  assert.equal(chains.length, 2, 'two chained lunges, never a third'); assert.ok(chains.every(c => c.follow));
+  assert.equal(apexSwings(events).filter(ev => ev.kind === 'stepcut').length, 2, 'each strikes once (the first slash opens the string)');
+  const w = apexFoe(60); w.e.tell = .02; const dodge = () => Object.assign(w.player, { dashCd: .8, invulnerable: 0, blood: 1e6 });
+  for (let i = 0; i < 6; i++) { dodge(); w.game.update(1 / 120, {}); }
+  for (let i = 0; i < 4; i++) { dodge(); w.game.update(1 / 120, {}); } for (let i = 0; i < 60 && !(w.e.move === 'stepcut' && w.e.tell > .3); i++) { dodge(); w.game.update(1 / 120, {}); }
+  assert.ok(w.e.tell > .3 && w.e.tell <= .45 && w.e.follows === 1, 'tell 0.45 s');
+  const b = w.e.warn.box; assert.ok(Math.abs(b.w + 10 - w.e.warn.reach) < 1e-6 && w.e.warn.reach >= 131 + 80, 'the box reaches a 131 px dash landing');
+  const none = apexFoe(60); none.player.invulnerable = 99; none.e.tell = .02; advance(none.game, .3);
+  assert.ok(!none.events.some(ev => ev.type === 'enemyTell' && ev.kind === 'chain') && none.e.follows === 0, 'no dash on cooldown, no chain');
+});
+
+test('apex chain: no lunge starts when its contact would fall inside the hero\'s remaining invulnerability (a wasted tell)', () => {
+  const hit = apexFoe(60); hit.player.invulnerable = .8; hit.player.dashCd = .8; advance(hit.game, .2); // a hit just landed: about 0.6 s of i-frames left, seen in the snapshot
+  hit.e.move = ''; hit.e.tell = 0; hit.e.warn = null; hit.e.follows = 0;
+  assert.equal(hit.game.apexChain(hit.e), false, 'the 0.45 s contact would fall inside the i-frames');
+  const clear = apexFoe(60); clear.player.dashCd = .8; advance(clear.game, .2); clear.e.move = ''; clear.e.tell = 0; clear.e.warn = null; clear.e.follows = 0;
+  assert.equal(clear.game.apexChain(clear.e), true, 'control: with no i-frames the same chain starts');
+});
+
+test('apex group play: a peer\'s tell about to land draws a second contact 0.45-0.6 s later (dash trap); the 1.2 s post-stun armor answers at once', () => {
+  const { game, player, e } = apexFoe(140); player.invulnerable = 0;
+  const lead = enemy(game, player.x - 60, { hp: 1e5 }); lead.dir = 1; lead.maxPoise = lead.poise = 500; lead.tell = .05; lead.cd = 5;
+  advance(game, .04);
+  assert.ok(e.tell > .3 && e.tell <= .45 && e.token === 'light', 'the second skeleton starts its own tell as the first lands');
+  const alone = apexFoe(140); advance(alone.game, .05); assert.equal(alone.e.tell, 0, 'without a lead there is no trap');
+  const armor = apexFoe(60); armor.e.armor = 1; advance(armor.game, .05); assert.ok(armor.e.tell > 0, 'post-stun armor starts a slash at once');
+});
+
+test('apex: every contact follows a tell of at least 0.45 s (light) or 0.85 s (heavy)', () => {
+  let contacts = 0;
+  for (const seed of [1, 2, 3]) {
+    const { game, player, events } = castle(seed, 1, true); player.x = 800; player.blood = 200;
+    for (const dx of [260, 380, -250]) { const e = enemy(game, player.x + dx, { hp: 1e6 }); e.maxPoise = e.poise = 1e6; }
+    const seen = new Map();
+    for (let i = 0; i < 120 * 40; i++) {
+      player.blood = 200; const n = events.length;
+      game.update(1 / 120, { right: Math.floor(i / 240) % 2 === 0, left: Math.floor(i / 240) % 2 === 1, jump: i % 400 === 0 });
+      const swung = apexSwings(events.slice(n)).length;
+      for (const e of game.enemies) {
+        const r = seen.get(e) || { tell: 0, start: 0, heavy: false }; seen.set(e, r);
+        if (r.tell > 0 && (e.tell <= 0 || e.tell > r.tell + 1e-9) && swung) { const len = game.time - r.start; contacts++; assert.ok(len >= (r.heavy ? .84 : .44), `${r.heavy ? 'heavy' : 'light'} tell of ${len.toFixed(2)} s`); }
+        if (e.tell > 0 && (r.tell <= 0 || e.tell > r.tell + 1e-9)) { r.start = game.time - (0); r.heavy = e.heavy; }
+        r.tell = e.tell;
+      }
+    }
+  }
+  assert.ok(contacts >= 3, `only ${contacts} contacts seen`);
+});
+
+test('apex is castle only: Normal, Endless, other enemy types and the apex switch leave the old skeleton alone', () => {
+  for (const mode of ['normal', 'endless']) {
+    const g = new Game(() => {}, 4, mode); g.state = 'playing'; g.enemies = []; g.player.invulnerable = 99;
+    const e = enemy(g, g.player.x + 100); e.dir = -1; e.cd = 0;
+    for (let i = 0; i < 120; i++) { g.player.combo = 2; g.player.comboWindow = .8; g.update(1 / 120, {}); }
+    assert.ok(!g.apexOn(e) && g.snaps.length === 0 && !('bsT' in e), `${mode}: no snapshot, no apex fields`);
+  }
+  const c = castle(42, 1, true); const sh = enemy(c.game, c.player.x + 100, { type: 'shield' }), kn = enemy(c.game, c.player.x - 100, { type: 'knight' });
+  assert.ok(!c.game.apexOn(sh) && !c.game.apexOn(kn));
+  const off = castle(42, 1, false), e = enemy(off.game, off.player.x + 100); e.dir = -1;
+  for (let i = 0; i < 120; i++) { off.player.combo = 2; off.player.comboWindow = .8; off.game.update(1 / 120, {}); }
+  assert.ok(!off.events.some(ev => ev.type === 'apexStep'), 'apex off: the old skeleton');
+});
+
+test('apex review: a forced cleave judges the hero by its snapshot; a guard cut short starts its cooldown; 3 tokens with at most 1 heavy', () => {
+  const a = apexFoe(100); a.e.heavyCd = 0; a.game.rand = () => .99;
+  for (let i = 0; i < 60; i++) { a.player.invulnerable = 99; a.game.update(1 / 120, {}); }
+  a.e.cd = 0; a.e.heavy = false; a.e.tell = 0; a.e.recover = 0; a.e.token = ''; a.e.move = ''; a.e.warn = null; a.e.armor = 0; a.e.mixT = 0;
+  a.player.y = FLOOR - 120; a.player.vy = -300; // jumped this frame: the live dy is 120, the snapshot still has the hero on the floor
+  assert.equal(a.game.startHeavy(a.e, 100, true), true, 'forced: the live height is not read');
+  const b = apexFoe(100); b.e.heavyCd = 0; b.player.y = FLOOR - 120;
+  assert.equal(b.game.startHeavy(b.e, 100, false), false, 'unforced: the old live check stays');
+  const g = apexFoe(60); g.e.gT = .5; g.e.gCd = 0; g.game.damageEnemy(g.e, 30, -1, false, false, false, 17); // from behind: flinch
+  advance(g.game, .1);
+  assert.equal(g.e.gT, 0); assert.ok(g.e.gCd >= 1.4, 'guard cooldown after the cut'); assert.equal(g.game.apexGuard(g.e), false);
+  const c = castle(42, 1, true), off = castle(42, 1, false);
+  assert.equal(c.game.tokenCap(), 3); assert.equal(off.game.tokenCap(), ATTACK_TOKENS);
+  for (const k of [0, 1, 2, 3]) { const e = enemy(c.game, c.player.x + 100 + k * 40, { hp: 1e5 }); e.dir = -1; }
+  let heavy = 0, holders = 0;
+  for (let i = 0; i < 120 * 6; i++) { Object.assign(c.player, { invulnerable: 0, blood: 150 }); c.game.update(1 / 120, {}); const h = c.game.enemies.filter(e => e.token); holders = Math.max(holders, h.length); heavy = Math.max(heavy, h.filter(e => e.token === 'heavy').length); }
+  assert.ok(holders >= 2 && holders <= 3 && heavy <= 1, `${holders} holders, ${heavy} heavy`);
+  assert.equal(off.game.snaps.length, 0, 'no snapshots with apex off');
 });

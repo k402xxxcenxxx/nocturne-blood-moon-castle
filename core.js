@@ -112,6 +112,10 @@ const RECOIL = { range: 120, dist: 100, time: .3, cd: 4 }, BLINK = { range: 120,
 const CASTLE_TWIST = { skeleton: 'duelist', bat: 'shrieker', shield: 'phalanx', spear: 'impaler', knight: 'oathsworn', priest: 'hierophant', mage: 'prism' }, ELITE_HP = 1.5, ELITE_DELAY = .5;
 const ELITE_FROM = 7, ELITE_POOL = ['skeleton', 'bat', 'shield', 'spear', 'priest', 'mage']; // from ELITE_FROM one regular is promoted from these types (the knight is the Oathsworn bonus); the first four on floor 7
 const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, recover: 1, range: 240, reach: 160, low: 54, high: 180 }, PRISM_FAN = [-.3, 0, .3], PHALANX_COVER = 80;
+// Apex skeleton (#66): every castle skeleton decides from a snapshot of the hero taken APEX_REACT s ago (never the live frame, input or future rolls). Playtest starting points.
+export const APEX_REACT = .12;
+const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 1.5, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6,
+  hp: 12, dmg: 8, poise: 12, speed: 2.5, cutReach: 280, tokens: 3, chainMax: 2, cutRecover: .5, mix: .8 }; // stat levers (rounds 2-3): hp x12, light damage x8, posture x12, speed x2.5; the stepcut reaches 280 px; 3 attack tokens
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
@@ -153,6 +157,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
+    this.apex = true; this.snaps = []; this.guardedHit = false; // apex skeletons (castle only); the hero snapshot ring
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
     this.loadStage(0);
@@ -183,7 +188,7 @@ export class Game {
     this.stage = index;
     const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
-    this.tier = tier; this.gaps = []; // splitting copies use the floor tier; attack-token retake gaps start clear
+    this.tier = tier; this.gaps = []; this.snaps = []; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
     this.worldWidth = spec.width;
@@ -448,7 +453,10 @@ export class Game {
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
-    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '' }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0 }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
+      e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
+    }
     return e;
   }
   update(dt, input = {}) {
@@ -508,6 +516,7 @@ export class Game {
     }
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
+    if (this.mode === 'castle' && this.apex) { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - APEX_REACT - .1) this.snaps.shift(); }
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
     this.updateTraps(dt);
     for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
@@ -671,7 +680,7 @@ export class Game {
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       this.cover = null;
       p.mp = Math.min(p.maxMp, p.mp + 2);
-      if (this.bloodOk(e)) this.gainBlood((blocked ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+      if (this.bloodOk(e)) this.gainBlood((blocked || this.guardedHit ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
     }
     this.shieldDone = null;
@@ -691,7 +700,7 @@ export class Game {
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, true, blocked, POISE_DAMAGE.thrust);
       this.cover = null;
       p.mp = Math.min(p.maxMp, p.mp + 2);
-      if (this.bloodOk(e)) this.gainBlood(blocked ? 1 : 3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
+      if (this.bloodOk(e)) this.gainBlood(blocked || this.guardedHit ? 1 : 3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
       this.emit('assaultHit', { x: e.x, y: e.y - e.h * .55, dir: p.dir, blocked });
       if (blocked) p.dash = 0;
@@ -764,6 +773,13 @@ export class Game {
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
     const warden = !!e.armored; // super armor instead of posture: full damage, never poise, flinch, knockback or interrupted tells
+    // Apex guard: a sword hit from the front (combo 1-2, thrust, assault) is blocked (x0.25 damage, x0.5 posture, no flinch); combo hit 3 from the front, any plunge and Eclipse break it.
+    this.guardedHit = false; let crush = false;
+    if (e.gT > 0 && this.mode === 'castle' && e.hp > 0) {
+      const front = dir * e.dir < 0, third = poiseDamage === POISE_DAMAGE.combo[3];
+      if (eclipse || poiseDamage === POISE_DAMAGE.plunge || (third && front && !shot)) crush = true;
+      else if (front && !shot) { this.guardedHit = true; e.gHit++; amount = Math.max(1, Math.round(amount * APEX.guardMul)); poiseDamage *= APEX.guardPoise; }
+    }
     if (warden) { poiseDamage = 0; if (e.breakStun > 0) amount = Math.round(amount * BREAK_MUL); }
     const through = this.absorb(e, amount), absorbed = amount - through;
     e.hp -= through; e.flash = .14;
@@ -797,7 +813,7 @@ export class Game {
       this.emit('block', { x: b.x + b.dir * b.w / 2, y: b.y - b.h * .55, amount, dir: b.dir });
       }
     } else {
-      const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold || warden; // Eclipse still interrupts armored non-bosses
+      const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold || warden || this.guardedHit; // Eclipse still interrupts armored non-bosses
       if (!quiet && (!keepsTell || e.type === 'boss')) {
         e.stun = Math.max(e.stun, e.type === 'boss' ? .08 : heavy ? .42 : .24);
         if (castle) e.steady = e.stun + STEADY;
@@ -807,10 +823,18 @@ export class Game {
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy, punish: this.punishing(e) });
     }
+    if (this.guardedHit) this.emit('apexGuard', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, blocked: e.gHit });
+    if (crush) { // the guard breaks: a short punishable recovery (a posture break below overrides it)
+      Object.assign(e, { gT: 0, gCd: APEX.guardCd, gHit: 0 });
+      if (e.hp > 0 && !broken) Object.assign(e, { recover: APEX.crushRecover, punishable: true });
+      this.emit('apexCrush', { x: e.x, y: e.y - e.h * .55 });
+    }
     if (broken) this.stagger(e);
     if (warden && e.hp > 0) this.armorHit(e, eclipse);
     this.settle(e);
+    const guarded = this.guardedHit;
     if (!blocked) this.elements(e, amount, heavy, eclipse, shot);
+    this.guardedHit = guarded; // elements may hit other enemies; the caller reads the flag for this hit
   }
   // After a forced sideways move (shield shove), put a body back on the side of every solid obstacle it started on.
   keepBeside(b, fromX) {
@@ -983,7 +1007,7 @@ export class Game {
     if (this.mode === 'castle' && e.type !== 'boss') {
       if (e.x - p.x < -SCREEN_LEFT || e.x - p.x > SCREEN_RIGHT) return false; // nothing attacks from off screen
       if (kind === 'support') return !this.enemies.some(o => o !== e && o.hp > 0 && o.blessRadius && o.tell > 0);
-      const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = ATTACK_TOKENS - holders.length - this.gaps.length;
+      const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = this.tokenCap() - holders.length - this.gaps.length;
       const deny = () => { e.wait += this.step; return false; };
       if (free <= 0) return deny();
       if (kind === 'heavy' && holders.some(o => o.token === 'heavy')) return false; // one heavy token; the light attack that follows still asks
@@ -1070,7 +1094,7 @@ export class Game {
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const castle = this.mode === 'castle' && e.type !== 'boss';
     if (castle) {
-      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt);
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt); e.bsCd = Math.max(0, e.bsCd - dt); e.gCd = Math.max(0, e.gCd - dt); e.mixT = Math.max(0, e.mixT - dt);
       if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
       if (e.stun <= 0) e.riposte = false;
     }
@@ -1078,12 +1102,15 @@ export class Game {
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt); e.rollT = Math.max(0, e.rollT - dt); e.heavyCd = Math.max(0, e.heavyCd - dt);
     const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
-    if (e.stun > 0) { if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
+    // a guard cut short by a stun still starts its cooldown (gCd below)
+    if (e.stun > 0) { if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0 }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gCd: e.gT > 0 ? APEX.guardCd : e.gCd, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     if (e.strikeT > 0) { this.heavyTravel(e, dt); return; }
     if (e.stepT > 0 || e.cutT > 0) { this.stepcut(e, dt); return; }
     if (e.crossT > 0) { this.crossover(e, dt); return; }
     if (e.blinkT > 0) { this.blinking(e, dt); return; }
     if (e.recoilT > 0) { this.recoiling(e, dt); return; }
+    if (e.bsT > 0) { this.backstepping(e, dt); return; }
+    if (e.gT > 0) { this.guarding(e, dt); return; }
     if (resting && !(e.tell > 0)) { // recovery: stands still, facing locked, open to punishing hits
       e.vx = 0;
       if (e.type === 'bat' && e.heavy) e.y += (FLOOR - e.y) * Math.min(1, dt * 10);
@@ -1091,7 +1118,7 @@ export class Game {
       if ((e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false });
       return;
     }
-    const dx = p.x - e.x, distance = Math.abs(dx);
+    const apex = this.apexOn(e), dx = (apex ? this.snap() : p).x - e.x, distance = Math.abs(dx); // an apex skeleton sees the hero as it was APEX_REACT s ago
     const face = dx >= 0 ? 1 : -1;
     if (e.heavy) e.reface = 0; // heavy: facing locked from wind-up to the end of recovery
     else if (castle) { // castle: facing locks at tell start; outside attacks a minion turns after its own re-face delay
@@ -1119,7 +1146,8 @@ export class Game {
     }
     if (e.travel > 0) { this.bossCharge(e, dt, face); return; }
     const tellBefore = e.tell;
-    if (this.mode === 'castle' && e.type !== 'boss' && this.startHeavy(e, distance)) e.vx = 0;
+    if (apex) this.apexThink(e, dt);
+    else if (this.mode === 'castle' && e.type !== 'boss' && this.startHeavy(e, distance)) e.vx = 0;
     else if (e.type === 'bat') {
       if (castle && this.startCross(e, distance)) e.vx = 0; // the bat flies over the hero (no hitbox, no token)
       else {
@@ -1199,7 +1227,8 @@ export class Game {
   // ring, inside the hero's reach) and may start its light tell from PROVOKED_REACH, so a hero who pokes from a distance always meets a tell.
   provoked(e) { return this.mode === 'castle' && !!HOLD_RING[e.type] && e.provoke > 0 && e.recover <= 0; }
   ready(e) { return e.cd <= 0 || this.provoked(e); }
-  tokensFree() { return ATTACK_TOKENS - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
+  tokenCap() { return this.apex && this.mode === 'castle' ? APEX.tokens : ATTACK_TOKENS; } // an apex field attacks with 3 tokens (still at most 1 heavy)
+  tokensFree() { return this.tokenCap() - this.enemies.filter(o => o.hp > 0 && o.token).length - this.gaps.length; }
   // A token is taken when a tell (or the stepcut backstep) starts and released once the whole attack, recovery included, is over or cancelled.
   syncToken(e) {
     if (!e.token && !e.blessRadius && (e.tell > 0 || e.stepT > 0)) {
@@ -1229,9 +1258,9 @@ export class Game {
       e.stepT = Math.max(0, e.stepT - dt); e.vx = e.stepV; e.x = clamp(e.x + e.stepV * dt, 30, this.worldWidth - 40);
       if (this.collideEnemy(e, prevX, dt)) e.stepT = 0; // a barricade ends the backstep
       if (e.stepT > 0) return;
-      const d = e.dir, to = clamp(e.x + d * 80, 30, this.worldWidth - 40);
+      const d = e.dir, reach = this.apexOn(e) ? APEX.cutReach : 100, to = clamp(e.x + d * 80, 30, this.worldWidth - 40);
       e.vx = 0; e.tell = .5;
-      e.warn = { kind: 'stepcut', to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + d * 10, to + d * 100), y: e.y - 70, w: 90, h: 70 } };
+      e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + d * 10, to + d * reach), y: e.y - 70, w: reach - 10, h: 70 } };
       return;
     }
     const w = e.warn, d = e.dir;
@@ -1252,8 +1281,124 @@ export class Game {
     const reach = w.reach || 100, h = w.h || 70; // the skeleton's lunge; the knight's overhead brings its own box and string recovery
     if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * reach), y: e.y - h, w: reach - 10, h })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
     if (w.kind === 'overhead' && e.twist === 'oathsworn' && this.oathThird(e)) return;
-    Object.assign(e, { warn: null, move: '', vx: 0, recover: w.recover || .6, punishable: true, cd: Math.max(e.cd, 1.2) });
+    if (w.kind === 'stepcut' && this.apexOn(e) && e.twist !== 'duelist' && this.apexChain(e)) return;
+    if (e.follows) e.follows = 0;
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: this.apexOn(e) ? APEX.cutRecover : w.recover || .6, punishable: true, cd: this.apexOn(e) ? e.cd : Math.max(e.cd, 1.2) });
     e.action++;
+  }
+  // --- Apex skeleton (#66). Castle only, every skeleton. It never reads input, buffers or future rolls: it decides from heroSnap() as it was APEX_REACT s ago. ---
+  apexOn(e) { return this.apex && this.mode === 'castle' && e.type === 'skeleton'; }
+  heroSnap() {
+    const p = this.player, { x, y, vx, vy, grounded, dir, attack, attackCd, combo, comboWindow, move, plunge, thrustWindow, whiff, dash, dashCd, dashCooldown, invulnerable, blood, frenzy, weapon, debt, magicCd, magicCdMax, lunatic, reach, plungeRadius, armor, takenMul } = p;
+    return { t: this.time, x, y, vx, vy, grounded, dir, attack, attackCd, combo, comboWindow, move, plunge, thrustWindow, whiff, dash, dashCd, dashCooldown, invulnerable, blood, frenzy, weapon, debt, magicCd, magicCdMax, lunatic, reach, plungeRadius, armor, takenMul };
+  }
+  snap() { // the newest snapshot at least APEX_REACT old (the oldest one, taken on the first frame of the floor, while the ring is still filling)
+    const t = this.time - APEX_REACT;
+    for (let i = this.snaps.length - 1; i >= 0; i--) if (this.snaps[i].t <= t) return this.snaps[i];
+    return this.snaps[0] || this.heroSnap();
+  }
+  // Backstep: not an attack (no tell, token or armor), 80 px away from the hero in 0.22 s. Against a wall it guards instead. Returns true if it started.
+  apexBackstep(e, toward) {
+    if (e.bsCd > 0) return false;
+    const to = e.x - toward * APEX.stepDist;
+    if (to < 40 || to > this.worldWidth - 50) return this.apexGuard(e);
+    Object.assign(e, { bsT: APEX.stepTime, bsV: -toward * APEX.stepDist / APEX.stepTime, bsCd: APEX.stepCd, dir: toward, vx: 0 });
+    this.emit('apexStep', { x: e.x, y: e.y - e.h * .5, dir: -toward });
+    return true;
+  }
+  backstepping(e, dt) {
+    const prevX = e.x, want = clamp(e.x + e.bsV * dt, 30, this.worldWidth - 40);
+    e.bsT = Math.max(0, e.bsT - dt); e.vx = e.bsV; e.x = want;
+    if (this.collideEnemy(e, prevX, dt) || e.x !== want) { e.bsT = 0; e.vx = 0; this.apexGuard(e); } // a wall or barricade ends the step: it guards instead
+  }
+  apexGuard(e) {
+    if (e.gCd > 0 || e.gT > 0) return false;
+    Object.assign(e, { gT: APEX.guardTime, gHit: 0, vx: 0 });
+    return true;
+  }
+  // Guard: stands still facing the hero for up to 0.6 s; if it blocked at least one hit it ends in a counter (needs a token).
+  guarding(e, dt) {
+    e.vx = 0; e.gT = Math.max(0, e.gT - dt);
+    if (e.gT > 0) return;
+    e.gCd = APEX.guardCd;
+    const hit = e.gHit > 0; e.gHit = 0;
+    if (!hit || Math.abs(this.snap().x - e.x) > 90 || !this.canWindUp(e)) return; // the counter only reaches 82 px
+    const d = e.dir, box = { x: Math.min(e.x + d * 10, e.x + d * 82), y: e.y - 70, w: 72, h: 70 };
+    Object.assign(e, { tell: APEX.counterTell, move: 'counter', cd: Math.max(e.cd, APEX.lightCd), follows: 0, warn: { kind: 'counter', box } });
+  }
+  // Chain: at the contact of a slash or stepcut, a hero whose snapshot shows a dash on cooldown (or in the air) within 260 px draws a lunge with no backstep, 0.45 s after the contact.
+  // Its 200+ px box covers where a dash lands (131 px) and the walk-out, and it falls inside the dash cooldown; a jump still clears it. One per string, never delayed.
+  apexChain(e) {
+    const s = this.snap(), dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1;
+    if (this.state !== 'playing' || (s.dashCd <= 0 && s.grounded) || d > 260 || (s.grounded && Math.abs(s.y - e.y) >= 82) || e.follows >= APEX.chainMax || s.invulnerable - APEX_REACT >= APEX.chainTell) return false; // a jump over the first lunge draws a second, landing with the hero
+    e.dir = toward; e.vx = 0;
+    const to = clamp(e.x + toward * 80, 30, this.worldWidth - 40), reach = APEX.cutReach;
+    e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + toward * 10, to + toward * reach), y: e.y - 70, w: reach - 10, h: 70 } };
+    Object.assign(e, { tell: APEX.chainTell, move: 'stepcut', punishable: false, recover: 0, follows: e.follows + 1 });
+    this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'skeleton', kind: 'chain', dir: e.dir, follow: true });
+    return true;
+  }
+  // The brain. Rows run top to bottom and the first that acts wins (see the Issue's state-read -> answer table). Every attack it starts is a normal tell through canWindUp (token, on screen).
+  apexThink(e, dt) {
+    if (!e.action) e.cd = 0; // no spawn cooldown: the first answer comes as soon as it reads one
+    const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 82;
+    const reach = s.reach + (s.combo === 2 && s.comboWindow > 0 ? 24 : 0) + 14; // where the hero's next swing lands
+    const dashReady = s.dash <= 0 && s.dashCd <= 0, eclipseReady = s.magicCd <= 0 && (s.lunatic || s.blood >= SKILL_MIN);
+    const lethal = HEAVY_DAMAGE * s.armor * s.takenMul >= s.blood, safe = n => e.poise - n > 0, heroCool = s.invulnerable - APEX_REACT;
+    const walk = v => { e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
+    const hold = r => walk(d < r - 10 ? -toward * e.speed : d > r + 10 ? toward * e.speed : 0);
+    const retreat = () => { if (!this.apexBackstep(e, toward)) walk(-toward * e.speed); };
+    const begin = (len, fn, high = false) => { // a light tell: not into the hero's remaining invulnerability, needs a token (rising looks up, the rest need the hero at its height)
+      if (e.cd > 0 || !(high ? Math.abs(s.y - e.y) < 220 : near) || heroCool >= len || !this.canWindUp(e)) return false;
+      e.dir = toward; e.vx = 0; fn(); return true;
+    };
+    const slash = (max = 82) => d <= max && begin(APEX.lightTell, () => Object.assign(e, { tell: APEX.lightTell, cd: APEX.lightCd, follows: 0 }));
+    const stepcut = (max = APEX.cutReach + 10) => d <= max && d > 40 && e.stepRoll <= 0 && begin(APEX.lightTell + .4, () => Object.assign(e, { stepT: .25, move: 'stepcut', stepV: -toward * 280, cd: APEX.lightCd, follows: 0 }));
+    const noHeavy = eclipseReady && d < 230; // Eclipse cancels a heavy: lights only inside its range
+    const cleave = () => !noHeavy && d <= 260 && near && heroCool < HEAVY.skeleton.tell && (e.dir = toward, this.startHeavy(e, d, true)) && (e.vx = 0, e.follows = 0, true);
+    const rising = () => begin(APEX.risingTell, () => { const x0 = Math.min(e.x, e.x + toward * 70); Object.assign(e, { tell: APEX.risingTell, move: 'rising', cd: APEX.lightCd, follows: 0, warn: { kind: 'rising', box: { x: x0, y: e.y - 150, w: 70, h: 110 } } }); }, true);
+    // 1. post-stun armor: the 1.2 s of armor after a stun starts a slash at once
+    if (e.armor > 0 && slash()) return;
+    // 2. an ally stunned and the hero closing on it: time a hit into the riposte swing
+    const down = this.enemies.find(o => o !== e && o.hp > 0 && o.type === 'skeleton' && o.stun > 0 && o.riposte && Math.abs(s.x - o.x) < 160);
+    if (down && (slash(150) || stepcut())) return;
+    // 3. dash trap: a peer's tell is about to land, so this contact falls 0.5 s later, inside the hero's dash cooldown
+    const lead = this.enemies.find(o => o !== e && o.hp > 0 && o.type === 'skeleton' && !o.heavy && o.tell > 0 && o.tell < .08 && Math.abs(s.x - o.x) < 140);
+    if (lead && slash(150)) return;
+    // 4. the hero in the air
+    if (s.plunge === 3 && (slash() || stepcut())) return; // the landing
+    if (s.plunge) { if (d < s.plungeRadius + 30) retreat(); else hold(s.plungeRadius + 30); return; }
+    if (!s.grounded) { if (d < 90) { if (!rising()) retreat(); } else hold(s.plungeRadius + 30); return; }
+    // 5. a thrust coming: guard inside its reach, else out of its 255 px
+    if (s.thrustWindow > 0 && (e.x - s.x) * s.dir > 0 && d < 255) { if (d <= 155 && this.apexGuard(e)) return; retreat(); return; }
+    // 6. Eclipse ready and posture low: out of its 230 px
+    if (eclipseReady && d < 230 && !safe(55)) { retreat(); return; }
+    // 7. combo hit 3 next (62 posture, breaks a guard): step out of reach, or trade only on posture
+    if (s.combo === 2 && s.comboWindow > 0 && d <= reach) { if (this.apexBackstep(e, toward)) return; if (safe(31) && (slash() || stepcut())) return; retreat(); return; }
+    // 8. mid-combo (hits 2-3 to come): trade under hyper armor if posture allows, else guard
+    if (s.attack > 0 && s.combo === 1 && d <= reach) { if (safe(40) ? slash() || stepcut() : this.apexGuard(e)) return; }
+    // 9. blood near a frenzy: deny the hits, heavies only
+    if (s.blood >= 185 && !s.frenzy) { if (!cleave()) hold(reach + 20); return; }
+    // 10. each weapon's frenzy
+    if (s.frenzy && s.weapon === 'heavy') { if (s.debt >= 100) { hold(reach + 40); return; } if (slash() || stepcut()) return; hold(70); return; } // feed the debt, then let it burn
+    if (s.frenzy && s.weapon === 'twin') { // stay out of the auto-swings
+      if (d > reach && (cleave() || stepcut())) return;
+      if (d <= reach) { if (s.combo === 2 ? this.apexBackstep(e, toward) : this.apexGuard(e)) return; }
+      hold(reach + 15); return;
+    }
+    if (s.frenzy && s.weapon === 'spear') { if (s.dash > 0 && s.dir === toward && this.apexBackstep(e, toward)) return; hold(190); return; } // starve the assault dashes
+    // 11. a lethal heavy: heavy first while the hero lacks its dash or Eclipse
+    if (lethal && (!dashReady || !eclipseReady) && cleave()) return;
+    // 12. a whiff or a swing in recovery: punish
+    if ((s.whiff > 0 || s.attackCd > .15) && d < 140) { if ((s.dashCd > .45 || !dashReady) && cleave()) return; if (slash() || stepcut()) return; }
+    // 13. the hero walking in: meet the charge with a guard (its first two hits are blocked); then a bait slash while the dash is ready (a dash draws the chain), else the stepcut
+    if (s.vx * (e.x - s.x) > 100 && d > reach - 14 && d <= 230 && this.apexGuard(e)) return;
+    if (s.vx * (e.x - s.x) > 100) { if (stepcut(260) || (dashReady ? slash(150) : slash())) return; } // a lunge aimed where the charging hero will stand
+    // 14. the hero retreating: follow it
+    if (s.vx * (e.x - s.x) < -100) { if (stepcut()) return; hold(reach + 15); return; }
+    // 15. idle at mid range: hold the line, mixing a bait every 0.8 s
+    if (e.mixT <= 0) { e.mixT = APEX.mix; if (!eclipseReady && cleave() || stepcut() || slash(150)) return; }
+    hold(reach + 15);
   }
   // Mage `blink` (read: the hero within 120): not an attack, so no tell, token or hyper armor. A 0.4 s shimmer on the spot it stands on and the spot it will take (220 px from the hero, on the floor,
   // fixed now), then it teleports. Hits during the shimmer land but do not interrupt it; a posture break, freeze or death do. Returns true if it started (no free spot: it retries in 1 s).
@@ -1712,6 +1857,14 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: e.move });
       return;
     }
+    if (castle && e.type === 'skeleton' && (e.move === 'counter' || e.move === 'rising')) { // apex counter (after a guard) and rising slash (anti-air): a fixed box, then a punishable recovery
+      const w = e.warn, kind = e.move;
+      Object.assign(e, { warn: null, move: '', recover: kind === 'rising' ? APEX.risingRecover : APEX.counterRecover, punishable: true, follows: 0 });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind, area: w });
+      if (this.heavyHits(e, w.box) && (kind !== 'rising' || this.player.y < e.y - 40)) this.hurt(dmg, e.dir); // the rising slash only meets a hero whose feet are off the ground
+      e.action++;
+      return;
+    }
     if (castle && e.move === 'counter') {
       const w = e.warn, was = p.invulnerable, from = p.x;
       Object.assign(e, { warn: null, move: '', recover: .5, punishable: true });
@@ -1757,7 +1910,9 @@ export class Game {
       this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'skeleton', kind: 'slash2', dir: e.dir, follow: true });
       return;
     }
-    if (e.move === 'slash2') e.move = '';
+    if (e.move === 'slash2' || e.move === 'chain') e.move = '';
+    if (castle && this.apexOn(e) && !e.follows && e.twist !== 'duelist' && this.apexChain(e)) return;
+    if (e.follows) e.follows = 0;
     if (castle && LIGHT_RECOVER[e.type]) { e.recover = LIGHT_RECOVER[e.type]; e.punishable = true; } // the attack ends in a punishable recovery
     e.action++;
   }
@@ -1810,14 +1965,14 @@ export class Game {
     return Math.max(h.base, ...Object.entries(this.floor >= LATE_READS_FLOOR && h.lateReads || h.reads).filter(([k]) => seen[k]).map(([, c]) => c));
   }
   // Called where a ready enemy would pick an attack: returns true if a heavy wind-up started (the caller skips the light attack).
-  startHeavy(e, distance) {
+  startHeavy(e, distance, force = false) { // force: the apex brain has decided, so no heavy-chance roll
     const p = this.player, impale = e.twist === 'impaler' && !p.grounded && distance <= SKEWER.range && (p.x - e.x) * e.dir > 0 && p.y > e.y - SKEWER.high, h = impale ? SKEWER : HEAVY[e.type]; // Impaler: a hero in the air draws the skewer
-    if (!h || e.cd > 0 || e.heavyCd > 0 || e.rollT > 0 || e.turn > 0 || e.reface > 0 || e.heavy) return false;
-    const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
+    if (!h || e.cd > 0 || e.heavyCd > 0 || e.turn > 0 || e.heavy || (!force && (e.rollT > 0 || e.reface > 0))) return false;
+    const dy = force ? 0 : Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir; // forced (apex): the brain already checked the height on its snapshot, never the live hero
     const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= BAT_RING + 40 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82,
       rite: p.grounded && distance >= RECOIL.range && distance <= RITE_RANGE, ray: front && distance > RAY.from && (distance > BLINK.range || e.blinkCd > 0) && dy < RAY.reach, skewer: true }[h.kind]; // a mage with a hero inside 120 blinks first
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
-    if (!impale && this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
+    if (!impale && !force && this.rand() >= this.heavyChance(e)) { e.rollT = 1; return false; } // one roll per attack chance; a failed roll retries a second later
     const box = (from, to, height) => ({ x: Math.min(e.x + d * from, e.x + d * to), y: e.y - height, w: to - from, h: height });
     const warn = { kind: h.kind };
     if (h.kind === 'cleave') warn.box = box(10, 125, 90);
@@ -1895,6 +2050,7 @@ export class Game {
       this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: 'dive', enemy: 'bat', area: warn, delayed: false, bounce: true });
       return;
     }
+    if (e.follows) e.follows = 0;
     Object.assign(e, { warn: null, strikeT: 0, vx: 0, recover: HEAVY[e.type].recover, punishable: true, heavyCd: HEAVY_CD, cd: Math.max(e.cd, 1.2) });
     e.action++;
   }
