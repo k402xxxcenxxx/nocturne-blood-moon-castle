@@ -4790,12 +4790,12 @@ test('apex rising: a hero in the air within 90 px draws a 0.45 s anti-air slash 
   advance(g.game, .1); assert.ok(!g.events.some(ev => ev.type === 'hurt'), 'a hero standing on the floor is not hit');
 });
 
-test('apex chain: a hero whose dash is cooling draws one lunge 0.45 s after contact whose box covers a dash landing, never two', () => {
+test('apex chain: a hero whose dash is cooling draws a lunge 0.45 s after contact whose box covers a dash landing, at most two per string', () => {
   const { game, player, e, events } = apexFoe(60); player.invulnerable = 99; e.tell = .02;
   for (let i = 0; i < 120 * 2.4; i++) { player.dashCd = .8; game.update(1 / 120, {}); }
   const chains = events.filter(ev => ev.type === 'enemyTell' && ev.kind === 'chain');
-  assert.equal(chains.length, 1, 'one chained lunge'); assert.ok(chains[0].follow);
-  assert.equal(apexSwings(events).filter(ev => ev.kind === 'stepcut').length, 1, 'the lunge strikes once');
+  assert.equal(chains.length, 2, 'two chained lunges, never a third'); assert.ok(chains.every(c => c.follow));
+  assert.equal(apexSwings(events).filter(ev => ev.kind === 'stepcut').length, 2, 'each strikes once (the first slash opens the string)');
   const w = apexFoe(60); w.player.invulnerable = 99; w.e.tell = .02;
   for (let i = 0; i < 6; i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }
   advance(w.game, .03); for (let i = 0; i < 60 && !(w.e.move === 'stepcut' && w.e.tell > .3); i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }

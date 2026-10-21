@@ -115,7 +115,7 @@ const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, rec
 // Apex skeleton (#66): every castle skeleton decides from a snapshot of the hero taken APEX_REACT s ago (never the live frame, input or future rolls). Playtest starting points.
 export const APEX_REACT = .12;
 const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 1.5, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6,
-  hp: 12, dmg: 8, poise: 12, speed: 2.5, cutReach: 280, tokens: 3 }; // stat levers (rounds 2-3): hp x12, light damage x8, posture x12, speed x2.5; the stepcut reaches 280 px; 3 attack tokens
+  hp: 12, dmg: 8, poise: 12, speed: 2.5, cutReach: 280, tokens: 3, chainMax: 2, cutRecover: .5, mix: .8 }; // stat levers (rounds 2-3): hp x12, light damage x8, posture x12, speed x2.5; the stepcut reaches 280 px; 3 attack tokens
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
@@ -1280,9 +1280,9 @@ export class Game {
     const reach = w.reach || 100, h = w.h || 70; // the skeleton's lunge; the knight's overhead brings its own box and string recovery
     if (this.heavyHits(e, { x: Math.min(e.x + d * 10, e.x + d * reach), y: e.y - h, w: reach - 10, h })) this.hurt(e.damage * (e.blessed > 0 ? 1.25 : 1), d);
     if (w.kind === 'overhead' && e.twist === 'oathsworn' && this.oathThird(e)) return;
-    if (w.kind === 'stepcut' && this.apexOn(e) && !e.follows && e.twist !== 'duelist' && this.apexChain(e)) return;
+    if (w.kind === 'stepcut' && this.apexOn(e) && e.twist !== 'duelist' && this.apexChain(e)) return;
     if (e.follows) e.follows = 0;
-    Object.assign(e, { warn: null, move: '', vx: 0, recover: w.recover || .6, punishable: true, cd: Math.max(e.cd, 1.2) });
+    Object.assign(e, { warn: null, move: '', vx: 0, recover: this.apexOn(e) ? APEX.cutRecover : w.recover || .6, punishable: true, cd: this.apexOn(e) ? e.cd : Math.max(e.cd, 1.2) });
     e.action++;
   }
   // --- Apex skeleton (#66). Castle only, every skeleton. It never reads input, buffers or future rolls: it decides from heroSnap() as it was APEX_REACT s ago. ---
@@ -1329,11 +1329,11 @@ export class Game {
   // Its 200+ px box covers where a dash lands (131 px) and the walk-out, and it falls inside the dash cooldown; a jump still clears it. One per string, never delayed.
   apexChain(e) {
     const s = this.snap(), dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1;
-    if (this.state !== 'playing' || s.dashCd <= 0 || d > 260 || Math.abs(s.y - e.y) >= 82) return false;
+    if (this.state !== 'playing' || (s.dashCd <= 0 && s.grounded) || d > 260 || (s.grounded && Math.abs(s.y - e.y) >= 82) || e.follows >= APEX.chainMax) return false; // a jump over the first lunge draws a second, landing with the hero
     e.dir = toward; e.vx = 0;
     const to = clamp(e.x + toward * 80, 30, this.worldWidth - 40), reach = APEX.cutReach;
     e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + toward * 10, to + toward * reach), y: e.y - 70, w: reach - 10, h: 70 } };
-    Object.assign(e, { tell: APEX.chainTell, move: 'stepcut', punishable: false, recover: 0, follows: 1 });
+    Object.assign(e, { tell: APEX.chainTell, move: 'stepcut', punishable: false, recover: 0, follows: e.follows + 1 });
     this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'skeleton', kind: 'chain', dir: e.dir, follow: true });
     return true;
   }
@@ -1396,7 +1396,7 @@ export class Game {
     // 14. the hero retreating: follow it
     if (s.vx * (e.x - s.x) < -100) { if (stepcut()) return; hold(reach + 15); return; }
     // 15. idle at mid range: hold the line, mixing a bait every 0.8 s
-    if (e.mixT <= 0) { e.mixT = .8; if (!eclipseReady && cleave() || stepcut() || slash(150)) return; }
+    if (e.mixT <= 0) { e.mixT = APEX.mix; if (!eclipseReady && cleave() || stepcut() || slash(150)) return; }
     hold(reach + 15);
   }
   // Mage `blink` (read: the hero within 120): not an attack, so no tell, token or hyper armor. A 0.4 s shimmer on the spot it stands on and the spot it will take (220 px from the hero, on the floor,
