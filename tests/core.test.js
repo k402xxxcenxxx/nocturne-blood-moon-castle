@@ -4791,14 +4791,14 @@ test('apex rising: a hero in the air within 90 px draws a 0.45 s anti-air slash 
 });
 
 test('apex chain: a hero whose dash is cooling draws a lunge 0.45 s after contact whose box covers a dash landing, at most two per string', () => {
-  const { game, player, e, events } = apexFoe(60); player.invulnerable = 99; e.tell = .02;
-  for (let i = 0; i < 120 * 2.4; i++) { player.dashCd = .8; game.update(1 / 120, {}); }
+  const { game, player, e, events } = apexFoe(60); e.tell = .02; // the hero dodged each lunge: no i-frames in view, blood kept topped up
+  for (let i = 0; i < 120 * 2.4; i++) { Object.assign(player, { dashCd: .8, invulnerable: 0, blood: 1e6 }); game.update(1 / 120, {}); }
   const chains = events.filter(ev => ev.type === 'enemyTell' && ev.kind === 'chain');
   assert.equal(chains.length, 2, 'two chained lunges, never a third'); assert.ok(chains.every(c => c.follow));
   assert.equal(apexSwings(events).filter(ev => ev.kind === 'stepcut').length, 2, 'each strikes once (the first slash opens the string)');
-  const w = apexFoe(60); w.player.invulnerable = 99; w.e.tell = .02;
-  for (let i = 0; i < 6; i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }
-  advance(w.game, .03); for (let i = 0; i < 60 && !(w.e.move === 'stepcut' && w.e.tell > .3); i++) { w.player.dashCd = .8; w.game.update(1 / 120, {}); }
+  const w = apexFoe(60); w.e.tell = .02; const dodge = () => Object.assign(w.player, { dashCd: .8, invulnerable: 0, blood: 1e6 });
+  for (let i = 0; i < 6; i++) { dodge(); w.game.update(1 / 120, {}); }
+  for (let i = 0; i < 4; i++) { dodge(); w.game.update(1 / 120, {}); } for (let i = 0; i < 60 && !(w.e.move === 'stepcut' && w.e.tell > .3); i++) { dodge(); w.game.update(1 / 120, {}); }
   assert.ok(w.e.tell > .3 && w.e.tell <= .45 && w.e.follows === 1, 'tell 0.45 s');
   const b = w.e.warn.box; assert.ok(Math.abs(b.w + 10 - w.e.warn.reach) < 1e-6 && w.e.warn.reach >= 131 + 80, 'the box reaches a 131 px dash landing');
   const none = apexFoe(60); none.player.invulnerable = 99; none.e.tell = .02; advance(none.game, .3);

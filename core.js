@@ -1330,7 +1330,7 @@ export class Game {
   // Its 200+ px box covers where a dash lands (131 px) and the walk-out, and it falls inside the dash cooldown; a jump still clears it. One per string, never delayed.
   apexChain(e) {
     const s = this.snap(), dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1;
-    if (this.state !== 'playing' || (s.dashCd <= 0 && s.grounded) || d > 260 || (s.grounded && Math.abs(s.y - e.y) >= 82) || e.follows >= APEX.chainMax) return false; // a jump over the first lunge draws a second, landing with the hero
+    if (this.state !== 'playing' || (s.dashCd <= 0 && s.grounded) || d > 260 || (s.grounded && Math.abs(s.y - e.y) >= 82) || e.follows >= APEX.chainMax || s.invulnerable - APEX_REACT >= APEX.chainTell) return false; // a jump over the first lunge draws a second, landing with the hero
     e.dir = toward; e.vx = 0;
     const to = clamp(e.x + toward * 80, 30, this.worldWidth - 40), reach = APEX.cutReach;
     e.warn = { kind: 'stepcut', reach, to, line: { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 }, box: { x: Math.min(to + toward * 10, to + toward * reach), y: e.y - 70, w: reach - 10, h: 70 } };

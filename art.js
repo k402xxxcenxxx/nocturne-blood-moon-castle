@@ -961,8 +961,8 @@ function drawHeavyWarn(ctx, e, time) {
       ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 3; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, my); ctx.lineTo(b.x + b.w, my); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.lineWidth = 2;
       for (let i = 0; i + 8 < b.w; i += 40) { const cx = Math.round(x0 + g * Math.min(b.w - 8, i + off)); ctx.beginPath(); ctx.moveTo(cx - g * 7, my - 6); ctx.lineTo(cx, my); ctx.lineTo(cx - g * 7, my + 6); ctx.stroke(); }
       for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); }
-    } else if (w.kind === 'rising') { // anti-air: only a hero whose feet are above the dashed line is hit; the lower part is safe ground
-      const ly = Math.round(b.y + b.h - 40), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, 40);
+    } else if (w.kind === 'rising') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up) is hit; the band below it is safe ground
+      const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, 40);
       ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, ly); ctx.lineTo(b.x + b.w, ly); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
       for (let i = 0; i < 3; i++) { const cx = Math.round(b.x + b.w * (i + .5) / 3), cy = Math.round(ly - 6 - ((off + i * 8) % 24)); ctx.beginPath(); ctx.moveTo(cx - 7, cy + 6); ctx.lineTo(cx, cy - 2); ctx.lineTo(cx + 7, cy + 6); ctx.stroke(); }
     } else if (w.kind === 'skewer') { // spikes rising through the zone: only a hero in the air is inside it
