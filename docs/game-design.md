@@ -360,6 +360,65 @@ Differences from #44: the Warden has the #50 moveset instead of the King's slash
 
   Targets for this challenge: expert at least 50%, average at most 20%. The expert is a ceiling (it reads exact boxes and reacts in 0.18 s), so a human expert is expected well below it. Over 200 seeds: expert 98-100%, average 17% / 4% / 9%.
 
+### The apex skeleton (#66, user-directed)
+
+Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelist elite, which keeps its `slash2` twist and draws no chain) runs the apex brain while `game.apex` is true (the default; set `__nocturne.game.apex = false` on `?test` to get the #50 skeleton back). Normal and Endless skeletons and every other enemy keep their rules. Constants: `APEX_REACT` and `APEX` in `core.js`; every number is a playtest starting point.
+
+- **Perception**: each frame the core stores a hero snapshot (`heroSnap()`: position, velocity, grounded, facing, attack and combo state, plunge, thrust window, whiff, dash and dash cooldown, invulnerability, blood, frenzy, weapon, debt, Eclipse cooldown, Lunatic Moon, reach, plunge radius, armor, `takenMul`, relic ids). An apex skeleton decides from the newest snapshot at least `APEX_REACT` **0.12 s** old (`snap()`), never from the live frame, input, buffers or future rolls. It has no spawn cooldown: its first answer comes as soon as it reads one.
+- **Stats** (stat levers, rounds 2-3): HP ×12, light damage ×8, posture ×12, speed ×2.5 on top of the castle skeleton (`APEX.hp`, `dmg`, `poise`, `speed`). The heavy `cleave` stays a flat 100.
+- **Light tells**: `slash` tell 0.45 s, box 10-82, cooldown 0.6 s (`lightCd`), 0.45 s punishable recovery. `stepcut`: backstep 0.25 s at 280 px/s, then a 0.5 s tell with the drawn line, an 80 px lunge in 0.15 s, box 10-**280** px in front × 70 (`cutReach`), recovery **0.5 s** (`cutRecover`) and no 1.2 s attack cooldown after it. Every tell needs a token, the on-screen rule and `canWindUp`, and none starts if its contact would fall inside the hero's remaining invulnerability (snapshot `invulnerable` − 0.12).
+- **Attack tokens**: while `game.apex` is on, a castle floor has **3 attack tokens** (`APEX.tokens`, still at most 1 heavy) for every enemy on it, not only skeletons (`tokenCap()`).
+
+| Move | Hurts? | Tell / timing | Rules |
+| --- | --- | --- | --- |
+| `backstep` | no | no `!`; 0.22 s, 80 px away from the hero; cooldown 0.9 s | Not an attack: no token, no hyper armor, can be hit. A wall (x < 40 or > width − 50), barricade or collision ends it and it guards instead. `apexStep` {x, y, dir} |
+| `guard` | no | stance pose; up to 0.6 s; cooldown 1.5 s | Stands still facing the hero. A sword hit from the front (combo hits 1-2, thrust, Spear assault) is blocked: damage ×0.25 (at least 1), posture ×0.5, no flinch, +1 blood; `apexGuard` {x, y, blocked}. Shots and hits from behind land normally. **Crush**: combo hit 3 from the front, any plunge (fall or shockwave) or Eclipse breaks it: 0.6 s punishable recovery (posture ×2; a posture break overrides it), `apexCrush` {x, y} |
+| `counter` | light | `!` 0.45 s; box 10-82 × 70; recovery 0.45 s, punishable | When a guard that blocked at least one hit ends, with the hero within 90 px and a token free |
+| `rising` | light | `!` 0.45 s; box 0-70 in front, 150 to 40 px above its feet; recovery 0.5 s, punishable | Anti-air: hero airborne, not plunging, within 90 px. Only hits a hero whose feet are more than 40 px off the ground |
+| `chain` | light | `!` 0.45 s after the previous contact, no backstep | At the contact of a `slash` or `stepcut`: a snapshot hero with the dash on cooldown or in the air, within 260 px (and on its level if grounded), draws a stepcut lunge (box 10-280) aimed where the dash lands. **Depth 2**: a dash or jump over the first lunge draws a second one, landing with the hero. Never delayed; the last lunge ends in the 0.5 s recovery |
+
+**Answer table** (`apexThink`; the first row that acts wins):
+
+| # | Read (snapshot) | Answer |
+| --- | --- | --- |
+| 1 | Its own 1.2 s post-stun armor | `slash` at once if the hero is within 82 |
+| 2 | Another skeleton stunned with the hero within 160 of it | `slash` (from 150) or `stepcut` into the riposte swing |
+| 3 | Another skeleton's light tell lands in under 0.08 s, hero within 140 of it | `slash` from 150: the dash trap, its contact falls inside the dash cooldown |
+| 4 | Plunge landing / plunging / airborne | landing: `slash` or `stepcut`; plunging: backstep out of `plungeRadius` + 30, else hold there; airborne within 90: `rising`, else backstep; farther: hold at `plungeRadius` + 30 |
+| 5 | Thrust window, facing it, within 255 | `guard` within 155, else retreat (backstep, then walk) |
+| 6 | Eclipse ready, within 230, posture ≤ 55 | retreat |
+| 7 | Combo hit 3 next, inside the hero's reach | backstep; else a trade only if posture stays above 31; else retreat |
+| 8 | Mid-combo (hit 1 swinging), inside reach | posture above 40: `slash` or `stepcut` (trade under hyper armor); else `guard` |
+| 9 | Blood ≥ 185, no frenzy | denial: only `cleave`, else hold at reach + 20 |
+| 10 | Frenzy | Greatsword: lights until debt ≥ 100, then hold at reach + 40. Twin Blades: `cleave` / `stepcut` from outside reach, guard inside (backstep before hit 3), hold at reach + 15. Spear: backstep an assault dash at it, hold at 190 |
+| 11 | A heavy is lethal and the dash or Eclipse is not ready | `cleave` |
+| 12 | Whiff or swing recovery (`attackCd` > 0.15) within 140 | `cleave` if the dash is down (> 0.45 s), else `slash` / `stepcut` |
+| 13 | Hero walking in (> 100 px/s toward it) | `guard` from reach − 14 to 230 px; then `stepcut` from 260 (aimed where the hero will stand), or a bait `slash` from 150 while the dash is ready |
+| 14 | Hero retreating | `stepcut`, else follow at reach + 15 |
+| 15 | Idle | every 0.8 s (`mix`) a bait: `cleave` if Eclipse is not ready, else `stepcut`, else `slash` from 150; otherwise hold at reach + 15 |
+
+"Reach" is the snapshot's weapon reach + 24 when hit 3 is next + 14. No heavy starts while Eclipse is ready within 230 px. Ties never roll: the brain is deterministic from the snapshot, so a run stays reproducible from its seed.
+
+**Deviations from the approved spec**: the spec ruled out stat levers; the user allowed HP, reach, posture, damage and speed levers on 2026-10-21 after Round 1 (tells, the `!` and the fairness audit stay). The chain is a 280 px lunge with depth 2 instead of "one follow-up per string, `slash` or `cleave`". The field uses 3 tokens (allowed from Round 3 by the spec). Guard cooldown 1.5 s (spec 2.0, the spec's floor) and slash tell 0.45 s (the spec's floor).
+
+**Arms race** (`node tools/bot-run.mjs --duel N`, expert bot, 200 seeds per cell, win %, Greatsword / Twin Blades / Spear; fairness audit 0 unanswerable hits in every step):
+
+| Step | 1v1 | 1v3 | Full run expert | Full run average | What changed |
+| --- | --- | --- | --- | --- | --- |
+| Round 0 baseline | 100 / 100 / 100 | 100 / 100 / 100 | 63 / 70 / 66 | 26 / 25 / 30 | the #50 skeleton |
+| R1 skeleton (5f6920f) | 100 / 100 / 100 | 100 / 100 / 100 | 59 / 68 / 69 | 28 / 26 / 26 | brain, snapshot, new moves; the hero still out-reaches (125 vs 82 px) and out-trades it |
+| R2 skeleton (450296a) | 0 / 100 / 0 | 0 / 30.5 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | behavior levers alone did nothing; walk-in lunge kept; HP ×8, damage ×6, posture ×6, speed ×2, reach 200 |
+| R2 bot (8d6aaa9) | 100 / 100 / 100 | 100 / 99 / 100 | 67 / 79 / 75 | 5 / 5 / 6 | bot perception fixes (the lunge was invisible to it, box padding, a reserved dash press, dash-trap landings, no re-entry) |
+| R3 re-baseline | 91 / 88.5 / 100 | 71 / 31 / 13.5 | - | - | harness: hero at x 700 after `setWeapon`, hazards out of the audit, "left room" |
+| R3 skeleton (08dd308) | 86 / 94.5 / 99.5 | 0 / 1 / 0 | 24 / 30 / 37 | 0 / 0 / 0 | HP ×12, damage ×8, posture ×12, speed ×2.5, reach 280, 3 tokens, the chain as a dash-covering lunge |
+| R3 bot (fd38276) | 100 / 94.5 / 99.5 | 49.5 / 41.5 / 29.5 | 26 / 22 / 42 | 0 / 0 / 0 | the bot releases a turn the press cap refused, scored dash landings, room fence |
+| R4 skeleton (f85dc03) | 100 / 60 / 92 | 20 / 9 / 22 | 1 / 4 / 7 | 0 / 0 / 0 | chain depth 2, lunge recovery 0.5 s and no attack cooldown after it |
+| R4 bot | pending | pending | pending | pending | pending |
+
+The ship gate's proof that it can be beaten: the expert bot wins Greatsword 1v1 at tier 0 in 100% of 200 seeds (Round 4 skeleton step).
+
+**User decisions** (2026-10-21): castle elites give no relic pick (keep); the shield bearer's late reads from floor 5 (keep).
+
 ## Playtest verdicts
 
 After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.
@@ -387,6 +446,8 @@ After each proposal is playtested, add one line here: `#<issue> <name> — keep 
 #14 Attack-form relics — keep (automated playtest; pending the user's hands-on feel check): each form changes how you play, and beam and ground-wave reach is capped to the visible screen; tuning in #30.
 
 #15 Opening pick and synergy offers — keep (automated playtest, still in review; pending the user's hands-on feel check): one owned partner raises its offer share from ~17% to ~27% without forcing any relic, and the opening pick appears exactly once per run.
+
+#66 Apex skeleton — pending (automated arms race above; the user's own hands-on challenge decides keep / adjust / drop).
 
 ## The Fallen King (stage 5 boss)
 

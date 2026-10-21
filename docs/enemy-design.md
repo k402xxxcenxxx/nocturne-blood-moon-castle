@@ -7,7 +7,7 @@ How NOCTURNE enemies and bosses are designed. Every new enemy, move, elite or bo
 ## Principles
 
 1. **Same timescale, both sides commit.** Enemy attacks and the hero's swings use the same anticipation → contact → recovery structure. A whiffed enemy attack is the player's safest offense; a whiffed hero swing is the enemy's opening. Neither side can cancel freely.
-2. **Difficulty comes from behavior, not numbers.** Make an enemy harder by giving it better choices (range bands, reads, follow-ups, tokens), never just more health, damage or defense.
+2. **Difficulty comes from behavior, not numbers.** Make an enemy harder by giving it better choices (range bands, reads, follow-ups, tokens), never just more health, damage or defense. Exception: the apex skeleton (#66), where the user allowed stat levers on 2026-10-21 after behavior alone stopped moving the arms race; its tells, `!` and fairness rules stay.
 3. **Every attack is fair.** A visible tell, a fixed hit area, no tracking after the lock, no attacks from off screen. A player who dies should know which move killed them and what the answer was.
 4. **No mashing.** Holding attack must lose against every enemy. Hyper armor during attacks and posture outside attacks make sure of it.
 5. **Ebb and flow.** Enemies pressure, back off, wait for an opening and pressure again. Pauses are part of the design; constant pressure from everything at once is not.
@@ -93,7 +93,7 @@ These replace "hit first and mash" in castle mode.
 - **Priority** when more than one enemy can attack: the enemy whose attack range the hero is in; then the one the hero faces (on screen and readable); then the one that has waited longest (a starving enemy is never locked out). Ranged enemies take a token only while no melee enemy in close range wants it.
 - Support moves (a priest's bless) need no token but only one support cast may run at a time.
 - Bosses do not use tokens; adds in a boss fight share **one** token.
-- The token count is a difficulty lever (theme, floor, frenzied variants), not a per-enemy number.
+- The token count is a difficulty lever (theme, floor, frenzied variants), not a per-enemy number. While the apex skeleton is on (`game.apex`, #66), every castle floor uses 3 tokens (still at most 1 heavy).
 
 ## Fakeouts (delayed and mixed variants)
 
