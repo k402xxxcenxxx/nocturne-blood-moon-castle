@@ -4587,6 +4587,18 @@ test('castle elite Phalanx: one swing hitting the Phalanx and its covered ally c
   assert.equal(player.x, 540 - 40, 'pushed once');
 });
 
+test('castle elite Phalanx: a swing that reaches its covered ally on a later frame still counts one block', () => {
+  for (const thrustWindow of [0, .5]) {
+    const { game, player, events } = castle(42, 2); game.setWeapon('spear'); game.rand = () => .99;
+    const s = enemy(game, 600, { type: 'shield' }); s.cd = 99; s.dir = -1; game.makeElite(s, 0);
+    const ally = enemy(game, 640); ally.cd = 99; ally.maxPoise = ally.poise = 1e6;
+    Object.assign(player, { x: thrustWindow ? 460 : 540, dir: 1, combo: 0, thrustWindow });
+    game.attack(); advance(game, .3);
+    assert.equal(events.filter(ev => ev.type === 'block').length, 1, `thrustWindow ${thrustWindow}`);
+    assert.ok(!(s.counterT > 0), 'no counter from one swing');
+  }
+});
+
 test('castle elite Impaler: a hero in the air within 240 draws the skewer (tell 0.9 s, box 10-160 in front, 54-180 above its feet); walking out answers it; a grounded hero does not draw it', () => {
   const air = (elite = true) => { const c = heavyFoe('spear', 120); if (elite) c.game.makeElite(c.e, 0); c.game.rand = () => .99; Object.assign(c.player, { y: FLOOR - 100, vy: 0, grounded: false, jumps: 1, blood: 150 }); c.game.update(1 / 120, {}); return c; };
   const c = air(), e = c.e;

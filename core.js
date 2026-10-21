@@ -591,7 +591,7 @@ export class Game {
     if (this.mode === 'castle' && !p.frenzy) { cost = Math.max(0, Math.min(SWING_COST, p.blood - 1)); p.blood -= cost; }
     if (!p.grounded) { // air attack wins over a thrust; it neither advances nor resets the combo
       Object.assign(p, { plunge: 1, plungeT: .07, plungeY: p.y, move: 'plunge', attack: 0, thrustWindow: 0 });
-      this.hitSet = new Set(); this.flameUsed = this.chainUsed = false;
+      this.hitSet = new Set(); this.swingShields = new Set(); this.flameUsed = this.chainUsed = false;
       this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: 'plunge', cost });
       return;
     }
@@ -611,7 +611,7 @@ export class Game {
     p.whiff = HEAVY_WHIFF; // cleared by the first enemy the swing hits
     const quick = twin ? TWIN_FRENZY_CD : 1; // the swing itself speeds up too, or the 0.24 s floor would swallow the cooldown
     p.attack = p.attackLen = .24 * quick; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed * quick); // never shorter than the swing animation
-    this.hitSet = new Set(); this.flameUsed = this.chainUsed = false;
+    this.hitSet = new Set(); this.swingShields = new Set(); this.flameUsed = this.chainUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo', cost });
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
     if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, BEAM_REACH / 780, 10);
@@ -653,7 +653,7 @@ export class Game {
     const thrust = p.move === 'thrust';
     const reach = thrust ? 155 + Math.min(60, 20 * this.stacks('pierce')) : p.reach + (p.combo === 3 ? 24 : 0);
     const mul = thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo];
-    this.shieldDone = new Set();
+    this.shieldDone = this.swingShields; // lives for the whole swing, like hitSet
     for (const e of this.enemies.concat(this.obstacles)) {
       const dx = (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
