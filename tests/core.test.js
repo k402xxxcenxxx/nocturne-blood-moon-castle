@@ -4805,6 +4805,14 @@ test('apex chain: a hero whose dash is cooling draws a lunge 0.45 s after contac
   assert.ok(!none.events.some(ev => ev.type === 'enemyTell' && ev.kind === 'chain') && none.e.follows === 0, 'no dash on cooldown, no chain');
 });
 
+test('apex chain: no lunge starts when its contact would fall inside the hero\'s remaining invulnerability (a wasted tell)', () => {
+  const hit = apexFoe(60); hit.player.invulnerable = .8; hit.player.dashCd = .8; advance(hit.game, .2); // a hit just landed: about 0.6 s of i-frames left, seen in the snapshot
+  hit.e.move = ''; hit.e.tell = 0; hit.e.warn = null; hit.e.follows = 0;
+  assert.equal(hit.game.apexChain(hit.e), false, 'the 0.45 s contact would fall inside the i-frames');
+  const clear = apexFoe(60); clear.player.dashCd = .8; advance(clear.game, .2); clear.e.move = ''; clear.e.tell = 0; clear.e.warn = null; clear.e.follows = 0;
+  assert.equal(clear.game.apexChain(clear.e), true, 'control: with no i-frames the same chain starts');
+});
+
 test('apex group play: a peer\'s tell about to land draws a second contact 0.45-0.6 s later (dash trap); the 1.2 s post-stun armor answers at once', () => {
   const { game, player, e } = apexFoe(140); player.invulnerable = 0;
   const lead = enemy(game, player.x - 60, { hp: 1e5 }); lead.dir = 1; lead.maxPoise = lead.poise = 500; lead.tell = .05; lead.cd = 5;
@@ -4847,4 +4855,24 @@ test('apex is castle only: Normal, Endless, other enemy types and the apex switc
   const off = castle(42, 1, false), e = enemy(off.game, off.player.x + 100); e.dir = -1;
   for (let i = 0; i < 120; i++) { off.player.combo = 2; off.player.comboWindow = .8; off.game.update(1 / 120, {}); }
   assert.ok(!off.events.some(ev => ev.type === 'apexStep'), 'apex off: the old skeleton');
+});
+
+test('apex review: a forced cleave judges the hero by its snapshot; a guard cut short starts its cooldown; 3 tokens with at most 1 heavy', () => {
+  const a = apexFoe(100); a.e.heavyCd = 0; a.game.rand = () => .99;
+  for (let i = 0; i < 60; i++) { a.player.invulnerable = 99; a.game.update(1 / 120, {}); }
+  a.e.cd = 0; a.e.heavy = false; a.e.tell = 0; a.e.recover = 0; a.e.token = ''; a.e.move = ''; a.e.warn = null; a.e.armor = 0; a.e.mixT = 0;
+  a.player.y = FLOOR - 120; a.player.vy = -300; // jumped this frame: the live dy is 120, the snapshot still has the hero on the floor
+  assert.equal(a.game.startHeavy(a.e, 100, true), true, 'forced: the live height is not read');
+  const b = apexFoe(100); b.e.heavyCd = 0; b.player.y = FLOOR - 120;
+  assert.equal(b.game.startHeavy(b.e, 100, false), false, 'unforced: the old live check stays');
+  const g = apexFoe(60); g.e.gT = .5; g.e.gCd = 0; g.game.damageEnemy(g.e, 30, -1, false, false, false, 17); // from behind: flinch
+  advance(g.game, .1);
+  assert.equal(g.e.gT, 0); assert.ok(g.e.gCd >= 1.4, 'guard cooldown after the cut'); assert.equal(g.game.apexGuard(g.e), false);
+  const c = castle(42, 1, true), off = castle(42, 1, false);
+  assert.equal(c.game.tokenCap(), 3); assert.equal(off.game.tokenCap(), ATTACK_TOKENS);
+  for (const k of [0, 1, 2, 3]) { const e = enemy(c.game, c.player.x + 100 + k * 40, { hp: 1e5 }); e.dir = -1; }
+  let heavy = 0, holders = 0;
+  for (let i = 0; i < 120 * 6; i++) { c.player.invulnerable = 99; c.game.update(1 / 120, {}); const h = c.game.enemies.filter(e => e.token); holders = Math.max(holders, h.length); heavy = Math.max(heavy, h.filter(e => e.token === 'heavy').length); }
+  assert.ok(holders <= 3 && heavy <= 1, `${holders} holders, ${heavy} heavy`);
+  assert.equal(off.game.snaps.length, 0, 'no snapshots with apex off');
 });

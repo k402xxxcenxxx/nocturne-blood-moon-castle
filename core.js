@@ -516,7 +516,7 @@ export class Game {
     }
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
-    if (this.mode === 'castle') { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - 1) this.snaps.shift(); }
+    if (this.mode === 'castle' && this.apex) { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - APEX_REACT - .1) this.snaps.shift(); }
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
     this.updateTraps(dt);
     for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
@@ -1102,7 +1102,8 @@ export class Game {
     const wasTurning = e.turn > 0;
     e.turn = Math.max(0, e.turn - dt); e.rollT = Math.max(0, e.rollT - dt); e.heavyCd = Math.max(0, e.heavyCd - dt);
     const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
-    if (e.stun > 0) { if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0 }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
+    // a guard cut short by a stun still starts its cooldown (gCd below)
+    if (e.stun > 0) { if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0 }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gCd: e.gT > 0 ? APEX.guardCd : e.gCd, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
     if (e.strikeT > 0) { this.heavyTravel(e, dt); return; }
     if (e.stepT > 0 || e.cutT > 0) { this.stepcut(e, dt); return; }
     if (e.crossT > 0) { this.crossover(e, dt); return; }
@@ -1289,9 +1290,9 @@ export class Game {
   apexOn(e) { return this.apex && this.mode === 'castle' && e.type === 'skeleton'; }
   heroSnap() {
     const p = this.player, { x, y, vx, vy, grounded, dir, attack, attackCd, combo, comboWindow, move, plunge, thrustWindow, whiff, dash, dashCd, dashCooldown, invulnerable, blood, frenzy, weapon, debt, magicCd, magicCdMax, lunatic, reach, plungeRadius, armor, takenMul } = p;
-    return { t: this.time, x, y, vx, vy, grounded, dir, attack, attackCd, combo, comboWindow, move, plunge, thrustWindow, whiff, dash, dashCd, dashCooldown, invulnerable, blood, frenzy, weapon, debt, magicCd, magicCdMax, lunatic, reach, plungeRadius, armor, takenMul, relics: this.relics.slice() };
+    return { t: this.time, x, y, vx, vy, grounded, dir, attack, attackCd, combo, comboWindow, move, plunge, thrustWindow, whiff, dash, dashCd, dashCooldown, invulnerable, blood, frenzy, weapon, debt, magicCd, magicCdMax, lunatic, reach, plungeRadius, armor, takenMul };
   }
-  snap() { // the newest snapshot at least APEX_REACT old (the oldest one while the ring is still filling)
+  snap() { // the newest snapshot at least APEX_REACT old (the oldest one, taken on the first frame of the floor, while the ring is still filling)
     const t = this.time - APEX_REACT;
     for (let i = this.snaps.length - 1; i >= 0; i--) if (this.snaps[i].t <= t) return this.snaps[i];
     return this.snaps[0] || this.heroSnap();
@@ -1967,7 +1968,7 @@ export class Game {
   startHeavy(e, distance, force = false) { // force: the apex brain has decided, so no heavy-chance roll
     const p = this.player, impale = e.twist === 'impaler' && !p.grounded && distance <= SKEWER.range && (p.x - e.x) * e.dir > 0 && p.y > e.y - SKEWER.high, h = impale ? SKEWER : HEAVY[e.type]; // Impaler: a hero in the air draws the skewer
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.turn > 0 || e.heavy || (!force && (e.rollT > 0 || e.reface > 0))) return false;
-    const dy = Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir;
+    const dy = force ? 0 : Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir; // forced (apex): the brain already checked the height on its snapshot, never the live hero
     const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= BAT_RING + 40 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82,
       rite: p.grounded && distance >= RECOIL.range && distance <= RITE_RANGE, ray: front && distance > RAY.from && (distance > BLINK.range || e.blinkCd > 0) && dy < RAY.reach, skewer: true }[h.kind]; // a mage with a hero inside 120 blinks first
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
