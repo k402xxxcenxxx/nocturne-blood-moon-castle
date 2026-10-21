@@ -413,7 +413,7 @@ Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelis
 | R3 skeleton (08dd308) | 86 / 94.5 / 99.5 | 0 / 1 / 0 | 24 / 30 / 37 | 0 / 0 / 0 | HP ×12, damage ×8, posture ×12, speed ×2.5, reach 280, 3 tokens, the chain as a dash-covering lunge |
 | R3 bot (fd38276) | 100 / 94.5 / 99.5 | 49.5 / 41.5 / 29.5 | 26 / 22 / 42 | 0 / 0 / 0 | the bot releases a turn the press cap refused, scored dash landings, room fence |
 | R4 skeleton (f85dc03) | 100 / 60 / 92 | 20 / 9 / 22 | 1 / 4 / 7 | 0 / 0 / 0 | chain depth 2, lunge recovery 0.5 s and no attack cooldown after it |
-| R4 bot | pending | pending | pending | pending | pending |
+| R4 bot (e99b44e) | 100 / 60 / 92 | 20 / 9 / 22 | 1 / 4 / 7 | 0 / 0 / 0 | six levers tried (later jump window, Eclipse on converging lunges, fences, platform box check, staggered approach), none beat noise; the two-lunge chain answers any dash or jump, so the race ends here |
 
 The ship gate's proof that it can be beaten: the expert bot wins Greatsword 1v1 at tier 0 in 100% of 200 seeds (Round 4 skeleton step).
 
