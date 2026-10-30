@@ -2223,7 +2223,7 @@ export class Game {
       Object.assign(e, { plantT: SPEAR.plantLive, plantHit: false });
       return;
     }
-    if (castle && e.type === 'spear' && e.move === 'shove') { // the haft: short and not jumpable once it lands; a hero it hits is pushed back into the tip range, where an aimed thrust follows 0.45 s later
+    if (castle && e.type === 'spear' && e.move === 'shove') { // the haft: short and not jumpable once it lands; a hero it hits is pushed back 80 px (no follow-up: the 0.8 s hurt i-frames would swallow it) later
       const w = e.warn, hit = this.heavyHits(e, w.box), was = p.invulnerable, from = p.x;
       Object.assign(e, { warn: null, move: '', recover: SPEAR.shoveRecover, punishable: true });
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'shove', area: w });
