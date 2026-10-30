@@ -365,7 +365,7 @@ Differences from #44: the Warden has the #50 moveset instead of the King's slash
 Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelist elite, which keeps its `slash2` twist and draws no chain) runs the apex brain while `game.apex` is true (the default; set `__nocturne.game.apex = false` on `?test` to get the #50 skeleton back). Normal and Endless skeletons and every other enemy keep their rules. Constants: `APEX_REACT` and `APEX` in `core.js`; every number is a playtest starting point.
 
 - **Perception**: each frame the core stores a hero snapshot (`heroSnap()`: position, velocity, grounded, facing, attack and combo state, plunge, thrust window, whiff, dash and dash cooldown, invulnerability, blood, frenzy, weapon, debt, Eclipse cooldown, Lunatic Moon, reach, plunge radius, armor, `takenMul`; the ring keeps about 0.2 s and is not recorded when `game.apex` is off). An apex skeleton decides from the newest snapshot at least `APEX_REACT` **0.12 s** old (`snap()`), never from the live frame, input, buffers or future rolls. It has no spawn cooldown: its first answer comes as soon as it reads one. It also re-faces instantly toward the snapshot hero when it starts a move (no `REFACE` delay, unlike the #50 skeleton); the locked box and the 0.45 s tell keep that fair, so it is not a bug. A guard cut short by a stun still starts its 1.5 s cooldown.
-- **Stats** (stat levers, rounds 2-3): HP ×12, light damage ×8, posture ×12, speed ×2.5 on top of the castle skeleton (`APEX.hp`, `dmg`, `poise`, `speed`). The heavy `cleave` stays a flat 100.
+- **Stats** (stat levers, rounds 2-3): HP ×9.6 (×12 until the user's playtest on 2026-10-30 asked for 20% less), light damage ×8, posture ×12, speed ×2.5 on top of the castle skeleton (`APEX.hp`, `dmg`, `poise`, `speed`). The heavy `cleave` stays a flat 100.
 - **Light tells**: `slash` tell 0.45 s, box 10-82, cooldown 0.6 s (`lightCd`), 0.45 s punishable recovery. `stepcut`: backstep 0.25 s at 280 px/s, then a 0.5 s tell with the drawn line, an 80 px lunge in 0.15 s, box 10-**280** px in front × 70 (`cutReach`), recovery **0.5 s** (`cutRecover`) and no 1.2 s attack cooldown after it. Every tell needs a token, the on-screen rule and `canWindUp`, and none starts if its contact would fall inside the hero's remaining invulnerability (snapshot `invulnerable` − 0.12).
 - **Attack tokens**: while `game.apex` is on, a castle floor has **3 attack tokens** (`APEX.tokens`, still at most 1 heavy) for every enemy on it, not only skeletons (`tokenCap()`).
 
@@ -414,6 +414,7 @@ Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelis
 | R3 bot (fd38276) | 100 / 94.5 / 99.5 | 49.5 / 41.5 / 29.5 | 26 / 22 / 42 | 0 / 0 / 0 | the bot releases a turn the press cap refused, scored dash landings, room fence |
 | R4 skeleton (f85dc03) | 100 / 60 / 92 | 20 / 9 / 22 | 1 / 4 / 7 | 0 / 0 / 0 | chain depth 2, lunge recovery 0.5 s and no attack cooldown after it |
 | R4 bot (e99b44e) | 100 / 60 / 92 | 20 / 9 / 22 | 1 / 4 / 7 | 0 / 0 / 0 | six levers tried (later jump window, Eclipse on converging lunges, fences, platform box check, staggered approach), none beat noise; the two-lunge chain answers any dash or jump, so the race ends here |
+| Playtest cut (2026-10-30) | 100 / 60.5 / 100 | 34 / 9.5 / 23 | 2 / 10 / 13 | 0 / 0 / 0 | the user: moves right, too tanky; HP ×12 → ×9.6 |
 
 The ship gate's proof that it can be beaten: the expert bot wins Greatsword 1v1 at tier 0 in 100% of 200 seeds (Round 4 skeleton step).
 
@@ -447,7 +448,7 @@ After each proposal is playtested, add one line here: `#<issue> <name> — keep 
 
 #15 Opening pick and synergy offers — keep (automated playtest, still in review; pending the user's hands-on feel check): one owned partner raises its offer share from ~17% to ~27% without forcing any relic, and the opening pick appears exactly once per run.
 
-#66 Apex skeleton — pending (automated arms race above; the user's own hands-on challenge decides keep / adjust / drop).
+#66 Apex skeleton — adjust (user playtest 2026-10-30): its moves are right, but it was too tanky; HP ×12 → ×9.6 (−20%).
 
 ## The Fallen King (stage 5 boss)
 
