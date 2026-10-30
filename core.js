@@ -120,7 +120,7 @@ const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4 }; // a type joins pairs from the floor after its intro
 const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
-const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, guardTime: .6, guardCd: 1.5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
+const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, vaultDist: 160, vaultTime: .3, vaultCd: 2.5, spinReach: 130, spinCd: 4, guardTime: .6, guardCd: 1.5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
 const BRAINS = { skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
@@ -461,7 +461,7 @@ export class Game {
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
-    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, jabCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, vaultCd: 0, spinCd: 0, jabCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
     if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
       e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
     }
@@ -796,10 +796,11 @@ export class Game {
     this.guardedHit = false; let crush = false;
     if (e.gT > 0 && this.mode === 'castle' && e.hp > 0) {
       const front = dir * e.dir < 0, third = poiseDamage === POISE_DAMAGE.combo[3];
-      if (eclipse || poiseDamage === POISE_DAMAGE.plunge || (third && front && !shot)) crush = true;
+      if (eclipse || poiseDamage === POISE_DAMAGE.plunge || (third && front && !shot && e.type !== 'spear')) crush = true; // the spearman's spinning haft shrugs off hit 3: only a plunge, Eclipse or a hit from behind breaks it
       else if (front && !shot) { this.guardedHit = true; e.gHit++; amount = Math.max(1, Math.round(amount * APEX.guardMul)); poiseDamage *= APEX.guardPoise; }
     }
     if (warden) { poiseDamage = 0; if (e.breakStun > 0) amount = Math.round(amount * BREAK_MUL); }
+    if (e.type === 'spear' && this.mode === 'castle' && !eclipse && !shot) (e.tipHits ||= []).push(this.time); // sword hits taken (the spin counts them)
     const through = this.absorb(e, amount), absorbed = amount - through;
     e.hp -= through; e.flash = .14;
     // Castle (#50): every minion attack (not a priest's bless) has hyper armor from tell start; posture damage still lands at x0.5. Before: heavy wind-up and strike only.
@@ -1113,7 +1114,7 @@ export class Game {
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const castle = this.mode === 'castle' && e.type !== 'boss';
     if (castle) {
-      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt); e.bsCd = Math.max(0, e.bsCd - dt); e.gCd = Math.max(0, e.gCd - dt); e.mixT = Math.max(0, e.mixT - dt); e.pbCd = Math.max(0, e.pbCd - dt); e.jabCd = Math.max(0, e.jabCd - dt); e.plantCd = Math.max(0, e.plantCd - dt); e.braceCd = Math.max(0, e.braceCd - dt); e.braceT = Math.max(0, e.braceT - dt);
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt); e.bsCd = Math.max(0, e.bsCd - dt); e.gCd = Math.max(0, e.gCd - dt); e.mixT = Math.max(0, e.mixT - dt); e.pbCd = Math.max(0, e.pbCd - dt); e.jabCd = Math.max(0, e.jabCd - dt); e.vaultCd = Math.max(0, e.vaultCd - dt); e.spinCd = Math.max(0, e.spinCd - dt); e.plantCd = Math.max(0, e.plantCd - dt); e.braceCd = Math.max(0, e.braceCd - dt); e.braceT = Math.max(0, e.braceT - dt);
       if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
       if (e.stun <= 0) e.riposte = false;
     }
@@ -1511,6 +1512,7 @@ export class Game {
     e.vx = 0;
     const then = e.bmThen; e.bmThen = '';
     if (then === 'thrust') this.spearAfterHop(e);
+    else if (then === 'lunge') this.spearAfterVault(e);
   }
   // --- Shield bearer: the wall. Strong from the front, slow to turn (0.25 s re-face, the generic code), covers allies. ---
   shieldThink(e, dt) {
@@ -1588,6 +1590,7 @@ export class Game {
   bashBox(e) { return { x: Math.min(e.x, e.x + e.dir * SHIELD.bashReach), y: e.y - 77, w: SHIELD.bashReach, h: 96 }; } // the bash hits a hero within 70 px in front and 77 px of height difference
   // --- Spearman: the zoner. Owns 80-194 px, weak inside its tip. ---
   spearThink(e, dt) {
+    if (!e.action) e.cd = Math.min(e.cd, 1);
     const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 64;
     const walk = v => { v *= SPEAR.speedMul; e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
     if (this.cowerStart(e, s, d, toward)) return true;
@@ -1606,8 +1609,18 @@ export class Game {
       return true;
     }
     const hold = clamp(s.reach + SPEAR.hold, 90, 190), ready = e.cd <= 0;
+    // spin (new heavy, flat 100): two sword hits inside its tip within 1 s and the hero still close: it whirls the haft round, a low box 130 px each side (!! 0.9 s, glint)
+    e.tipHits = (e.tipHits || []).filter(t => this.time - t < 1);
+    if (e.tipHits.length >= 2 && d <= SPEAR.spinReach - 10 && near && e.spinCd <= 0 && this.startBrainHeavy(e, 'spin', { x: e.x - SPEAR.spinReach, y: e.y - 58, w: SPEAR.spinReach * 2, h: 58 })) { e.spinCd = SPEAR.spinCd; return true; }
+    // pin (new heavy, flat 100): a hero walking straight in is pinned where it will stand at contact: a 90 px box centred on that spot, tell 0.9 s with glint
+    if (near && ((s.vx * (e.x - s.x) > SPEAR.aimSpeed && d > 120 && d <= 260 && e.mixT <= 0) || ((s.attack > 0 || s.attackCd > 0) && d > 80 && d <= s.reach + 30))) {
+      const f = toward, cx = this.landing(s, .9), x0 = Math.min(cx, s.x) - 60, box = { x: x0, y: e.y - 54, w: Math.abs(cx - s.x) + 120, h: 54 }; // from where the hero stands to where it will be: stopping short does not escape it
+      e.mixT = SPEAR.lungeEvery; e.dir = f;
+      if (this.startBrainHeavy(e, 'pin', box)) return true;
+    }
     // haft guard: a hero swinging at it from the front inside its tip meets the raised haft (the apex guard: x0.25, hit 3 / plunge / Eclipse break it), then the shove or a jab
     const guard = () => (s.attack > 0 || s.attackCd > 0) && d <= s.reach + 45 && dxs * e.dir > 0 && near && !this.attacking(e) && this.apexGuard(e); // used when no attack is ready
+    if (guard()) return true; // the haft first: a hero trading blows with it inside the tip meets the guard before any quick attack
     // plant: against a Spear frenzy (an assault dash has no i-frames) the tip box stays live for 1.2 s
     if (s.frenzy && s.weapon === 'spear' && e.plantCd <= 0 && near && d <= SPEAR.plantRange && this.canStrike(e, SPEAR.plantTell)) {
       const f = toward, box = { x: Math.min(e.x + f * 10, e.x + f * 194), y: e.y - 54, w: 184, h: 54 };
@@ -1617,7 +1630,14 @@ export class Game {
     // pullback: a hero who dashes in to within 80 draws a hop back 70 px and a thrust from the new distance
     const dashedIn = s.dash > 0 || s.dashCd > s.dashCooldown - .5, hop = e.x - toward * SPEAR.pullDist;
     const struck = e.poiseHit > POISE_REGEN_DELAY - .35; // it took a sword hit in the last 0.35 s while the hero was inside its tip
-    if (e.pbCd <= 0 && hop > 40 && hop < W - 50 && ((d <= SPEAR.liftReach - 40 && dashedIn && ready) || (d <= s.reach + 20 && struck))) {
+    // vault (defense, no hitbox): struck inside its tip, the spearman pole-vaults 160 px back in 0.3 s and answers the approach with the lunge, or an aimed thrust
+    const vaultTo = e.x - toward * SPEAR.vaultDist;
+    if (struck && e.vaultCd <= 0 && d <= s.reach + 20 && vaultTo > 40 && vaultTo < W - 50 && !this.attacking(e)) {
+      Object.assign(e, { dir: toward, bmT: SPEAR.vaultTime, bmV: -toward * SPEAR.vaultDist / SPEAR.vaultTime, bmKind: 'vault', bmThen: 'lunge', vaultCd: SPEAR.vaultCd, vx: 0 });
+      this.emit('brainStep', { enemy: 'spear', kind: 'vault', x: e.x, y: e.y - e.h * .5 });
+      return true;
+    }
+    if (e.pbCd <= 0 && hop > 40 && hop < W - 50 && ((d <= SPEAR.liftReach - 40 && dashedIn && ready))) {
       Object.assign(e, { dir: toward, bmT: SPEAR.pullTime, bmV: -toward * SPEAR.pullDist / SPEAR.pullTime, bmKind: 'pullback', bmThen: 'thrust', pbCd: SPEAR.pullCd, vx: 0 });
       this.emit('brainStep', { enemy: 'spear', kind: 'pullback', x: e.x, y: e.y - e.h * .5 });
       return true;
@@ -1659,6 +1679,21 @@ export class Game {
     this.spearThrust(e, s, SPEAR.chainTell, true, SPEAR.chainLen);
     Object.assign(e, { punishable: false, recover: 0 });
     this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'spear', kind: 'thrust', dir: e.dir, follow: true });
+    return true;
+  }
+  spearAfterVault(e) { // out at thrust range: the lunge (heavy) if it is free, else an aimed thrust into the approach
+    const s = this.snap(), d = Math.abs(s.x - e.x);
+    if (this.state !== 'playing' || Math.abs(s.y - e.y) >= 64) return;
+    e.dir = Math.sign(s.x - e.x) || e.dir; e.cd = 0;
+    if (d > 80 && d <= 240 && e.heavyCd <= 0 && this.startHeavy(e, d, true, { noDelay: true, variant: 'vault' })) return;
+    if (d <= SPEAR.aimReach && this.canStrike(e, SPEAR.aimTell)) this.spearThrust(e, s, SPEAR.aimTell, true);
+  }
+  // A new heavy from a brain: tell, glint and recovery come from the shared heavy code (heavyStrike on a fixed box, heavyEnd). Returns true if it started.
+  startBrainHeavy(e, kind, box, tell = .9) {
+    if (e.heavy || e.heavyCd > 0 || !this.canStrike(e, tell, 'heavy')) return false;
+    const warn = { kind, box };
+    Object.assign(e, { heavy: true, heavyKind: kind, tell, warn, recover: 0, punishable: false, thrustBox: null, delayed: false, glinted: false, glint: 0, bounced: false, vx: 0 });
+    this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind, enemy: e.type, area: warn, delayed: false });
     return true;
   }
   spearAfterHop(e) { // the thrust that follows a pullback, from the new distance
