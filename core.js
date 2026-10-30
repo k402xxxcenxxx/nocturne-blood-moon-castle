@@ -843,11 +843,11 @@ export class Game {
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy, punish: this.punishing(e) });
     }
-    if (this.guardedHit) this.emit('apexGuard', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, blocked: e.gHit });
+    if (this.guardedHit) this.emit('apexGuard', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, blocked: e.gHit, enemy: e.type });
     if (crush) { // the guard breaks: a short punishable recovery (a posture break below overrides it)
       Object.assign(e, { gT: 0, gCd: APEX.guardCd, gHit: 0 });
       if (e.hp > 0 && !broken) Object.assign(e, { recover: APEX.crushRecover, punishable: true });
-      this.emit('apexCrush', { x: e.x, y: e.y - e.h * .55 });
+      this.emit('apexCrush', { x: e.x, y: e.y - e.h * .55, enemy: e.type });
     }
     if (broken) this.stagger(e);
     if (warden && e.hp > 0) this.armorHit(e, eclipse);
