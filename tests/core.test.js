@@ -394,8 +394,8 @@ test('a shield bearer whose turn delay ends while stunned faces the player at on
   assert.equal(shield.dir, 1);
 });
 
-// QA #62 PR 1 (P2): todo so it documents the rule without blocking CI; drop `todo` once fixed. Probe: the cover holds for the whole brace (0.9 s).
-test('shield brain: an interposing shield stops covering a posture-broken spear, even while it is bracing', { todo: 'coverFor does not check the covered ally for a stun, and the brace row returns before the interpose reset' }, () => {
+// QA #62 PR 1 (P2): a posture-broken ally is never covered, even while the shield braces (0.9 s); the brace row used to skip the interpose reset.
+test('shield brain: an interposing shield stops covering a posture-broken spear, even while it is bracing', () => {
   const { game } = castle(42, 5, true);
   const shield = enemy(game, 600, { type: 'shield' }), spear = enemy(game, 680, { type: 'spear' });
   Object.assign(shield, { dir: -1, interposing: true, interposeFor: spear, braceT: .6 });
