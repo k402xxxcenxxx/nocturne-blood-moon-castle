@@ -212,7 +212,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12 };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10 };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -686,6 +686,107 @@ export class AudioSystem {
         const d = 0.9 + Math.random() * 0.2;
         tone('noise', 2000 * d, 0.12, 0.06, 600);
         tone('sine', 150 * d, 0.07, 0.08, 95);
+        break;
+      }
+      // Shield bearer / spearman brain cues (#62 PR 1, castle only). Tells are fixed pitch; wood and haft for the spear, plate and rim for the shield.
+      case 'tellRim': // shield rimstrike (hero behind it): a falling metal whip and a short rim ring
+        tone('noise', 3200, 0.12, 0.1, 800);
+        tone('sine', 1540, 0.16, 0.06, 1500, 0.04);
+        tone('triangle', 520, 0.1, 0.06, 300);
+        break;
+      case 'tellBashFollow': // shield bash that follows the rim: a low double plate clunk
+        tone('sine', 140, 0.1, 0.2, 90);
+        tone('sine', 160, 0.12, 0.2, 100, 0.1);
+        tone('noise', 900, 0.2, 0.09, 350);
+        break;
+      case 'tellLift': // spear lift: the tip dragged low then flicked skyward, a soft swell into a thin rising whistle
+        tone('sawtooth', 180, 0.2, 0.05, 700);
+        tone('sine', 900, 0.18, 0.05, 1900, 0.06);
+        tone('noise', 1600, 0.2, 0.06, 4200);
+        break;
+      case 'tellPlant': // spear plant: the butt driven into the floor, a wooden thunk then a held creak
+        tone('sine', 120, 0.12, 0.26, 70);
+        tone('noise', 900, 0.1, 0.12, 300);
+        tone('square', 260, 0.22, 0.03, 250, 0.1);
+        break;
+      case 'tellSpearChain': // spear follow thrust: two quick shaft ticks and a rising slide
+        [0, 0.06].forEach(dl => tone('square', 1400, 0.025, 0.05, 1300, dl));
+        tone('triangle', 900, 0.12, 0.07, 1700, 0.1);
+        break;
+      case 'tellShove': // spear haft shove: a low wooden knock with a short grunt of air
+        tone('sine', 110, 0.1, 0.22, 70);
+        tone('triangle', 330, 0.07, 0.07, 240);
+        tone('noise', 1000, 0.08, 0.1, 400);
+        break;
+      case 'tellJab': // spear jab: a quick high whisk, short and bright
+        tone('noise', 5600, 0.05, 0.12, 3000);
+        tone('triangle', 1700, 0.05, 0.06, 2300);
+        break;
+      case 'tellTurnrush': // shield turn rush: plate wheeling about, a creak then a low driving growl
+        tone('noise', 1800, 0.28, 0.1, 500);
+        tone('sawtooth', 130, 0.3, 0.07, 260);
+        tone('triangle', 480, 0.1, 0.06, 360, 0.2);
+        break;
+      case 'tellSpin': // spear spin: the haft whirling, four whooshes climbing in pitch
+        [0, 0.1, 0.19, 0.27].forEach((dl, i) => tone('noise', 1800 + i * 700, 0.09, 0.09, 700 + i * 300, dl));
+        break;
+      case 'tellPin': // spear pin: the tip levelled and braced, a ratchet scrape under a held thin whine
+        tone('sawtooth', 100, 0.4, 0.06, 170);
+        [0.05, 0.13, 0.21].forEach(dl => tone('square', 1900, 0.02, 0.04, 1900, dl));
+        tone('sine', 1100, 0.35, 0.03, 1150);
+        break;
+      case 'tellVault': // spear vault lunge: the pole planted, a wood knock and a spring upward
+        tone('sine', 150, 0.08, 0.2, 90);
+        tone('triangle', 300, 0.22, 0.07, 900, 0.05);
+        tone('noise', 1400, 0.18, 0.06, 3600, 0.05);
+        break;
+      case 'brainInterpose': // shield steps in front of an ally: a quick plate slide and a settled clunk
+        tone('noise', 1500, 0.14, 0.08, 600);
+        tone('sine', 130, 0.1, 0.18, 85, 0.1);
+        break;
+      case 'brainBrace': // shield raised: heavy plate clank over a low thud
+        tone('noise', 3000, 0.06, 0.14, 900);
+        tone('sine', 90, 0.2, 0.28, 50);
+        [620, 930].forEach(f => tone('triangle', f, 0.18, 0.05, f * 0.97));
+        break;
+      case 'brainPullback': // spear hop back: cloth whisk and a light wooden tap
+        tone('noise', 2200, 0.12, 0.06, 700);
+        tone('triangle', 420, 0.05, 0.07, 280, 0.1);
+        break;
+      case 'brainVault': // spear pole-vault: wood creak, bounce, and a brief airy rise
+        tone('triangle', 200, 0.1, 0.09, 520);
+        tone('sine', 100, 0.08, 0.18, 60, 0.08);
+        tone('noise', 1200, 0.22, 0.06, 3000, 0.08);
+        break;
+      case 'cower': { // minion shrinks back: a tiny falling whimper, throttled so a crowd is not a choir
+        if (ctx.currentTime - (this._lastCower ?? -1) < 0.1) return;
+        this._lastCower = ctx.currentTime;
+        const d = 0.92 + Math.random() * 0.16;
+        tone('sine', 640 * d, 0.14, 0.05, 380 * d);
+        tone('noise', 1500, 0.1, 0.03, 600);
+        break;
+      }
+      case 'squadCall': // pair forms: two low horn-like notes rising a fourth, answered by a cloth flick
+        tone('sawtooth', 147, 0.22, 0.06, 150);
+        tone('sawtooth', 196, 0.26, 0.06, 198, 0.14);
+        tone('sine', 98, 0.3, 0.14, 90);
+        tone('noise', 2000, 0.06, 0.05, 900);
+        break;
+      case 'squadEnd': // pair breaks off: one soft falling tone
+        tone('sine', 262, 0.25, 0.04, 175);
+        break;
+      case 'spearGuard': { // haft guard: three quick wooden knocks, a dry clatter against apexGuard's iron
+        const d = 0.94 + Math.random() * 0.12;
+        [0, 0.035, 0.07].forEach((dl, i) => tone('triangle', (520 - i * 60) * d, 0.05, 0.08, 300 * d, dl));
+        tone('noise', 2600, 0.05, 0.1, 900);
+        tone('sine', 140 * d, 0.08, 0.14, 90);
+        break;
+      }
+      case 'spearCrush': { // haft guard broken: splintering crack and a falling wooden clatter
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 5200, 0.14, 0.26, 500);
+        tone('sine', 110 * d, 0.26, 0.38, 40);
+        [0.04, 0.08, 0.13, 0.19].forEach((dl, i) => tone('triangle', (700 - i * 110) * d, 0.06, 0.07, 260, dl));
         break;
       }
       // Castle priest / mage / elite cues. Tells are fixed pitch; the two bolt casters and each elite twist get their own sound.
