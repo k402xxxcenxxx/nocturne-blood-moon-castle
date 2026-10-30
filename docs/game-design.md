@@ -418,6 +418,60 @@ Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelis
 
 The ship gate's proof that it can be beaten: the expert bot wins Greatsword 1v1 at tier 0 in 100% of 200 seeds (Round 4 skeleton step).
 
+### Brains: the shield bearer and the spearman (#62 PR 1, user-directed)
+
+Every castle enemy type is moving onto one brain framework (the apex skeleton's, generalised); this PR ports the **shield bearer** and the **spearman**. Normal and Endless are untouched (state hashes identical to main). **No HP, damage or posture change** (lights keep `CASTLE_LIGHT`, the rush and lunge stay a flat 100); the levers are behavior numbers only. Constants: `PAIR`, `SHIELD`, `SPEAR`, `COWER`, `JOINS`, `BRAINS` in `core.js`; every number is a playtest starting point.
+
+- **Framework**: `BRAINS[type](game, e, dt)` returns true when it acted; `apexThink` is the skeleton's entry, moved in unchanged (a core test hashes a skeleton-only castle floor against a value taken before the refactor). `brainOn(e)` = castle mode, `game.apex`, the type has a brain, and it is not in the `game.brainOff` Set (on `?test`, `__nocturne.game.brainOff = new Set(['spear'])` gives back the #50 spearman; `apexOn(e)` obeys it for skeletons too). A brain reads only `snap()` (the hero `APEX_REACT` = 0.12 s ago), never input, buffers or future rolls; the move is picked at tell start and its box is fixed then. The shield and spear brains roll no random numbers at all.
+- **Shared helpers**: `snap()`, `canStrike(e, contactIn)` (token, on screen, `canWindUp`, and the contact must fall after the hero's remaining invulnerability; this one clamp also reads the live i-frame timer, because fairness outranks the 0.12 s lag when a hit lands this frame), `landing(s, t)` (where the hero will stand), `noteHabit` / `habit(type)` (the hero's last 3 answers to a type's moves, `jumped` / `dashed` / `crossed` / `stood` / `retreated`, noted at each contact; 2 of 3 matching is a habit; reset each floor), `allies(e, r)` (tell / recover / stun / idle), `pairOk(lead, partner, plan)`, `escapes(s, areas)`.
+- **Pair limits** (`pairOk`): the second contact lands 0.5-0.8 s after the first; the second `!` starts no later than the first contact; at least one non-dash plan (walk left or right, jump in place or sideways, 0.3 s reaction) avoids both areas at both contacts (`escapes`); no pair within 1.0 s after the hero is hurt, none in a frenzy; cooldown 4 s (3 s on floors 8-9) after `squadEnd`; pairs start on floor 3 and a type joins from the floor after its intro (shield 3, spearman 4). `squadCall` {tactic, lead, partner, x, y, px, py} draws the red thread; `squadEnd` {tactic, reason: `done` / `broken` / `hit`}. A stunned, frozen or dead participant breaks the pair; a hurt hero ends it with `hit`.
+- **Cower** (floors 5+, shield and spearman): when the hero's frenzy starts, an idle minion (no tell, contact or recovery) within 220 px steps back 50 px in 0.35 s, once per frenzy, starting no tell while it moves. `cower` {x, y, enemy}. (The skeleton keeps its own frenzy rows.)
+
+**Shield bearer: the wall** (`shieldThink`; rows top to bottom, the first that acts wins; the 0.25 s re-face and "cannot block from behind" are unchanged):
+
+| Row | Read (snapshot) | Move | Non-dash answer |
+| --- | --- | --- | --- |
+| cower | frenzy just started (floor 5+) | step back 50 px | Free hits |
+| brace | a plunge coming down on its front, within the plunge radius + 40 | `brainStep` brace: shield raised 0.5 s (cooldown 2 s). A plunge hitting from the front is blocked (x0.25, +1 blood) and the hero bounces up (`block` event) | Plunge from behind, or fight it on the ground |
+| interpose | an ally within 80 px in recovery (never in a posture-break stun), the hero swinging within 160 px of it from the shield's side | `brainStep` interpose: it steps 60 px in front of the ally at x1.3 speed and covers it (`coverFor`: frontal sword hits on the ally are blocked, like the Phalanx). No token | Attack from the other side, break its posture, or Eclipse |
+| `rimstrike` | the hero behind it within 80 px (110 after a `crossed` habit), grounded or crossing in the air | light, `!` 0.45 s, box 10-70 px behind it (60 x 58) fixed at tell start, no turn; recovery 0.6 s punishable; the recovery brings the shield round so it never chains | Land beyond 80 px, or step out of the box |
+| `turnrush` | behind it 100-240 px with the dash on cooldown | heavy rush (`enemyHeavy` {kind: rush, variant: turnrush}), tell 0.9 s which holds the turn (it faces the hero at tell start), glint, never delayed | Jump, or step out of the path |
+| screen (lead) | a spearman idle behind it within 200 px, hero 75 to 126 px ahead (the 1.6 s push at x0.7 must reach bash range), floor 4+, `pairOk`, 2 tokens free | `squadCall`, 0.35 s call, a push (not an attack), then the bash (tell 0.55 s); the spearman's thrust lands 0.6 s after the bash contact (its tell starts 0.04 s before it) | Jump or step out of the bash, then back out of the thrust, or go over the shield |
+| counter, rush, bash, hold | as the #50 shield bearer (2 blocks within 1 s; rush every 3 s for an approach, a spent dash or Eclipse; bash 0.55 s; the 100 px hold ring without a token) | | |
+
+**Spearman: the zoner** (`spearThink`; it re-faces freely when it starts a move):
+
+| Row | Read (snapshot) | Move | Non-dash answer |
+| --- | --- | --- | --- |
+| cower | as above | step back | |
+| screen (partner) | a shield lead pushing | follows 110-150 px behind it, then one `thrust` past the shield (box 10-194 fixed when its tell starts, contact 0.6 s after the bash) | as the screen |
+| `plant` | Spear frenzy only, the hero within 260 px | `!` 0.5 s, then the tip box 10-194 x 54 stays live 1.2 s (hits once, stops an assault dash), recovery 0.7 s punishable, cooldown 4 s per spearman. `enemyTell` {kind: plant}, `enemySwing` {kind: plant} at activation | Walk or jump; never dash into it |
+| `pullback` | the hero dashed in to within 80 px | `brainStep` pullback: a 70 px hop back in 0.2 s (no hitbox), then a normal `thrust`; cooldown 3 s | Jump the thrust, punish its recovery |
+| `sweep` | the hero inside 80 px | the #50 low sweep, `!` 0.5 s (otherwise it backs off at x1.2) | Walk out of 80 px, or jump |
+| `lift` | at the sweep's contact the hero is in the air within 120 px (150 after a `jumped` habit) | light follow-up, `!` 0.45 s after the contact, box 0-110 in front and 60-170 px above its feet (only a hero whose feet are off the ground); recovery 0.6 s punishable | Walk out of 80 px instead of jumping the sweep, or jump backward beyond 110 px |
+| `lunge` | a spent dash or an approach (once per 3 s), or the hero standing within its reach + 30 | the #50 heavy (100, glint) | The #50 answers |
+| `thrust`, aimed | within 193 px (250 px if the hero walks in faster than 100 px/s) | `!` 0.64 s, box 184 px fixed at tell start; an approaching hero gets it centred where it will stand at contact (never closer than 10 px to the tip) | Stop short, or jump (54 tall) |
+| spacing | | holds at the hero's reach + 50 px (90-190), backs off at x1.2 when closer | Close in behind a thrust's recovery |
+
+Spacing is a fixed band, so a hero that walks in is met by `thrust` first, `sweep` inside 80.
+
+**New events and fields** (for art, audio and UX): `enemyTell` kinds `rimstrike`, `lift` (with `follow: true`) and `plant`; `enemyHeavy` {kind: 'rush', variant: 'turnrush'} (`warn.variant` too); `enemySwing` kinds `rimstrike` (dir = the way the rim swings, behind the shield), `lift`, `plant` (the tip goes live); `brainStep` {enemy, kind: `interpose` | `brace` | `pullback`, x, y}; `cower` {x, y, enemy}; `squadCall` / `squadEnd`. Poses to read from the enemy: `braceT` > 0 (shield raised), `interposing`, `callT` / `pushT` (call, push), `bmT` with `bmKind` (`cower` / `pullback`), `plantT` > 0 (planted tip, box in `warn.box`).
+
+**Bot changes** (bot.js, human limits unchanged): `hitTime` reads the drawn boxes of `rimstrike`, `lift` (judged on where the feet will be at contact) and `plant` (a standing box); a planted spear counts as a strike signature so the bot reacts to it; a shield that covers an ally counts as a block (it walks round to the back of the shield that blocks); no assault-dash chain while a plant is down; a planted tip with no time to walk clear is answered with a jump steered out of the box.
+
+**Harness**: `node tools/bot-run.mjs --duel N --type shield|spear|skeleton|mix:a,b [--floor F] [--tier T] [--brain off]` (default skeleton, so the old cells replay; `mix:` lists the foes from the hero outward; `--floor` is the floor the brains read, pairs need 4+ and cower 5+; the duel also prints the enemy moves per fight). `--run --brain off` switches the shield and spear brains off for a full run.
+
+**Arms race** (expert bot, 200 seeds per cell, floor 5, tier 2, win % Greatsword / Twin Blades / Spear; every audit 0 unanswerable):
+
+| Step | 1v1 shield | 1v1 spear | 1v2 shield | 1v2 spear | frenzy 1v1 shield / spear | mix shield+spear | average 1v1 shield / spear | average mix | Full run expert | Full run average |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Round 0, brain off (#50) | 100 / 100 / 100 | 100 / 100 / 100 | 99.5 / 100 / 100 | 100 / 100 / 100 | 100 / 100 | 100 / 99.5 / 100 | 100 / 100 / 100 and 100 / 98.5 / 100 | 97.5 / 99 / 100 | 1 / 7 / 15 | 0 / 0 / 0 |
+| Round 1 enemy (brains v1) | 100 | 100 | 100 / 100 / 100 | 100 | 100 | 100 | 95 and 100 | 97 / 92.5 / 96.5 | 1 / 8 / 14 | 0 / 0 / 0 |
+| Round 1 bot (cues) | 100 | 100 | 100 | 100 | 100 | 100 | 95 and 100 | 97 / 91 / 97 | | |
+| Round 2 enemy (lunge, melee lunge, #50 spawn cooldown) + current bot | 100 | 100 | 100 / 100 / 100 | 99.5 / 99.5 / 100 | 100 | 100 / 98 / 100 | 100 and 98.5 / 100 / 100 | 94 / 82 / 89.5 | 2 / 7 / 9 | 0 / 0 / 0 |
+
+Notes: the average bot's "left the room" outcomes count against the mix cell (the harness room is a fixed width). The expert wins every 1v1 cell, so **G1 holds** (at least 50% vs shield and spear with every weapon; seed 1 wins each: `node tools/bot-run.mjs --duel 1 --type shield --floor 5 --tier 2 --weapon heavy --seeds 1`). **Fairness audit 0 in every cell.** **Mash bot**: 0% on castle floors 1-3 and in shield rooms and mixed rooms (3 shield + 3 spear: 2 / 4 / 22%), but **a room of five spearmen falls to a hold-attack masher 100%** (the #50 spearman: 52-82%). The cause is the stat-free design: a 77 HP spearman dies to a masher in under 2 s, and the brain's lunge only lands about half the time; closing it needs a rule or a stat decision. Open for the user. G3 full runs: expert 2 / 7 / 9%, average 0 / 0 / 0%.
+
 **User decisions** (2026-10-21): castle elites give no relic pick (keep); the shield bearer's late reads from floor 5 (keep).
 
 ## Playtest verdicts
