@@ -80,8 +80,8 @@ function hitTime(e, px, py) {
   }
   if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box, 4) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
   if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
-  if ((e.move === 'counter' || e.move === 'rising' || e.move === 'rimstrike') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove and rim strike, apex skeleton counter and rising slash: the drawn box
-  if (e.move === 'lift' && w?.box) { const fy = Math.min(e.y, py + heroVy * e.tell + 775 * e.tell * e.tell); return e.tell > 0 && fy < e.y - 30 && rectHit(px, fy, w.box) ? e.tell : Infinity; } // spearman lift: only a hero whose feet are off the ground at contact
+  if ((e.move === 'counter' || e.move === 'rising' || e.move === 'rimstrike' || e.move === 'shove') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove and rim strike, apex skeleton counter and rising slash: the drawn box
+  if (e.move === 'lift' && w?.box) { return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; } // spearman lift: a column centred on the landing, 0-170 px above its feet
   if (e.move === 'plant' && w?.box) return rectHit(px, py, w.box) && !e.plantHit ? (e.tell > 0 ? e.tell : .01) : Infinity; // planted spear: the tip box is live for 1.2 s after the tell
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
@@ -287,7 +287,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         else if (e && e.type === 'skeleton' && !e.heavy && e.move !== 'stepcut' && !dashReady && p.grounded && t <= .38 + jit(e) && t >= .18) { o.jump = true; o.urgent = true; } // slash, counter or chain with no dash and no room: the 77 px hit height is cleared 0.17-0.57 s after the press
         else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= JUMP_AT + jit(e) && t >= .19) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
         else if (e && e.move === 'plant' && p.grounded && t <= .45) { o.jump = true; o.urgent = true; o.dir = dirAway(e); } // a planted spear with no time to walk clear: jump and steer out of the box in the air (it stays live 1.2 s)
-        else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray') && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
+        else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray' || (e.type === 'spear' && e.warn?.kind === 'thrust' && !dashReady && t >= .2)) && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
     // --- offence and navigation when nothing is about to land
@@ -308,6 +308,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           if (canCast && castle && p.blood >= 90 && Math.abs(dx) < 190) o.magic = true;
           else if (dashReady && Math.abs(dx) < 120 && Math.abs(dx) > 30) { o.dash = true; o.dir = face; }
           else { const b = blocker(target); goal = b.x - b.dir * 50; tol = 10; } // round to the back of the shield that blocks
+        } else if (dashReady && target.punishable && target.recover > .4 && Math.abs(dx) > spacing + 40 && Math.abs(dx) < 260 && Math.abs(target.y - p.y) < 40 && target.type === 'spear') { o.dash = true; o.dir = face; // a spearman in recovery out-spaces a walk: dash the gap while it cannot thrust
         } else if (Math.abs(dx) > spacing) { goal = target.x; tol = spacing - 4; }
         else if (p.dir !== face) o.dir = face; // turn to face
       } else {
