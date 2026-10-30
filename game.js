@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest, drawPool } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest, drawPool, drawPairThread } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -96,7 +96,9 @@ function rumble(power, duration = .15) { if (settings.shake) { shakePower = Math
 function recordResult(win) { if (game.mode === 'castle') return; if (game.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, game.floor); else { records.best = Math.max(records.best, game.stage + 1); if (win) records.wins++; } save('nocturne-records', records); updateBest(); }
 function handleEvent(e) {
   const sfx = { enemyBlink: 'mageShimmer', enemyBlinked: 'mageBlink', enemyRecoil: 'priestStep' }[e.type]; if (sfx) audio.play(sfx, 1); // castle caster cues that need no other feedback
-  { const ax = { apexStep: ['apexStep', .8], apexGuard: ['apexGuard', e.blocked ? 1 : .7], apexCrush: ['apexCrush', 1] }[e.type]; if (ax) audio.play(ax[0], ax[1]); } // apex skeleton guard / crush / backstep (#66)
+  { const w = e.enemy === 'spear'; const ax = { apexStep: ['apexStep', .8], apexGuard: [w ? 'spearGuard' : 'apexGuard', e.blocked ? 1 : .7], apexCrush: [w ? 'spearCrush' : 'apexCrush', 1] }[e.type]; if (ax) audio.play(ax[0], ax[1]); }
+  { const bx = { brainStep: { interpose: 'brainInterpose', brace: 'brainBrace', pullback: 'brainPullback', vault: 'brainVault' }[e.kind], cower: 'cower', squadCall: 'squadCall', squadEnd: 'squadEnd' }[e.type]; if (bx) audio.play(bx, e.type === 'squadEnd' && e.reason !== 'done' ? .6 : 1); } // shield / spearman brains (#62)
+  if (e.type === 'enemyHeavy') { const h = { turnrush: 'tellTurnrush', spin: 'tellSpin', pin: 'tellPin', vault: 'tellVault' }[e.variant] || (e.enemy === 'spear' && { spin: 'tellSpin', pin: 'tellPin' }[e.kind]); if (h) audio.play(h, .9); } // brain heavies layer over the shared heavyWarn // apex skeleton guard / crush / backstep (#66)
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
@@ -225,7 +227,7 @@ function handleEvent(e) {
     case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
       if (e.enemy === 'king') { audio.play({ slash: 'kingTellSlash', string: 'kingTellString', turnslash: 'kingTellTurn', volley: 'kingTellVolley', ritual: 'kingTellRitual' }[e.kind] || 'tellGeneric', 1); break; }
-      const cue = { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: e.enemy === 'skeleton' ? 'tellApexCounter' : 'tellCounter', rising: 'tellRising', chain: 'tellChain', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe', slash2: 'tellSlash2' }[e.kind] || 'tellGeneric';
+      const cue = (e.enemy === 'shield' && (e.kind === 'rimstrike' ? 'tellRim' : e.follow && e.kind === 'bash' && 'tellBashFollow')) || (e.enemy === 'spear' && ({ lift: 'tellLift', plant: 'tellPlant', shove: 'tellShove', jab: 'tellJab' }[e.kind] || (e.follow && e.kind === 'thrust' && 'tellSpearChain'))) || { slash: 'tellSlash', sweep: 'tellSweep', backhand: 'tellBackhand', turnslash: 'tellBackhand', stepcut: 'tellStepcut', bash: 'tellBash', counter: e.enemy === 'skeleton' ? 'tellApexCounter' : 'tellCounter', rising: 'tellRising', chain: 'tellChain', swoop: 'tellSwoop', thrust: 'tellThrust', overhead: 'tellOverhead', turnswipe: 'tellTurnswipe', slash2: 'tellSlash2' }[e.kind] || 'tellGeneric';
       const v = game.tokens.some(h => h.type === e.enemy && Math.abs(h.x - e.x) < 2) ? 1 : .5;
       audio.play(e.enemy === 'spear' && e.kind === 'sweep' ? 'tellLow' : e.kind === 'bolt' ? (e.enemy === 'mage' ? 'tellBoltMage' : 'tellBoltPriest') : cue, v); if (e.enemy === 'knight' && e.follow) audio.play('knightCommit', v);
       if (e.kind === 'slash2') effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Duelist second strike: the same white ring
@@ -234,6 +236,15 @@ function handleEvent(e) {
     case 'apexStep': burst(e.x - e.dir * 6, FLOOR, '#b3a68f', 6, 90, -e.dir); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 36, life: .25, max: .25 }); break; // backstep: a small scrape of dust at the heels
     case 'apexGuard': if (e.blocked) { effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: 0, color: '#e8f6ff', s: .7 }); burst(e.x, e.y, '#cfe3f2', 8, 200); } break; // block spark (the guard stance itself is drawn on the body)
     case 'apexCrush': rumble(5, .16); burst(e.x, e.y, '#ffd36e', 16, 240); burst(e.x, e.y, '#ffffff', 6, 150, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .35, max: .35, color: '#ffd36e', r: 70 }); break; // guard broken: the gold opening ring
+    case 'brainStep': { // shield / spearman brain moves (#62): the pose is on the body, these are the ground marks
+      const sp = e.kind === 'vault' || e.kind === 'pullback' ? game.enemies.find(o => o.type === 'spear' && o.hp > 0 && o.bmT > 0 && Math.abs(o.x - e.x) < 6) : null;
+      if (e.kind === 'vault' && sp) { effects.push({ type: 'vaultArc', x: sp.x, y: FLOOR, toX: Math.round(sp.x + sp.bmV * sp.bmT), life: .3, max: .3 }); burst(sp.x, FLOOR - 4, '#b3a68f', 6, 90, -sp.dir); }
+      else if (e.kind === 'pullback') { effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 30, life: .2, max: .2 }); burst(e.x, FLOOR - 4, '#b3a68f', 5, 80, sp ? -sp.dir : 0); }
+      else if (e.kind === 'brace') { effects.push({ type: 'wardBreak', x: e.x, y: e.y - 6, life: .2, max: .2, color: '#cfe3f2', r: 24 }); burst(e.x, FLOOR - 4, '#b3a68f', 4, 60); }
+      else if (e.kind === 'interpose') { effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 34, life: .22, max: .22 }); burst(e.x, FLOOR - 4, '#b3a68f', 5, 80); }
+      break; }
+    case 'cower': burst(e.x, e.y - 24, '#9fd8ff', 4, 50, 0, 2); burst(e.x, FLOOR - 4, '#b3a68f', 4, 60); break; // sweat drops and a scuff as it flinches back
+    case 'squadCall': for (const [qx, qy] of [[e.x, e.y], [e.px, e.py]]) effects.push({ type: 'wardBreak', x: qx, y: qy, life: .3, max: .3, color: '#ff7a68', r: 36 }); break; // the red thread itself is drawn each frame while game.pair is set
     case 'riposte': // heavier than a normal hit: white pop, gold ring and burst
       audio.play('riposte', 1); rumble(6, .14); if (settings.shake) whiteFlash = .05;
       burst(e.x, e.y, '#ffd36e', 22, 260); burst(e.x, e.y, '#ffffff', 8, 160, 0, 3);
@@ -250,6 +261,8 @@ function handleEvent(e) {
         if (kd === 'sweep') { L('floorSweep', { y: e.y + e.h * .5 - 12, life: .26, max: .26 }); break; }
         if (kd === 'spear' && game.mode === 'castle') { L('streak', { life: .22, max: .22 }); break; }
         if (kd === 'swoop') { L('claw', { life: .24, max: .24 }); break; }
+        if (kd === 'lift' && e.area) { const b = e.area.box; effects.push({ type: 'liftCol', x: b.x, y: b.y, w: b.w, h: b.h, life: .3, max: .3 }); break; } // the rising spear fills the warned column
+        if (kd === 'plant' && e.area) { const b = e.area.box; L('streak', { life: .22, max: .22 }); burst(e.dir === 1 ? b.x + b.w : b.x, FLOOR - 4, '#b3a68f', 6, 90, e.dir); break; } // the tip is planted at the far end of the box
         if (kd === 'overhead') { L('chop', { x: e.x + e.dir * 40, y: e.y + e.h * .5, life: .39, max: .39, delay: .15 }); rumble(3, .1); break; }
         if (kd === 'turnswipe') { effects.push({ type: 'enemySlash', x: e.x, y: e.y, dir: -e.dir, life: .24, max: .24, boss: false, big: false }); break; }
       }
@@ -703,6 +716,13 @@ function drawEffects(dt) {
       if (progress < .45) { const r = 10 + progress * 50; ctx.lineWidth = 3; ctx.strokeStyle = '#e4d8ff'; ctx.globalAlpha = (1 - progress / .45) * .9; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(x0, y0 + 4, r, sd === 1 ? -Math.PI * .45 : Math.PI * 1.05, sd === 1 ? Math.PI * .05 : Math.PI * 1.55); ctx.stroke(); } }
       if (!calm && progress < 1) { const t = progress, hx = Math.round((1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cx + t * t * x1), hy = Math.round((1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cy + t * t * y0); ctx.globalAlpha = 1 - progress * .6; ctx.fillStyle = '#fff2ff'; ctx.fillRect(hx - 3, hy - 3, 6, 6); }
       ctx.restore();
+    } else if (fx.type === 'liftCol') { // spearman lift: three pale spear tips shoot up through the column and fade
+      ctx.save(); ctx.globalAlpha = 1 - progress; ctx.fillStyle = '#e9dcc8'; const rise = Math.round(fx.h * Math.min(1, progress * 3.5 + .2));
+      for (let i = 0; i < 3; i++) { const cx = Math.round(fx.x + fx.w * (i + .5) / 3); ctx.fillRect(cx - 2, fx.y + fx.h - rise, 4, rise); ctx.beginPath(); ctx.moveTo(cx - 6, fx.y + fx.h - rise + 2); ctx.lineTo(cx, fx.y + fx.h - rise - 12); ctx.lineTo(cx + 6, fx.y + fx.h - rise + 2); ctx.fill(); }
+      ctx.restore();
+    } else if (fx.type === 'vaultArc') { // spearman pole-vault: a dashed hop arc from take-off to landing, fading
+      const x0 = Math.round(fx.x), x1 = Math.round(fx.toX), cx = Math.round((x0 + x1) / 2);
+      ctx.save(); ctx.globalAlpha = (1 - progress) * .8; ctx.strokeStyle = '#e9dcc8'; ctx.lineWidth = 2; ctx.setLineDash(CROSS_DASH); ctx.beginPath(); ctx.moveTo(x0, fx.y - 4); ctx.quadraticCurveTo(cx, fx.y - 120, x1, fx.y - 4); ctx.stroke(); ctx.setLineDash(NO_DASH); ctx.restore();
     } else if (fx.type === 'floorSweep') { // spearman sweep: a flat pale crescent skimming the floor in front of it, a tip streak at the end
       const k = Math.min(1, progress * 2.4); ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = 1 - progress; ctx.lineCap = 'round';
       ctx.strokeStyle = '#e9dcc8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(10, 0, 92 * k, 9, 0, -Math.PI * .5, Math.PI * .5); ctx.stroke(); // flat half-crescent growing out
@@ -798,6 +818,7 @@ function render(dt) {
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
     for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
+    if (game.pair) drawPairThread(ctx, game.pair, worldTime, !settings.shake);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
       if (e.elite) { // ward broke since last frame: shatter flash (render-only; compares against the previous frame)

@@ -1,8 +1,8 @@
 // Headless bot runner (#52): plays castle runs from the Vigil for N seeds and reports per-floor results.
 // Usage: node tools/bot-run.mjs [--seeds 20] [--floors 1-3] [--cap 240] [--first 1] [--weapon spear] [--skill expert|average] [--run]
 // --duel N [--blood 100] [--relics dash,reach] [--tier 0] [--weapon w] [--cap 60]: apex arms-race harness. The bot fights N castle skeletons in an empty floor-1 room (no traps, obstacles or chests);
-// a win is every skeleton dead. Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
-// --run: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
+// a win is every enemy dead. --type skeleton|shield|spear or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
+// --run [--brain off]: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
 import { Game, WEAPONS, RELICS } from '../core.js';
 import { createBot, resolveModal, chooseWeapon, REACTION_DELAY } from '../bot.js';
 
@@ -13,12 +13,14 @@ const rows = new Map(); // floor -> accumulated stats
 const row = f => { if (!rows.has(f)) rows.set(f, { runs: 0, clears: 0, deaths: {}, timeouts: 0, clearTime: 0, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, fights: 0, fg: 0, ft: 0, fs: 0, fb: 0, ff: 0 }); return rows.get(f); };
 const DT = 1 / 60;
 const duelN = +arg('duel', 0);
+const foeTypes = (type, n) => type.startsWith('mix:') ? type.slice(4).split(',') : Array(n).fill(type);
 
-export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics = [], tier = 0, cap: capSeconds = 60, skill: botSkill = 'expert' } = {}) {
-  const r = { win: false, dead: false, timeout: false, time: 0, move: '', kills: 0, whiffs: 0, swings: 0, dashes: 0, eclipses: 0, breaks: 0, gained: 0, lost: 0, hits: 0, unanswerable: 0 };
+export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics = [], tier = 0, cap: capSeconds = 60, skill: botSkill = 'expert', type = 'skeleton', floor = 1, brainOff = false } = {}) {
+  const r = { win: false, dead: false, timeout: false, time: 0, move: '', kills: 0, whiffs: 0, swings: 0, dashes: 0, eclipses: 0, breaks: 0, gained: 0, lost: 0, hits: 0, unanswerable: 0, moves: {} };
   let ctx = null, pending = null;
   const game = new Game(e => {
     if (e.type === 'hurt') { r.lost += e.amount; if (ctx) { r.hits++; r.move = ctx.move; if (ctx.move !== 'trap' && ctx.age < REACTION_DELAY + .12) r.unanswerable++; } else r.move = 'burn'; ctx = null; } // no ctx: blood paid by the Spear assault dash, not an enemy hit
+    else if (e.type === 'enemyTell' || e.type === 'enemyHeavy' || e.type === 'brainStep' || e.type === 'squadCall' || e.type === 'cower') { const k = `${e.enemy || e.lead || ''}:${e.variant || e.kind || e.tactic || e.type}`; r.moves[k] = (r.moves[k] || 0) + 1; }
     else if (e.type === 'kill') r.kills++;
     else if (e.type === 'dash') r.dashes++;
     else if (e.type === 'magic') r.eclipses++;
@@ -26,12 +28,12 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
     else if (e.type === 'swing' && e.move !== 'plunge') { if (pending && pending.set.size === 0) r.whiffs++; r.swings++; pending = { t: game.time, set: game.hitSet }; }
   }, seed, 'castle');
   const start = new WeakMap(); // enemy -> game.time its current attack began, with the bot's own signature rules
-  const sigOf = e => e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 ? 's' : '') : '';
+  const sigOf = e => e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.plantT > 0 ? 's' : '') : '';
   const realHurt = game.hurt.bind(game);
   game.hurt = (amount, dir, hazard = false, heavy = false) => {
     // the attacker: the enemy whose tell ends this frame, else one mid-lunge, else the one whose tell ended last (several skeletons can be attacking at once)
     const live = [...game.enemies].filter(e => e.hp > 0), st = e => start.get(e);
-    const near = live.find(e => st(e)?.sig[0] === 't' && !(e.tell > 0)) || live.find(e => e.cutT > 0 || e.strikeT > 0) || live.sort((a, b) => (st(b)?.end ?? -9) - (st(a)?.end ?? -9))[0];
+    const near = live.find(e => st(e)?.sig[0] === 't' && !(e.tell > 0)) || live.find(e => e.cutT > 0 || e.strikeT > 0 || e.plantT > 0) || live.sort((a, b) => (st(b)?.end ?? -9) - (st(a)?.end ?? -9))[0];
     ctx = { move: hazard ? 'trap' : heavy ? `heavy:${near?.heavyKind ?? '?'}` : near?.move || 'light', age: near && start.has(near) ? game.time - start.get(near).t : -1 };
     realHurt(amount, dir, hazard, heavy);
   };
@@ -40,11 +42,12 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   game.enemies = []; game.traps = []; game.obstacles = []; game.chests = []; game.pickups = [];
   game.setWeapon(w); // setWeapon rebuilds stats on top of the relics and resets the hero's x, so the hero is placed after it
   const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8;
-  for (const dx of [300, 420, -250].slice(0, n)) game.spawnEnemy('skeleton', p.x + dx, tier);
+  const kinds = foeTypes(type, n); n = kinds.length; game.floor = floor; if (brainOff) game.brainOff = new Set(kinds);
+  kinds.forEach((k, i) => game.spawnEnemy(k, p.x + [300, 420, -250][i], tier));
   const bot = createBot({ skill: botSkill, seed });
   let last = p.blood, t0 = game.elapsed; const room0 = game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w);
   while (game.state === 'playing') {
-    if (game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room
+    if (type === 'skeleton' && game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room (kiting foes may lead it out: only skeleton cells stop there)
     if (game.elapsed - t0 > capSeconds) { r.timeout = true; break; }
     if (r.kills >= n) { r.win = true; break; }
     game.update(DT, bot.input(game));
@@ -79,6 +82,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
     realHurt(amount, dir, hazard, heavy);
   };
   const bot = createBot({ skill: botSkill, seed });
+  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear']); // the #50 shield bearer and spearman (the apex skeleton stays)
   game.start();
   if (weapon in WEAPONS) { game.setWeapon(weapon); game.descend(); }
   else if (startFloor > 1) { game.setWeapon(chooseWeapon(game)); game.descend(); }
@@ -100,7 +104,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
 }
 
 if (import.meta.url === `file://${process.argv[1]}` && duelN) {
-  const opt = { n: duelN, blood: +arg('blood', 100), relics: arg('relics', '').split(',').filter(Boolean), tier: +arg('tier', 0), cap: +arg('cap', 60), skill };
+  const opt = { n: duelN, blood: +arg('blood', 100), relics: arg('relics', '').split(',').filter(Boolean), tier: +arg('tier', 0), cap: +arg('cap', 60), skill, type: arg('type', 'skeleton'), floor: +arg('floor', 1), brainOff: arg('brain', 'on') === 'off' };
   for (const w of weapon in WEAPONS ? [weapon] : Object.keys(WEAPONS)) {
     const t0 = Date.now(), res = [], deaths = {}; let wins = 0, dead = 0, timeouts = 0, lefts = 0, winT = 0, firstWin = '-';
     const sum = k => res.reduce((a, r) => a + r[k], 0), avg = k => (sum(k) / seeds).toFixed(1);
@@ -108,9 +112,11 @@ if (import.meta.url === `file://${process.argv[1]}` && duelN) {
       const r = playDuel(first + s, { ...opt, weapon: w }); res.push(r);
       if (r.win) { wins++; winT += r.time; if (firstWin === '-') firstWin = first + s; } else if (r.dead) { dead++; deaths[r.move] = (deaths[r.move] || 0) + 1; } else if (r.left) lefts++; else timeouts++;
     }
-    console.log(`duel ${duelN} weapon=${w} skill=${skill} blood=${opt.blood} relics=${opt.relics.join('+') || '-'} tier=${opt.tier} seeds=${first}..${first + seeds - 1}: win ${wins}/${seeds} (${(100 * wins / seeds).toFixed(1)}%), deaths ${dead}, timeouts ${timeouts}, left room ${lefts}, mean win time ${wins ? (winT / wins).toFixed(1) : '-'}s, first winning seed ${firstWin}, wall ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    console.log(`duel ${duelN} ${opt.type}${opt.brainOff ? ' brain=off' : ''} floor=${opt.floor} weapon=${w} skill=${skill} blood=${opt.blood} relics=${opt.relics.join('+') || '-'} tier=${opt.tier} seeds=${first}..${first + seeds - 1}: win ${wins}/${seeds} (${(100 * wins / seeds).toFixed(1)}%), deaths ${dead}, timeouts ${timeouts}, left room ${lefts}, mean win time ${wins ? (winT / wins).toFixed(1) : '-'}s, first winning seed ${firstWin}, wall ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     console.log(`  hero deaths by move: ${Object.entries(deaths).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ') || '-'}`);
-    console.log(`  per fight: skeleton deaths ${avg('kills')} | whiffs ${avg('whiffs')}/${avg('swings')} swings | dashes ${avg('dashes')} | eclipses ${avg('eclipses')} | breaks ${avg('breaks')} | blood +${avg('gained')} / -${avg('lost')} | hits taken ${avg('hits')}`);
+    console.log(`  per fight: foe deaths ${avg('kills')} | whiffs ${avg('whiffs')}/${avg('swings')} swings | dashes ${avg('dashes')} | eclipses ${avg('eclipses')} | breaks ${avg('breaks')} | blood +${avg('gained')} / -${avg('lost')} | hits taken ${avg('hits')}`);
+    const mv = {}; for (const r of res) for (const [k, v] of Object.entries(r.moves)) mv[k] = (mv[k] || 0) + v;
+    console.log(`  enemy moves per fight: ${Object.entries(mv).sort().map(([k, v]) => `${k} ${(v / seeds).toFixed(2)}`).join(' | ') || '-'}`);
     console.log(`  fairness audit: unanswerable hits ${sum('unanswerable')} of ${sum('hits')}`);
   }
 } else if (import.meta.url === `file://${process.argv[1]}` && runMode) {
