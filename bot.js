@@ -262,7 +262,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const dx = (e.x - p.x) * p.dir;
       return dx >= -e.w / 2 && dx <= p.reach + e.w / 2 && e.y >= p.y - 88 && e.y - e.h <= p.y - 4;
     };
-    const ownBlock = e => e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
+    const ownBlock = e => (e.type === 'shield' && e.guardBreak <= 0 || e.type === 'spear' && e.gT > 0) && (p.x - e.x) * e.dir >= 0; // a shield bearer's shield, or a spearman's raised haft: go round to the back (or Eclipse breaks either)
     const blockedBy = e => ownBlock(e) || !!game.coverFor?.(e); // a shield in front of the hero, or one covering an ally (interpose, Phalanx)
     const blocker = e => ownBlock(e) ? e : game.coverFor(e);
     // castle attacks have hyper armor from tell start, so a light hit cancels nothing

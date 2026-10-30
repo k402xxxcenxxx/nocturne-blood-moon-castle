@@ -120,7 +120,7 @@ const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4 }; // a type joins pairs from the floor after its intro
 const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
-const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
+const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, guardTime: .6, guardCd: 1.5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
 const BRAINS = { skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
@@ -1334,15 +1334,22 @@ export class Game {
   }
   apexGuard(e) {
     if (e.gCd > 0 || e.gT > 0) return false;
-    Object.assign(e, { gT: APEX.guardTime, gHit: 0, vx: 0 });
+    Object.assign(e, { gT: e.type === 'spear' ? SPEAR.guardTime : APEX.guardTime, gHit: 0, vx: 0 });
     return true;
   }
   // Guard: stands still facing the hero for up to 0.6 s; if it blocked at least one hit it ends in a counter (needs a token).
   guarding(e, dt) {
     e.vx = 0; e.gT = Math.max(0, e.gT - dt);
     if (e.gT > 0) return;
-    e.gCd = APEX.guardCd;
+    e.gCd = e.type === 'spear' ? SPEAR.guardCd : APEX.guardCd;
     const hit = e.gHit > 0; e.gHit = 0;
+    if (e.type === 'spear') { // haft guard answer: a hero still inside the tip draws the shove (within 80 px) or a short jab (further), each with its own tell
+      const s = this.snap(), d = Math.abs(s.x - e.x), f = Math.sign(s.x - e.x) || e.dir;
+      if (!hit || d > s.reach + 30 || Math.abs(s.y - e.y) >= 64) return;
+      if (d <= 80 && this.canStrike(e, SPEAR.shoveTell)) { const box = { x: Math.min(e.x, e.x + f * 60), y: e.y - 58, w: 60, h: 58 }; Object.assign(e, { dir: f, tell: SPEAR.shoveTell, move: 'shove', cd: this.spearCd(), thrustBox: null, warn: { kind: 'shove', box } }); }
+      else if (d > 80 && this.canStrike(e, SPEAR.jabTell)) { e.dir = f; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false); }
+      return;
+    }
     if (!hit || Math.abs(this.snap().x - e.x) > 90 || !this.canWindUp(e)) return; // the counter only reaches 82 px
     const d = e.dir, box = { x: Math.min(e.x + d * 10, e.x + d * 82), y: e.y - 70, w: 72, h: 70 };
     Object.assign(e, { tell: APEX.counterTell, move: 'counter', cd: Math.max(e.cd, APEX.lightCd), follows: 0, warn: { kind: 'counter', box } });
@@ -1512,7 +1519,7 @@ export class Game {
     if (this.cowerStart(e, s, d, toward)) return true;
     if (e.braceT > 0) { e.vx = 0; return true; } // the shield stays raised over its top
     // interpose: an ally in recovery (never one in a posture-break stun) is being hit from the shield's side: step 60 px in front of it and guard (coverFor)
-    const down = this.allies(e, SHIELD.near).find(a => a.state === 'recover' && a.o.type !== 'boss' && (s.attack > 0 || s.attackCd > 0) && Math.abs(s.x - a.o.x) < 160 && (Math.sign(s.x - a.o.x) || 1) === (Math.sign(e.x - a.o.x) || 1));
+    const down = this.allies(e, SHIELD.near).find(a => (a.state === 'recover' || (a.o.type === 'spear' && a.state !== 'stun' && a.o.poiseHit > POISE_REGEN_DELAY - .5)) && a.o.type !== 'boss' && (s.attack > 0 || s.attackCd > 0) && Math.abs(s.x - a.o.x) < 160 && (Math.sign(s.x - a.o.x) || 1) === (Math.sign(e.x - a.o.x) || 1));
     if (down) {
       const spot = clamp(down.o.x + (Math.sign(s.x - down.o.x) || 1) * SHIELD.gap, 40, W - 50);
       if (!e.interposing) this.emit('brainStep', { enemy: 'shield', kind: 'interpose', x: e.x, y: e.y - e.h * .5 });
@@ -1581,7 +1588,6 @@ export class Game {
   bashBox(e) { return { x: Math.min(e.x, e.x + e.dir * SHIELD.bashReach), y: e.y - 77, w: SHIELD.bashReach, h: 96 }; } // the bash hits a hero within 70 px in front and 77 px of height difference
   // --- Spearman: the zoner. Owns 80-194 px, weak inside its tip. ---
   spearThink(e, dt) {
-    if (!e.action) e.cd = 0; // no spawn cooldown: the first answer comes as soon as it reads one
     const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 64;
     const walk = v => { v *= SPEAR.speedMul; e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
     if (this.cowerStart(e, s, d, toward)) return true;
@@ -1600,6 +1606,8 @@ export class Game {
       return true;
     }
     const hold = clamp(s.reach + SPEAR.hold, 90, 190), ready = e.cd <= 0;
+    // haft guard: a hero swinging at it from the front inside its tip meets the raised haft (the apex guard: x0.25, hit 3 / plunge / Eclipse break it), then the shove or a jab
+    const guard = () => (s.attack > 0 || s.attackCd > 0) && d <= s.reach + 45 && dxs * e.dir > 0 && near && !this.attacking(e) && this.apexGuard(e); // used when no attack is ready
     // plant: against a Spear frenzy (an assault dash has no i-frames) the tip box stays live for 1.2 s
     if (s.frenzy && s.weapon === 'spear' && e.plantCd <= 0 && near && d <= SPEAR.plantRange && this.canStrike(e, SPEAR.plantTell)) {
       const f = toward, box = { x: Math.min(e.x + f * 10, e.x + f * 194), y: e.y - 54, w: 184, h: 54 };
@@ -1621,7 +1629,7 @@ export class Game {
         e.inside = (e.inside || 0) + 1;
         if (shove) Object.assign(e, { dir: f, tell: SPEAR.shoveTell, move: 'shove', cd: this.spearCd(), vx: 0, thrustBox: null, warn: { kind: 'shove', box } });
         else Object.assign(e, { dir: f, tell: .5, move: 'sweep', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
-      } else walk(-toward * e.speed * SPEAR.back);
+      } else if (!guard()) walk(-toward * e.speed * SPEAR.back);
       return true;
     }
     const aim = s.vx * (e.x - s.x) > SPEAR.aimSpeed;
@@ -1630,6 +1638,7 @@ export class Game {
     // jab: a hero swinging or dashing inside its weapon reach (but outside the sweep) is met by a quick thrust of its own, on its own timer: standing in the tip is not a free kill
     if (d > 80 && d <= s.reach + 30 && near && e.jabCd <= 0 && (s.attackCd > 0 || s.attack > 0 || s.dashCd > 0) && this.canStrike(e, SPEAR.jabTell)) { e.dir = toward; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false); return true; }
     if (d <= (aim ? SPEAR.aimReach : 193) && near && ready && this.canStrike(e, SPEAR.aimTell)) { e.dir = toward; this.spearThrust(e, s, SPEAR.aimTell, aim); return true; }
+    if (guard()) return true;
     walk(d < hold - 10 ? -toward * e.speed * SPEAR.back : d > hold + 10 ? toward * e.speed : 0); // out-space the hero's weapon, inside its own tip
     return true;
   }

@@ -5189,3 +5189,28 @@ test('brains: every light tell is at least 0.45 s and every heavy at least 0.85 
   assert.ok(lights.length > 20, `${lights.length} light tells observed`); assert.ok(Math.min(...lights) >= .45 - 1e-6, `shortest light tell ${Math.min(...lights)}`);
   if (heavies.length) assert.ok(Math.min(...heavies) >= .85 - 1e-6, `shortest heavy tell ${Math.min(...heavies)}`);
 });
+
+test('spearman haft guard: a hero swinging at it from the front inside its tip meets the raised haft (x0.25, +1 blood, no flinch); hit 3, a plunge or Eclipse break it; the guard ends in a shove or a jab', () => {
+  const mk = () => { const c = brainFoe('spear', 110, { floor: 3 }); c.e.speed = 0; c.e.cd = 99; c.e.jabCd = 99; lull(c.game); c.player.dir = 1; c.player.blood = 100; return c; };
+  const a = mk(); a.player.attackCd = .3; advance(a.game, APEX_REACT + .05);
+  assert.ok(a.e.gT > 0, 'the haft is up'); const hp = a.e.hp; a.game.damageEnemy(a.e, 20, 1, false, false, false, 17);
+  assert.ok(evs(a.events, 'apexGuard').length === 1 && hp - a.e.hp <= 5 && a.e.stun === 0, 'hit 1 is blocked: x0.25, no flinch');
+  const third = mk(); third.player.attackCd = .3; advance(third.game, APEX_REACT + .05); third.game.damageEnemy(third.e, 20, 1, false, true, false, 62);
+  assert.ok(evs(third.events, 'apexCrush').length === 1 && third.e.gT === 0, 'hit 3 breaks the guard');
+  const behind = mk(); behind.player.attackCd = .3; advance(behind.game, APEX_REACT + .05); const hpb = behind.e.hp; behind.game.damageEnemy(behind.e, 20, -1, false, false, false, 17);
+  assert.ok(hpb - behind.e.hp >= 15, 'from behind it lands in full');
+  const ans = mk(); ans.player.x = ans.e.x - 60; lull(ans.game, .2); Object.assign(ans.e, { cd: 0, gT: .005, gHit: 1 }); ans.game.update(1 / 120, {});
+  assert.ok(ans.e.move === 'shove' && ans.e.tell >= .44, 'a blocked hero still inside 80 px draws the shove, with its full tell');
+  const idle = mk(); advance(idle.game, .5); assert.equal(idle.e.gT, 0, 'no guard for a hero that is not swinging');
+});
+
+test('shield interpose also covers a spearman that is being hit (not one in a posture-break stun)', () => {
+  const mkc = stunned => {
+    const c = brainFoe('shield', 90, { floor: 4 }); const sp = enemy(c.game, c.e.x + 60, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0 }); noSwing(c.e);
+    lull(c.game); c.player.dir = 1; sp.poiseHit = 1.5; sp.stun = stunned ? 1 : 0;
+    for (let i = 0; i < 40; i++) { c.player.attackCd = .5; sp.poiseHit = 1.5; sp.stun = stunned ? 1 : 0; advance(c.game, .01); }
+    return c;
+  };
+  assert.equal(mkc(false).e.interposing, true, 'it steps in front of a spearman being hit');
+  assert.equal(mkc(true).e.interposing, false, 'never for a stunned one');
+});
