@@ -189,3 +189,26 @@ test('replayable apex wins: the expert bot beats the apex skeletons (HP x9.6) on
     assert.equal(r.unanswerable, 0);
   }
 });
+
+// ---- #62 PR 1: the bot answers the shield bearer's and spearman's new moves from their drawn boxes ----
+const brainGame = (type, dx, floor = 5) => {
+  const game = new Game(() => {}, 5, 'castle'); game.start(); resolveModal(game); game.loadFloor(floor); game.enemies = []; game.traps = []; game.obstacles = []; game.platforms = [];
+  const p = game.player; p.x = 700; p.invulnerable = 0; p.blood = 150; game.spawnEnemy(type, p.x + dx, 0);
+  const e = game.enemies[0]; Object.assign(e, { hp: 1e5, maxHp: 1e5, action: 1, cd: 99, mixT: 99, dir: -1 });
+  return { game, p, e };
+};
+const runBot = (game, seconds, bot = createBot(), onStep = () => {}) => { const hurts = []; const real = game.onEvent; game.onEvent = ev => { if (ev.type === 'hurt') hurts.push(game.time); real(ev); }; const t1 = game.time + seconds; while (game.time < t1 && game.state === 'playing') { game.update(DT, bot.input(game)); onStep(); } return hurts; };
+
+test('the bot steps out of a rim strike box behind a shield bearer and is not hit', () => {
+  const { game, p, e } = brainGame('shield', 50); e.dir = 1; e.turn = 9; // facing away: the hero stands at its back
+  e.tell = .45; e.cd = 9; e.move = 'rimstrike'; e.warn = { kind: 'rimstrike', box: { x: e.x - 70, y: e.y - 58, w: 60, h: 58 } }; e.token = 'light';
+  assert.equal(runBot(game, 1).length, 0, 'it reads the drawn box and leaves it'); assert.ok(p.x > e.x - 10 || p.x < e.x - 70, 'and it stands outside the box');
+});
+
+test('the bot treats a planted spear as a standing box: it neither walks nor assault-dashes into it', () => {
+  const { game, p, e } = brainGame('spear', 330);
+  Object.assign(p, { frenzy: true, weapon: 'spear', blood: 190 });
+  Object.assign(e, { move: 'plant', plantT: 1.2, tell: 0, warn: { kind: 'plant', box: { x: e.x - 194, y: e.y - 54, w: 184, h: 54 } }, token: 'light' });
+  const hurts = runBot(game, 1.1, createBot(), () => { game.player.blood = Math.max(150, Math.min(190, game.player.blood)); });
+  assert.equal(hurts.length, 0, 'no hit from the planted tip'); assert.ok(p.x < e.x - 194, 'it waits outside the tip box');
+});

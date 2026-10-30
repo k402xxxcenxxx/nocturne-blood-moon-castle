@@ -56,6 +56,7 @@ function wardenHit(w, px, py) {
   if (a.kind === 'descent') { const l = a.landing; return Math.abs(px - l.x) < l.r + 14 && py > l.y - 70 && py < l.y + 20 ? w.tell : Infinity; } // shockwave on the ledge surface
   return a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
 }
+let heroVy = 0; // the hero's vertical speed while decide() runs: a lift is judged on where the feet will be at contact
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
 
 // Seconds until enemy e's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss. Reads the warn geometry the core exposes.
@@ -79,7 +80,9 @@ function hitTime(e, px, py) {
   }
   if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box, 4) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
   if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
-  if ((e.move === 'counter' || e.move === 'rising') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove, apex skeleton counter and rising slash: the drawn box
+  if ((e.move === 'counter' || e.move === 'rising' || e.move === 'rimstrike') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove and rim strike, apex skeleton counter and rising slash: the drawn box
+  if (e.move === 'lift' && w?.box) { const fy = Math.min(e.y, py + heroVy * e.tell + 775 * e.tell * e.tell); return e.tell > 0 && fy < e.y - 30 && rectHit(px, fy, w.box) ? e.tell : Infinity; } // spearman lift: only a hero whose feet are off the ground at contact
+  if (e.move === 'plant' && w?.box) return rectHit(px, py, w.box) && !e.plantHit ? (e.tell > 0 ? e.tell : .01) : Infinity; // planted spear: the tip box is live for 1.2 s after the tell
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
@@ -141,7 +144,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.cutT > 0 ? 's' : '') : '';
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.cutT > 0 || e.plantT > 0 ? 's' : '') : '';
       if (sig && sig !== r.sig && !(r.sig[0] === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
@@ -231,6 +234,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
+    heroVy = p.vy;
     const fw = castle && p.frenzy ? p.weapon : ''; // see decideWarden
     const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
     const canCast = p.magicCd <= 0 && (castle ? p.blood >= SKILL_MIN : p.lunatic || p.mp >= p.magicCost);
@@ -258,7 +262,9 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const dx = (e.x - p.x) * p.dir;
       return dx >= -e.w / 2 && dx <= p.reach + e.w / 2 && e.y >= p.y - 88 && e.y - e.h <= p.y - 4;
     };
-    const blockedBy = e => e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
+    const ownBlock = e => e.type === 'shield' && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
+    const blockedBy = e => ownBlock(e) || !!game.coverFor?.(e); // a shield in front of the hero, or one covering an ally (interpose, Phalanx)
+    const blocker = e => ownBlock(e) ? e : game.coverFor(e);
     // castle attacks have hyper armor from tell start, so a light hit cancels nothing
     const flinches = e => !castle && !e.heavy && e.type !== 'knight' && e.type !== 'boss' && e.armor <= 0 && !blockedBy(e) && e.frozen <= 0;
     const dirAway = e => Math.sign(p.x - e.x) || -p.dir;
@@ -280,6 +286,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         if (best) { o.dir = e && e.heavy ? flip(e, best.dir) : best.dir; o.urgent = true; }
         else if (e && e.type === 'skeleton' && !e.heavy && e.move !== 'stepcut' && !dashReady && p.grounded && t <= .38 + jit(e) && t >= .18) { o.jump = true; o.urgent = true; } // slash, counter or chain with no dash and no room: the 77 px hit height is cleared 0.17-0.57 s after the press
         else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= JUMP_AT + jit(e) && t >= .19) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
+        else if (e && e.move === 'plant' && p.grounded && t <= .45) { o.jump = true; o.urgent = true; o.dir = dirAway(e); } // a planted spear with no time to walk clear: jump and steer out of the box in the air (it stays live 1.2 s)
         else if (e && (e.move === 'sweep' || e.warn?.kind === 'ray') && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
@@ -291,7 +298,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
       const swing = known.find(e => canHit(e) && !blockedBy(e) && hitTime(e, p.x, p.y) === Infinity);
-      const lane = fw === 'spear' && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
+      const planted = foes.some(e => e.plantT > 0 || e.move === 'plant'); // a planted spear stops an assault dash: no chain dashes while one is down
+      const lane = fw === 'spear' && !planted && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
       if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)
       else if (swing && ready) { o.attack = true; if (swing.punishable && swing.recover > 0 && rolled.get(swing) !== swing.action) { rolled.set(swing, swing.action); rollGreedy(now); } }
       else if (target && Math.abs(target.x - p.x) < 620) {
@@ -299,7 +307,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         if (blockedBy(target) && !target.heavy) { // frontal block: Eclipse breaks the guard, otherwise walk or dash round to its back
           if (canCast && castle && p.blood >= 90 && Math.abs(dx) < 190) o.magic = true;
           else if (dashReady && Math.abs(dx) < 120 && Math.abs(dx) > 30) { o.dash = true; o.dir = face; }
-          else { goal = target.x - target.dir * 50; tol = 10; }
+          else { const b = blocker(target); goal = b.x - b.dir * 50; tol = 10; } // round to the back of the shield that blocks
         } else if (Math.abs(dx) > spacing) { goal = target.x; tol = spacing - 4; }
         else if (p.dir !== face) o.dir = face; // turn to face
       } else {
