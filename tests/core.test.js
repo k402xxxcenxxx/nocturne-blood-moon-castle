@@ -5338,3 +5338,15 @@ test('knight charge: a hero standing and swinging 160-380 px away draws a flat-1
   for (let i = 0; i < 30; i++) { b.player.attackCd = .3; b.e.y = b.player.y - 34; b.game.update(1 / 120, {}); }
   assert.ok(!evs(b.events, 'enemyHeavy').some(e => e.kind === 'dive'), 'a bat being swung at does not start a dive it would not survive');
 });
+
+test('knight upcut (QA #62 PR 2): the drawn band under the dashed line (50 px above the floor) is safe, so a hero whose feet are 30 px up is not hit; 60 px up is hit', () => {
+  // art.js draws the upcut's dashed line at the box bottom (50 px above the knight's feet) and fills the band below it as safe ground
+  for (const [feetUp, hit] of [[30, false], [60, true]]) {
+    const game = new Game(() => {}, 42, 'castle'); game.start(); game.state = 'playing'; game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
+    const player = game.player, e = enemy(game, 400, { type: 'knight' });
+    Object.assign(e, { dir: 1, cd: 99, heavyCd: 99, tell: 0, recover: 0, move: 'upcut', punishable: false, warn: { kind: 'upcut', box: { x: 410, y: FLOOR - 170, w: 90, h: 120 } } });
+    Object.assign(player, { x: 440, y: FLOOR - feetUp, grounded: false, vy: 0, invulnerable: 0, blood: 100 });
+    game.knightStrike(e, 20);
+    assert.equal(player.blood < 100, hit, `feet ${feetUp} px up: ${hit ? 'hit' : 'safe'}`);
+  }
+});
