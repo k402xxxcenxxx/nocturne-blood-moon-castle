@@ -394,6 +394,16 @@ test('a shield bearer whose turn delay ends while stunned faces the player at on
   assert.equal(shield.dir, 1);
 });
 
+// QA #62 PR 1 (P2): todo so it documents the rule without blocking CI; drop `todo` once fixed. Probe: the cover holds for the whole brace (0.9 s).
+test('shield brain: an interposing shield stops covering a posture-broken spear, even while it is bracing', { todo: 'coverFor does not check the covered ally for a stun, and the brace row returns before the interpose reset' }, () => {
+  const { game } = castle(42, 5, true);
+  const shield = enemy(game, 600, { type: 'shield' }), spear = enemy(game, 680, { type: 'spear' });
+  Object.assign(shield, { dir: -1, interposing: true, interposeFor: spear, braceT: .6 });
+  Object.assign(spear, { dir: -1, recover: 1, stun: 1.5 });
+  game.player.x = 500;
+  assert.equal(game.coverFor(spear), null, 'a stunned ally is not covered');
+});
+
 test('wind-ups are capped per stage and never start from far away', () => {
   for (const [stage, cap] of [[0, 2], [3, 3]]) {
     const { game, player } = arena();
@@ -5022,14 +5032,14 @@ test('spearman thrust: tell 0.64 s, a box fixed at tell start; a hero walking in
   assert.ok(still.e.tell > .4 && still.e.tell <= .64 && still.e.warn.kind === 'thrust', 'thrust tell'); assert.ok(!still.e.warn.aimed, 'a still hero is not aimed at');
   const w = still.e.warn.box, d = still.e.dir; assert.equal(w.w, 184); assert.ok(Math.abs(w.x - Math.min(still.e.x + d * 10, still.e.x + d * 194)) < 1);
   still.player.x -= 150; advance(still.game, .2); assert.deepEqual(still.e.warn.box, w, 'the box does not follow a hero that moves away');
-  const walk = brainFoe('spear', 300, { floor: 3 }); walk.e.speed = 0; lull(walk.game); walk.e.cd = 0; walk.e.mixT = 99; // no lunge
+  const walk = brainFoe('spear', 300, { floor: 3 }); walk.e.speed = 0; lull(walk.game); walk.e.cd = 0; walk.e.mixT = 99; walk.e.heavyCd = 99; // no lunge or pin
   for (let i = 0; i < 120 && !(walk.e.tell > 0); i++) walk.game.update(1 / 120, { right: true });
   assert.ok(walk.e.tell > 0 && walk.e.warn.aimed, 'a walking-in hero is aimed at');
   const box = { ...walk.e.warn.box }, px = walk.game.landing(walk.game.snap(), .64);
   assert.equal(box.w, 184, 'length unchanged'); assert.ok(box.x + 1 >= Math.min(walk.e.x + walk.e.dir * 10, walk.e.x + walk.e.dir * 330), 'starts 10 px or more in front of the tip');
   advance(walk.game, .2, { right: true }); assert.deepEqual(walk.e.warn.box, box, 'fixed at tell start');
   assert.ok(px > walk.player.x - 100, 'the prediction is where the hero is heading');
-  const stop = brainFoe('spear', 300, { floor: 3 }); stop.e.speed = 0; lull(stop.game); stop.e.cd = 0; stop.e.mixT = 99;
+  const stop = brainFoe('spear', 300, { floor: 3 }); stop.e.speed = 0; lull(stop.game); stop.e.cd = 0; stop.e.mixT = 99; stop.e.heavyCd = 99;
   for (let i = 0; i < 120 && !(stop.e.tell > 0); i++) stop.game.update(1 / 120, { right: true });
   const hp = stop.player.blood; advance(stop.game, .66); assert.equal(stop.player.blood, hp, 'a hero that stops short of the aimed box is not hit by the first thrust (the chained second one is aimed at where it stopped)');
   advance(stop.game, .6); assert.ok(stop.e.follows >= 1 || stop.e.tell > 0 || stop.player.blood < hp, 'a dodged thrust chains an aimed follow-up');
@@ -5235,4 +5245,22 @@ test('spearman vault, spin and pin: a vault is a 160 px move with no hitbox, spi
   const pin = brainFoe('spear', 220, { floor: 4 }); pin.e.speed = 0; pin.e.cd = 99; pin.e.jabCd = 99; lull(pin.game, .1);
   for (let i = 0; i < 80 && !pin.e.heavy; i++) pin.game.update(1 / 120, { right: true });
   assert.ok(pin.e.heavy && pin.e.heavyKind === 'pin' && pin.e.tell >= .85, 'a hero walking straight in draws the pin'); const pbox = { ...pin.e.warn.box }; advance(pin.game, .2, { right: true }); assert.deepEqual(pin.e.warn.box, pbox);
+});
+
+test('review fixes: the fired screen thrust re-checks the non-dash escape, a landed shove only pushes, coverFor skips stunned or cowering parties, the brace gap is 1.2 s, the jab tell is named jab', () => {
+  const run = escapes => { const c = screenScene(4); const real = c.game.escapes.bind(c.game); c.game.escapes = (s, a) => (a.length === 1 && a[0].t > .5 && a[0].t < .7 ? escapes : real(s, a)); runUntil(c, () => c.events.some(ev => ev.type === 'squadEnd' || (ev.type === 'enemySwing' && ev.kind === 'spear')), 14); return c; };
+  const ok = run(true), bad = run(false);
+  assert.ok(ok.events.some(ev => ev.type === 'enemyTell' && ev.enemy === 'spear' && ev.kind === 'thrust'), 'a box that leaves an escape is fired');
+  assert.ok(bad.events.some(ev => ev.type === 'squadEnd' && ev.reason === 'broken') && !bad.events.some(ev => ev.type === 'enemyTell' && ev.enemy === 'spear' && ev.kind === 'thrust'), 'a fired box with no escape breaks the pair instead');
+  const sv = brainFoe('spear', 50, { floor: 3 }); sv.e.speed = 0; sv.e.cd = 99; sv.e.jabCd = 99; sv.e.heavyCd = 99; lull(sv.game);
+  Object.assign(sv.e, { tell: .001, move: 'shove', token: 'light', warn: { kind: 'shove', box: { x: sv.e.x - 60, y: sv.e.y - 58, w: 60, h: 58 } } }); sv.player.blood = 150; const x0 = sv.player.x; advance(sv.game, .05);
+  assert.ok(Math.abs(sv.player.x - x0) >= 60, 'the shove pushes the hero back'); assert.ok(!sv.events.some(ev => ev.type === 'enemyTell' && ev.follow), 'no follow-up tell (the i-frames make it unreachable)');
+  const cv = (setup) => { const c = brainFoe('shield', 90, { floor: 4 }); const sp = enemy(c.game, c.e.x + 60, { type: 'spear', hp: 1e5 }); Object.assign(c.e, { interposing: true, interposeFor: sp, dir: -1, guardBreak: 0 }); c.player.dir = 1; setup(c.e, sp); return c.game.coverFor(sp); };
+  assert.ok(cv(() => {}) , 'baseline: the shield covers');
+  assert.equal(cv((sh, sp) => { sp.stun = 1; }), null, 'not an ally in a posture-break stun'); assert.equal(cv(sh => { sh.stun = .3; }), null, 'not while the shield is stunned');
+  assert.equal(cv(sh => { sh.frozen = 1; }), null, 'not while frozen'); assert.equal(cv(sh => { sh.bmT = .3; }), null, 'not while cowering');
+  const br = brainFoe('shield', 40, { floor: 2 }); br.e.braceCd = 0; lull(br.game); br.player.blood = 100; br.e.dir = -1; br.e.reface = 0; br.player.attack = 0;
+  br.game.update(1 / 120, {}); advance(br.game, APEX_REACT + .05); assert.ok(br.e.braceT > 0 && br.e.braceCd - br.e.braceT >= 1.1, `the next brace waits 1.2 s after this one ends (${br.e.braceCd} vs ${br.e.braceT})`);
+  const jb = brainFoe('spear', 110, { floor: 3 }); jb.e.speed = 0; jb.e.cd = 99; jb.e.heavyCd = 99; jb.e.gCd = 99; lull(jb.game); jb.e.jabCd = 0; jb.player.attackCd = .5; advance(jb.game, APEX_REACT + .1);
+  assert.ok(jb.events.some(ev => ev.type === 'enemyTell' && ev.kind === 'jab'), 'the jab announces itself as a jab');
 });

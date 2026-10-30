@@ -56,7 +56,6 @@ function wardenHit(w, px, py) {
   if (a.kind === 'descent') { const l = a.landing; return Math.abs(px - l.x) < l.r + 14 && py > l.y - 70 && py < l.y + 20 ? w.tell : Infinity; } // shockwave on the ledge surface
   return a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
 }
-let heroVy = 0; // the hero's vertical speed while decide() runs: a lift is judged on where the feet will be at contact
 const rectHit = (px, py, r, pad = 0) => px + 14 > r.x - pad && px - 14 < r.x + r.w + pad && py + pad > r.y && py - 58 < r.y + r.h + pad;
 
 // Seconds until enemy e's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss. Reads the warn geometry the core exposes.
@@ -234,7 +233,6 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     if (warden) return decideWarden(game, now, warden);
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
-    heroVy = p.vy;
     const fw = castle && p.frenzy ? p.weapon : ''; // see decideWarden
     const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
     const canCast = p.magicCd <= 0 && (castle ? p.blood >= SKILL_MIN : p.lunatic || p.mp >= p.magicCost);

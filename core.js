@@ -722,7 +722,7 @@ export class Game {
   coverFor(e) {
     if (this.mode !== 'castle' || e.type === 'boss') return null;
     const p = this.player;
-    return this.enemies.find(o => (o.twist === 'phalanx' || (o.interposing && o.interposeFor === e)) && o !== e && o.hp > 0 && o.guardBreak <= 0 && (p.x - o.x) * o.dir >= 0 && (e.x - o.x) * o.dir < 0 && Math.abs(e.x - o.x) <= PHALANX_COVER
+    return this.enemies.find(o => (o.twist === 'phalanx' || (o.interposing && o.interposeFor === e && !(o.stun > 0) && !(o.frozen > 0) && !(o.bmT > 0) && !(e.stun > 0) && !(e.frozen > 0))) && o !== e && o.hp > 0 && o.guardBreak <= 0 && (p.x - o.x) * o.dir >= 0 && (e.x - o.x) * o.dir < 0 && Math.abs(e.x - o.x) <= PHALANX_COVER
       && !this.enemies.some(a => a !== o && a !== e && a.hp > 0 && a.type !== 'boss' && (a.x - o.x) * o.dir < 0 && Math.abs(a.x - o.x) < Math.abs(e.x - o.x))) || null;
   }
   // Castle: the first sword hit on an enemy stunned by a posture break is a riposte (x1.5 damage, +5 blood); the flag is spent by that hit.
@@ -1348,7 +1348,7 @@ export class Game {
       const s = this.snap(), d = Math.abs(s.x - e.x), f = Math.sign(s.x - e.x) || e.dir;
       if (!hit || d > s.reach + 30 || Math.abs(s.y - e.y) >= 64) return;
       if (d <= 80 && this.canStrike(e, SPEAR.shoveTell)) { const box = { x: Math.min(e.x, e.x + f * 60), y: e.y - 58, w: 60, h: 58 }; Object.assign(e, { dir: f, tell: SPEAR.shoveTell, move: 'shove', cd: this.spearCd(), thrustBox: null, warn: { kind: 'shove', box } }); }
-      else if (d > 80 && this.canStrike(e, SPEAR.jabTell)) { e.dir = f; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false); }
+      else if (d > 80 && this.canStrike(e, SPEAR.jabTell)) { e.dir = f; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false, 184, null, 'jab'); }
       return;
     }
     if (!hit || Math.abs(this.snap().x - e.x) > 90 || !this.canWindUp(e)) return; // the counter only reaches 82 px
@@ -1533,7 +1533,7 @@ export class Game {
     // brace: a plunge coming down on its front is met with the shield raised (plungeStrike blocks it)
     const eclipse = s.magicCd <= 0 && (s.lunatic || s.blood >= SKILL_MIN); // Eclipse ready within 230 px in front: the raised shield covers that too (half damage, the guard holds)
     if (((s.plunge && s.plunge < 3 && d <= s.plungeRadius + 40) || (eclipse && d <= 230 && near)) && front && e.braceCd <= 0 && !this.attacking(e) && !(this.pair && this.pair.lead === e)) {
-      Object.assign(e, { braceT: SHIELD.braceT, braceCd: SHIELD.braceCd, vx: 0 });
+      Object.assign(e, { braceT: SHIELD.braceT, braceCd: SHIELD.braceT + SHIELD.braceCd, vx: 0 });
       this.emit('brainStep', { enemy: 'shield', kind: 'brace', x: e.x, y: e.y - e.h * .5 });
       return true;
     }
@@ -1547,7 +1547,7 @@ export class Game {
     // turnrush: dashed through, the hero stands behind with its dash cooling: turn and charge (a rush whose 0.9 s tell holds the turn); never delayed
     if (behind && d >= 100 && d <= 240 && s.dashCd > 0 && e.heavyCd <= 0 && e.turn <= 0) {
       const old = e.dir; e.dir = toward;
-      if (this.startHeavy(e, d, true, { noDelay: true, variant: 'turnrush', aimX: this.landing(s, .9) })) { e.vx = 0; return true; }
+      if (this.brainHeavy(e, s, d, { noDelay: true, variant: 'turnrush', aimX: this.landing(s, .9) })) { e.vx = 0; return true; }
       e.dir = old;
     }
     if (e.turn > 0 || e.reface > 0) { e.vx = 0; return true; } // recovering from a bash or about to turn: holds its old facing, the back open
@@ -1573,7 +1573,7 @@ export class Game {
     // rush: a hero walking in, a spent dash or Eclipse, in front 100-240 px out; at most one per SHIELD.rushEvery s
     if (front && d >= 100 && d <= 240 && near && e.mixT <= 0 && (s.vx * (e.x - s.x) > 100 || s.dashCd > 0 || s.magicCd > 0)) {
       e.mixT = SHIELD.rushEvery;
-      if (this.startHeavy(e, d, true)) { e.vx = 0; return true; }
+      if (this.brainHeavy(e, s, d)) { e.vx = 0; return true; }
     }
     // screen starts: a spearman behind the shield and the hero ahead of it (the shield is the lead)
     if (front && d > SHIELD.bashReach + 5 && d - SHIELD.bashReach <= SHIELD.push * SHIELD.pushSpeed * e.speed && !pr && this.floor >= 4) { // the push (1.6 s at x0.7) must reach bash range
@@ -1603,24 +1603,27 @@ export class Game {
         const tell = pr.leadAt + .6 - this.time;
         if (!this.canStrike(e, tell)) { this.endPair('broken'); return true; }
         const lx = this.landing(s, tell); // decided at tell start from the snapshot: a dash already under way lands the box on its landing, a jump on its landing spot
-        e.dir = Math.sign(lx - e.x) || pr.dir; this.spearThrust(e, s, tell, true, SPEAR.chainLen);
+        const f = Math.sign(lx - e.x) || pr.dir, fbox = this.spearBox(e, f, lx, SPEAR.chainLen);
+        if (!this.escapes(s, [{ t: tell, box: fbox }])) { this.endPair('broken'); return true; } // the box that lands must itself leave a non-dash escape
+        e.dir = f; this.spearThrust(e, s, tell, true, SPEAR.chainLen, fbox);
         Object.assign(pr, { fired: true, gap: tell + this.time - pr.leadAt });
       }
       return true;
     }
     const hold = clamp(s.reach + SPEAR.hold, 90, 190), ready = e.cd <= 0;
+    const guard = () => (s.attack > 0 || s.attackCd > 0) && d <= s.reach + 45 && dxs * e.dir > 0 && near && !this.attacking(e) && this.apexGuard(e); // used when no attack is ready
+    if (guard()) return true; // the haft first: a hero trading blows with it inside the tip meets the guard before any quick attack
     // spin (new heavy, flat 100): two sword hits inside its tip within 1 s and the hero still close: it whirls the haft round, a low box 130 px each side (!! 0.9 s, glint)
-    e.tipHits = (e.tipHits || []).filter(t => this.time - t < 1);
+    if (e.tipHits?.length) e.tipHits = e.tipHits.filter(t => this.time - t < 1);
+    else e.tipHits = [];
     if (e.tipHits.length >= 2 && d <= SPEAR.spinReach - 10 && near && e.spinCd <= 0 && this.startBrainHeavy(e, 'spin', { x: e.x - SPEAR.spinReach, y: e.y - 58, w: SPEAR.spinReach * 2, h: 58 })) { e.spinCd = SPEAR.spinCd; return true; }
     // pin (new heavy, flat 100): a hero walking straight in is pinned where it will stand at contact: a 90 px box centred on that spot, tell 0.9 s with glint
-    if (near && ((s.vx * (e.x - s.x) > SPEAR.aimSpeed && d > 120 && d <= 260 && e.mixT <= 0) || ((s.attack > 0 || s.attackCd > 0) && d > 80 && d <= s.reach + 30))) {
+    if (near && ((s.vx * (e.x - s.x) > SPEAR.aimSpeed && d > 120 && d <= 260) || ((s.attack > 0 || s.attackCd > 0) && d > 80 && d <= s.reach + 30))) {
       const f = toward, cx = this.landing(s, .9), x0 = Math.min(cx, s.x) - 60, box = { x: x0, y: e.y - 54, w: Math.abs(cx - s.x) + 120, h: 54 }; // from where the hero stands to where it will be: stopping short does not escape it
       e.mixT = SPEAR.lungeEvery; e.dir = f;
       if (this.startBrainHeavy(e, 'pin', box)) return true;
     }
     // haft guard: a hero swinging at it from the front inside its tip meets the raised haft (the apex guard: x0.25, hit 3 / plunge / Eclipse break it), then the shove or a jab
-    const guard = () => (s.attack > 0 || s.attackCd > 0) && d <= s.reach + 45 && dxs * e.dir > 0 && near && !this.attacking(e) && this.apexGuard(e); // used when no attack is ready
-    if (guard()) return true; // the haft first: a hero trading blows with it inside the tip meets the guard before any quick attack
     // plant: against a Spear frenzy (an assault dash has no i-frames) the tip box stays live for 1.2 s
     if (s.frenzy && s.weapon === 'spear' && e.plantCd <= 0 && near && d <= SPEAR.plantRange && this.canStrike(e, SPEAR.plantTell)) {
       const f = toward, box = { x: Math.min(e.x + f * 10, e.x + f * 194), y: e.y - 54, w: 184, h: 54 };
@@ -1654,9 +1657,9 @@ export class Game {
     }
     const aim = s.vx * (e.x - s.x) > SPEAR.aimSpeed;
     // lunge (the #50 heavy, 100 damage, glint): a spent dash or a hero walking in draws it from 80-240 px, at most one per SPEAR.lungeEvery s
-    if (d > 80 && d <= 240 && near && (d <= s.reach + 30 || (e.mixT <= 0 && (s.dashCd > 0 || aim)))) { e.mixT = SPEAR.lungeEvery; e.dir = toward; if (this.startHeavy(e, d, true)) { e.vx = 0; return true; } }
+    if (d > 80 && d <= 240 && near && (d <= s.reach + 30 || (e.mixT <= 0 && (s.dashCd > 0 || aim)))) { e.mixT = SPEAR.lungeEvery; e.dir = toward; if (this.brainHeavy(e, s, d)) { e.vx = 0; return true; } }
     // jab: a hero swinging or dashing inside its weapon reach (but outside the sweep) is met by a quick thrust of its own, on its own timer: standing in the tip is not a free kill
-    if (d > 80 && d <= s.reach + 30 && near && e.jabCd <= 0 && (s.attackCd > 0 || s.attack > 0 || s.dashCd > 0) && this.canStrike(e, SPEAR.jabTell)) { e.dir = toward; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false); return true; }
+    if (d > 80 && d <= s.reach + 30 && near && e.jabCd <= 0 && (s.attackCd > 0 || s.attack > 0 || s.dashCd > 0) && this.canStrike(e, SPEAR.jabTell)) { e.dir = toward; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false, 184, null, 'jab'); return true; }
     if (d <= (aim ? SPEAR.aimReach : 193) && near && ready && this.canStrike(e, SPEAR.aimTell)) { e.dir = toward; this.spearThrust(e, s, SPEAR.aimTell, aim); return true; }
     if (guard()) return true;
     walk(d < hold - 10 ? -toward * e.speed * SPEAR.back : d > hold + 10 ? toward * e.speed : 0); // out-space the hero's weapon, inside its own tip
@@ -1665,9 +1668,9 @@ export class Game {
   spearCd() { return this.brainOn({ type: "spear", hp: 1 }) ? SPEAR.cd : Math.max(1.2, 2.2 - this.stage * .12); }
   // A thrust whose box is fixed now: 10-194 px in front, or (aimed) the same 184 px centred where the hero will stand at contact.
   spearBox(e, f, cx, len) { const u0 = Math.max(10, (cx - e.x) * f - len / 2); return { x: Math.min(e.x + f * u0, e.x + f * (u0 + len)), y: e.y - 54, w: len, h: 54 }; }
-  spearThrust(e, s, tell, aim, len = 184, fixed = null) {
+  spearThrust(e, s, tell, aim, len = 184, fixed = null, move = '') {
     const f = e.dir, box = fixed || (aim ? this.spearBox(e, f, this.landing(s, tell), len) : { x: Math.min(e.x + f * 10, e.x + f * 194), y: e.y - 54, w: 184, h: 54 });
-    Object.assign(e, { tell, move: '', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'thrust', box, ...(aim ? { aimed: true } : {}) } });
+    Object.assign(e, { tell, move, cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'thrust', box, ...(aim ? { aimed: true } : {}) } });
   }
   // A dodged thrust, sweep or shove chains a second, aimed one 0.45 s later (depth 2: a third follows only if the hero answered the second with its dash or a jump): the box is centred where the dash lands (or the hero stands), on either side of the spear. Once per string.
   spearChain(e) {
@@ -1685,9 +1688,11 @@ export class Game {
     const s = this.snap(), d = Math.abs(s.x - e.x);
     if (this.state !== 'playing' || Math.abs(s.y - e.y) >= 64) return;
     e.dir = Math.sign(s.x - e.x) || e.dir; e.cd = 0;
-    if (d > 80 && d <= 240 && e.heavyCd <= 0 && this.startHeavy(e, d, true, { noDelay: true, variant: 'vault' })) return;
+    if (d > 80 && d <= 240 && e.heavyCd <= 0 && this.brainHeavy(e, s, d, { noDelay: true, variant: 'vault' })) return;
     if (d <= SPEAR.aimReach && this.canStrike(e, SPEAR.aimTell)) this.spearThrust(e, s, SPEAR.aimTell, true);
   }
+  // A forced heavy that judges the hero by the snapshot (facing and the i-frame rule included), never the live frame.
+  brainHeavy(e, s, d, opts = {}) { return this.canStrike(e, .9, 'heavy') && this.startHeavy(e, d, true, { ...opts, front: (s.x - e.x) * e.dir > 0 }); }
   // A new heavy from a brain: tell, glint and recovery come from the shared heavy code (heavyStrike on a fixed box, heavyEnd). Returns true if it started.
   startBrainHeavy(e, kind, box, tell = .9) {
     if (e.heavy || e.heavyCd > 0 || !this.canStrike(e, tell, 'heavy')) return false;
@@ -2226,12 +2231,6 @@ export class Game {
       if (hit) {
         this.hurt(dmg, e.dir);
         if (was <= 0 && this.state === 'playing' && !this.frenzyOf('heavy')) { p.x = clamp(p.x + e.dir * SPEAR.shovePush, 25, this.worldWidth - 30); this.keepBeside(p, from); }
-        if (this.state === 'playing' && Math.max(this.snap().invulnerable - (this.time - this.snap().t), p.invulnerable) < SPEAR.chainTell) {
-          const f = e.dir, u0 = Math.max(10, (p.x - e.x) * f - 92), box = { x: Math.min(e.x + f * u0, e.x + f * (u0 + 184)), y: e.y - 54, w: 184, h: 54 }; // centred where the push left the hero
-          Object.assign(e, { tell: SPEAR.chainTell, move: '', follows: 1, recover: 0, punishable: false, thrustBox: box, warn: { kind: 'thrust', box, aimed: true } });
-          this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'spear', kind: 'thrust', dir: f, follow: true });
-          return;
-        }
       }
       if (!hit && this.spearChain(e)) return;
       e.action++;
@@ -2343,7 +2342,7 @@ export class Game {
   startHeavy(e, distance, force = false, opts = {}) { // force: a brain has decided, so no heavy-chance roll; opts.noDelay: never the delayed tell, opts.variant: a brain's name for the move (turnrush)
     const p = this.player, impale = e.twist === 'impaler' && !p.grounded && distance <= SKEWER.range && (p.x - e.x) * e.dir > 0 && p.y > e.y - SKEWER.high, h = impale ? SKEWER : HEAVY[e.type]; // Impaler: a hero in the air draws the skewer
     if (!h || e.cd > 0 || e.heavyCd > 0 || e.turn > 0 || e.heavy || (!force && (e.rollT > 0 || e.reface > 0))) return false;
-    const dy = force ? 0 : Math.abs(p.y - e.y), front = (p.x - e.x) * e.dir > 0, d = e.dir; // forced (apex): the brain already checked the height on its snapshot, never the live hero
+    const dy = force ? 0 : Math.abs(p.y - e.y), front = opts.front ?? (p.x - e.x) * e.dir > 0, d = e.dir; // forced (apex): the brain already checked the height on its snapshot, never the live hero
     const ok = { cleave: distance <= 260 && dy < 82, dive: distance <= BAT_RING + 40 && p.y - p.h / 2 > e.y - e.h / 2, rush: front && distance >= 100 && distance <= 240 && dy < 64, lunge: distance > SWEEP_RANGE && distance <= 240 && dy < 64, greatswing: distance <= 110 && dy < 82,
       rite: p.grounded && distance >= RECOIL.range && distance <= RITE_RANGE, ray: front && distance > RAY.from && (distance > BLINK.range || e.blinkCd > 0) && dy < RAY.reach, skewer: true }[h.kind]; // a mage with a hero inside 120 blinks first
     if (!ok || !this.canWindUp(e, 'heavy')) return false;
