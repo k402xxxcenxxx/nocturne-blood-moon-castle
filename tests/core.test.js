@@ -5324,3 +5324,17 @@ test('herd and pincer pairs: the second contact lands 0.5-0.8 s after the first 
   for (let i = 0; i < 40 && !pn.game.pair; i++) pn.game.update(1 / 120, {});
   assert.ok(pn.game.pair?.tactic === 'pincer' && pn.e.tell >= .59, 'the knight anchors a pincer with the spearman behind the hero'); assert.ok(pn.game.pair.gap >= .5 && pn.game.pair.gap <= .8);
 });
+
+test('knight charge: a hero standing and swinging 160-380 px away draws a flat-100 rush (variant charge) with a 0.9 s tell, a glint and a path fixed at tell start; a jump clears it; a bat does not dive at the hero it is being hit by', () => {
+  const k = brainFoe('knight', 300, { floor: 8 }); k.e.speed = 0; k.e.cd = 99; lull(k.game); k.e.chargeCd = 0; k.e.heavyCd = 0; k.e.mixT = 99;
+  for (let i = 0; i < 20; i++) { k.player.attackCd = .3; k.game.update(1 / 120, {}); }
+  const ev = evs(k.events, 'enemyHeavy').find(e => e.kind === 'rush'); assert.ok(ev && ev.variant === 'charge' && ev.enemy === 'knight', 'the charge is announced'); assert.ok(k.e.tell > .7 && k.e.heavy);
+  const to = k.e.warn.to; advance(k.game, .2); assert.equal(k.e.warn.to, to, 'path fixed at tell start');
+  const hp = k.player.blood; k.player.blood = 150; const stay = k.player.blood; Object.assign(k.player, { invulnerable: 0 }); advance(k.game, 1.4); assert.ok(k.player.blood < stay, 'a hero that stands is hit');
+  const j = brainFoe('knight', 300, { floor: 8 }); j.e.speed = 0; j.e.cd = 99; lull(j.game); j.e.chargeCd = 0; j.e.heavyCd = 0; j.e.mixT = 99;
+  for (let i = 0; i < 20; i++) { j.player.attackCd = .3; j.game.update(1 / 120, {}); }
+  j.player.blood = 150; const stay2 = j.player.blood; for (let i = 0; i < 170; i++) { Object.assign(j.player, { y: FLOOR - 120, vy: 0, grounded: false, invulnerable: 0 }); j.game.update(1 / 120, {}); } assert.equal(j.player.blood, stay2, 'a jump clears the charge');
+  const b = brainFoe('bat', 60, { floor: 8 }); b.e.speed = 0; b.e.cd = 99; b.e.crossCd = 99; lull(b.game); b.e.y = b.player.y - 34; b.e.heavyCd = 0; b.e.mixT = 99; b.player.dir = 1; b.player.x = b.e.x - 60;
+  for (let i = 0; i < 30; i++) { b.player.attackCd = .3; b.e.y = b.player.y - 34; b.game.update(1 / 120, {}); }
+  assert.ok(!evs(b.events, 'enemyHeavy').some(e => e.kind === 'dive'), 'a bat being swung at does not start a dive it would not survive');
+});
