@@ -5064,7 +5064,7 @@ test('spearman pullback: a hero who dashes in to within 80 draws a 70 px hop bac
   const step = evs(events, 'brainStep').find(ev => ev.kind === 'pullback'); assert.ok(step, 'pullback announced'); assert.ok(e.bmT > 0 && !(e.tell > 0), 'a hop, not an attack');
   advance(game, .25); assert.ok(Math.abs(e.x - (x0 + 70)) < 4, `hopped 70 px (${e.x - x0})`);
   advance(game, .05);
-  assert.ok(e.tell > 0 && e.warn.kind === 'thrust' && e.tell >= .45, 'then a thrust with its full tell'); assert.ok(e.pbCd > 2, 'cooldown 3 s');
+  assert.ok(e.tell > 0 && e.warn.kind === 'thrust' && e.tell >= .45, 'then a thrust with its full tell'); assert.ok(e.pbCd > 1, 'cooldown 1.6 s');
   const calmHero = brainFoe('spear', 60, { floor: 3 }); calmHero.e.speed = 0; lull(calmHero.game); calmHero.player.x = calmHero.e.x - 60; lull(calmHero.game, .2); calmHero.e.cd = 0; advance(calmHero.game, .2);
   assert.ok(!evs(calmHero.events, 'brainStep').length, 'no dash, no pullback');
 });

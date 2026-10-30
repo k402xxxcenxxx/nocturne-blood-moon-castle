@@ -119,8 +119,8 @@ const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 
 // Brains (#62 PR 1): a castle type with a BRAINS entry decides from snap() (the hero 0.12 s ago) and answers the hero's visible state. Playtest starting points.
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4 }; // a type joins pairs from the floor after its intro
-const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 1.6, pushSpeed: .7, bash: .55, bashReach: 70, rushEvery: 3, hp: 4 };
-const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 3, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, poise: 3, dmg: 2, hp: 5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
+const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
+const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
 const BRAINS = { skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
@@ -462,8 +462,6 @@ export class Game {
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
     if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, jabCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
-    if (this.mode === 'castle' && type === 'shield' && this.apex && !this.brainOff.has('shield')) { const hp = Math.round(e.hp * SHIELD.hp); e.hp = e.maxHp = hp; } // trait lever (own row): the wall is slow to kill, it does not out-trade
-    if (this.mode === 'castle' && type === 'spear' && this.apex && !this.brainOff.has('spear')) { const hp = Math.round(e.hp * SPEAR.hp); e.hp = e.maxHp = hp; e.poise = e.maxPoise = Math.round(e.maxPoise * SPEAR.poise); } // trait lever (own row in the arms race): a 5 m spear needs the time to out-space and thrust
     if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
       e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
     }
@@ -1548,8 +1546,9 @@ export class Game {
     if (pr && pr.lead === e && !pr.armed) { // screen: call, push forward with the guard up (no attack), then the bash that opens the pair
       if (e.callT > 0) { e.callT -= dt; e.vx = 0; return true; }
       if (!(d <= SHIELD.bashReach && front)) { if (e.pushT > 0) { e.pushT -= dt; walk(e.dir * e.speed * SHIELD.pushSpeed); } return true; }
-      const partner = pr.partner, box = this.bashBox(e), sh = Math.sign(s.x - partner.x) || toward, tb = { x: Math.min(partner.x + sh * 10, partner.x + sh * 194), y: partner.y - 54, w: 184, h: 54 };
+      const partner = pr.partner, box = this.bashBox(e), sh = Math.sign(s.x - partner.x) || toward, tb = this.spearBox(partner, sh, this.landing(s, SHIELD.bash + .6), SPEAR.chainLen); // the thrust is aimed at where the hero will be 0.6 s after the bash: its walk-out, or the landing of its jump
       const plan = { areas: [{ t: SHIELD.bash, box }, { t: SHIELD.bash + .6, box: tb }], tell2: SPEAR.aimTell };
+      pr.box = tb; pr.dir = sh;
       if (near && this.pairOk(e, partner, plan) && this.canStrike(e, SHIELD.bash) && this.canStrike(partner, SPEAR.aimTell)) {
         Object.assign(e, { tell: SHIELD.bash, cd: this.lightCd(e), vx: 0 });
         Object.assign(pr, { armed: true, leadAt: this.time + SHIELD.bash });
@@ -1594,7 +1593,8 @@ export class Game {
       if (!pr.fired && this.time >= pr.leadAt - .04) {
         const tell = pr.leadAt + .6 - this.time;
         if (!this.canStrike(e, tell)) { this.endPair('broken'); return true; }
-        e.dir = toward; this.spearThrust(e, s, tell, false);
+        const lx = this.landing(s, tell); // decided at tell start from the snapshot: a dash already under way lands the box on its landing, a jump on its landing spot
+        e.dir = Math.sign(lx - e.x) || pr.dir; this.spearThrust(e, s, tell, true, SPEAR.chainLen);
         Object.assign(pr, { fired: true, gap: tell + this.time - pr.leadAt });
       }
       return true;
@@ -1608,7 +1608,8 @@ export class Game {
     }
     // pullback: a hero who dashes in to within 80 draws a hop back 70 px and a thrust from the new distance
     const dashedIn = s.dash > 0 || s.dashCd > s.dashCooldown - .5, hop = e.x - toward * SPEAR.pullDist;
-    if (d <= SPEAR.liftReach - 40 && dashedIn && ready && e.pbCd <= 0 && hop > 40 && hop < W - 50) {
+    const struck = e.poiseHit > POISE_REGEN_DELAY - .35; // it took a sword hit in the last 0.35 s while the hero was inside its tip
+    if (e.pbCd <= 0 && hop > 40 && hop < W - 50 && ((d <= SPEAR.liftReach - 40 && dashedIn && ready) || (d <= s.reach + 20 && struck))) {
       Object.assign(e, { dir: toward, bmT: SPEAR.pullTime, bmV: -toward * SPEAR.pullDist / SPEAR.pullTime, bmKind: 'pullback', bmThen: 'thrust', pbCd: SPEAR.pullCd, vx: 0 });
       this.emit('brainStep', { enemy: 'spear', kind: 'pullback', x: e.x, y: e.y - e.h * .5 });
       return true;
@@ -1634,9 +1635,9 @@ export class Game {
   }
   spearCd() { return this.brainOn({ type: "spear", hp: 1 }) ? SPEAR.cd : Math.max(1.2, 2.2 - this.stage * .12); }
   // A thrust whose box is fixed now: 10-194 px in front, or (aimed) the same 184 px centred where the hero will stand at contact.
-  spearThrust(e, s, tell, aim, len = 184) {
-    const f = e.dir, u0 = aim ? Math.max(10, (this.landing(s, tell) - e.x) * f - len / 2) : 10, u1 = aim ? u0 + len : 194;
-    const box = { x: Math.min(e.x + f * u0, e.x + f * u1), y: e.y - 54, w: u1 - u0, h: 54 };
+  spearBox(e, f, cx, len) { const u0 = Math.max(10, (cx - e.x) * f - len / 2); return { x: Math.min(e.x + f * u0, e.x + f * (u0 + len)), y: e.y - 54, w: len, h: 54 }; }
+  spearThrust(e, s, tell, aim, len = 184, fixed = null) {
+    const f = e.dir, box = fixed || (aim ? this.spearBox(e, f, this.landing(s, tell), len) : { x: Math.min(e.x + f * 10, e.x + f * 194), y: e.y - 54, w: 184, h: 54 });
     Object.assign(e, { tell, move: '', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'thrust', box, ...(aim ? { aimed: true } : {}) } });
   }
   // A dodged thrust, sweep or shove chains a second, aimed one 0.45 s later (depth 2: a third follows only if the hero answered the second with its dash or a jump): the box is centred where the dash lands (or the hero stands), on either side of the spear. Once per string.
@@ -2126,7 +2127,7 @@ export class Game {
     const p = this.player;
     if (e.heavy) { this.heavyStrike(e); return; }
     e.punishable = false;
-    const castle = this.mode === 'castle', dmg = e.damage * (e.blessed > 0 ? 1.25 : 1) * (castle && e.type === 'spear' && e.move !== 'sweep' && e.move !== 'shove' && this.brainOn(e) ? SPEAR.dmg : 1); // trait lever: the long spear hits hard (thrust, lift, plant); the sweep inside the tip stays weak
+    const castle = this.mode === 'castle', dmg = e.damage * (e.blessed > 0 ? 1.25 : 1);
     if (castle && e.move === 'overhead') { this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'overhead' }); this.cutLand(e); return; } // its step already happened inside the tell
     if (castle && e.move === 'stepcut') { // the tell is over: lunge along the stored path
       Object.assign(e, { cutT: .15, cutFrom: e.x });
