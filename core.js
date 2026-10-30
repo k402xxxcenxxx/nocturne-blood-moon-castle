@@ -119,8 +119,8 @@ const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 
 // Brains (#62 PR 1): a castle type with a BRAINS entry decides from snap() (the hero 0.12 s ago) and answers the hero's visible state. Playtest starting points.
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4 }; // a type joins pairs from the floor after its intro
-const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .5, braceCd: 2, near: 80, gap: 60, speed: 1.3, call: .35, push: 1.6, pushSpeed: .7, bash: .55, bashReach: 70, rushEvery: 3 };
-const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 3, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3 };
+const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 1.6, pushSpeed: .7, bash: .55, bashReach: 70, rushEvery: 3, hp: 4 };
+const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 3, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, poise: 3, dmg: 2, hp: 5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
 const BRAINS = { skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
@@ -461,7 +461,9 @@ export class Game {
     const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
     this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
-    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, jabCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
+    if (this.mode === 'castle' && type === 'shield' && this.apex && !this.brainOff.has('shield')) { const hp = Math.round(e.hp * SHIELD.hp); e.hp = e.maxHp = hp; } // trait lever (own row): the wall is slow to kill, it does not out-trade
+    if (this.mode === 'castle' && type === 'spear' && this.apex && !this.brainOff.has('spear')) { const hp = Math.round(e.hp * SPEAR.hp); e.hp = e.maxHp = hp; e.poise = e.maxPoise = Math.round(e.maxPoise * SPEAR.poise); } // trait lever (own row in the arms race): a 5 m spear needs the time to out-space and thrust
     if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
       e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
     }
@@ -782,8 +784,9 @@ export class Game {
     }
     const noBlood = this.noBlood; this.noBlood = true; // Eclipse hits and kills give no blood
     for (const e of caught) {
-      this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
-      if (e.type === 'shield' && e.hp > 0) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
+      const braced = e.type === 'shield' && e.braceT > 0 && this.brainOn(e) && (p.x - e.x) * e.dir >= 0;
+      this.damageEnemy(e, Math.round(p.magicDamage * (1 + .35 * vortex) * (braced ? .5 : 1)), Math.sign(e.x - p.x) || p.dir, false, true, false, POISE_DAMAGE.eclipse, true);
+      if (e.type === 'shield' && e.hp > 0 && !braced) { e.guardBreak = 1.5; this.emit('guardBreak', { x: e.x, y: e.y - e.h * .55, dir: e.dir, duration: e.guardBreak }); }
     }
     this.noBlood = noBlood;
     for (const o of this.obstacles.slice()) if (Math.hypot(o.x - p.x, o.y - p.y) < radius) this.damageObstacle(o, Math.round(p.magicDamage * (1 + .35 * vortex)));
@@ -1112,7 +1115,7 @@ export class Game {
     e.guardBreak = Math.max(0, e.guardBreak - dt);
     const castle = this.mode === 'castle' && e.type !== 'boss';
     if (castle) {
-      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt); e.bsCd = Math.max(0, e.bsCd - dt); e.gCd = Math.max(0, e.gCd - dt); e.mixT = Math.max(0, e.mixT - dt); e.pbCd = Math.max(0, e.pbCd - dt); e.plantCd = Math.max(0, e.plantCd - dt); e.braceCd = Math.max(0, e.braceCd - dt); e.braceT = Math.max(0, e.braceT - dt);
+      e.steady = Math.max(0, e.steady - dt); e.poiseHit = Math.max(0, e.poiseHit - dt); e.provoke = Math.max(0, e.provoke - dt); e.counterT = Math.max(0, e.counterT - dt); e.stepRoll = Math.max(0, e.stepRoll - dt); e.glint = Math.max(0, e.glint - dt); e.crossCd = Math.max(0, e.crossCd - dt); e.blinkCd = Math.max(0, e.blinkCd - dt); e.recoilCd = Math.max(0, e.recoilCd - dt); e.bsCd = Math.max(0, e.bsCd - dt); e.gCd = Math.max(0, e.gCd - dt); e.mixT = Math.max(0, e.mixT - dt); e.pbCd = Math.max(0, e.pbCd - dt); e.jabCd = Math.max(0, e.jabCd - dt); e.plantCd = Math.max(0, e.plantCd - dt); e.braceCd = Math.max(0, e.braceCd - dt); e.braceT = Math.max(0, e.braceT - dt);
       if (e.poiseHit <= 0 && e.stun <= 0 && e.poise < e.maxPoise) e.poise = Math.min(e.maxPoise, e.poise + e.maxPoise * POISE_REGEN * dt); // posture refills after a quiet spell, never during a stun
       if (e.stun <= 0) e.riposte = false;
     }
@@ -1521,7 +1524,8 @@ export class Game {
     }
     e.interposing = false; e.interposeFor = null;
     // brace: a plunge coming down on its front is met with the shield raised (plungeStrike blocks it)
-    if (s.plunge && s.plunge < 3 && front && d <= s.plungeRadius + 40 && e.braceCd <= 0 && !this.attacking(e)) {
+    const eclipse = s.magicCd <= 0 && (s.lunatic || s.blood >= SKILL_MIN); // Eclipse ready within 230 px in front: the raised shield covers that too (half damage, the guard holds)
+    if (((s.plunge && s.plunge < 3 && d <= s.plungeRadius + 40) || (eclipse && d <= 230 && near)) && front && e.braceCd <= 0 && !this.attacking(e) && !(this.pair && this.pair.lead === e)) {
       Object.assign(e, { braceT: SHIELD.braceT, braceCd: SHIELD.braceCd, vx: 0 });
       this.emit('brainStep', { enemy: 'shield', kind: 'brace', x: e.x, y: e.y - e.h * .5 });
       return true;
@@ -1536,7 +1540,7 @@ export class Game {
     // turnrush: dashed through, the hero stands behind with its dash cooling: turn and charge (a rush whose 0.9 s tell holds the turn); never delayed
     if (behind && d >= 100 && d <= 240 && s.dashCd > 0 && e.heavyCd <= 0 && e.turn <= 0) {
       const old = e.dir; e.dir = toward;
-      if (this.startHeavy(e, d, true, { noDelay: true, variant: 'turnrush' })) { e.vx = 0; return true; }
+      if (this.startHeavy(e, d, true, { noDelay: true, variant: 'turnrush', aimX: this.landing(s, .9) })) { e.vx = 0; return true; }
       e.dir = old;
     }
     if (e.turn > 0 || e.reface > 0) { e.vx = 0; return true; } // recovering from a bash or about to turn: holds its old facing, the back open
@@ -1578,8 +1582,9 @@ export class Game {
   bashBox(e) { return { x: Math.min(e.x, e.x + e.dir * SHIELD.bashReach), y: e.y - 77, w: SHIELD.bashReach, h: 96 }; } // the bash hits a hero within 70 px in front and 77 px of height difference
   // --- Spearman: the zoner. Owns 80-194 px, weak inside its tip. ---
   spearThink(e, dt) {
+    if (!e.action) e.cd = 0; // no spawn cooldown: the first answer comes as soon as it reads one
     const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 64;
-    const walk = v => { e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
+    const walk = v => { v *= SPEAR.speedMul; e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
     if (this.cowerStart(e, s, d, toward)) return true;
     const pr = this.pair;
     if (pr && pr.partner === e) { // screen: follow 110-150 px behind the shield, then thrust past it so the contact lands 0.6 s after the shield's
@@ -1609,25 +1614,42 @@ export class Game {
       return true;
     }
     if (d <= 80 && near) { // inside the tip: the low sweep, else back off
-      if (ready && this.canStrike(e, .5)) {
-        const f = toward, box = { x: Math.min(e.x + f * 10, e.x + f * 100), y: e.y - 30, w: 90, h: 30 };
-        Object.assign(e, { dir: f, tell: .5, move: 'sweep', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
+      const shove = (e.inside || 0) % 2 === 1 || this.habit('spear') === 'jumped'; // alternate the jumpable sweep with the shove; a hero who jumps the sweep by habit gets only shoves
+      if (ready && this.canStrike(e, shove ? SPEAR.shoveTell : .5)) {
+        const f = toward, box = shove ? { x: Math.min(e.x, e.x + f * 60), y: e.y - 58, w: 60, h: 58 } : { x: Math.min(e.x + f * 10, e.x + f * 100), y: e.y - 30, w: 90, h: 30 };
+        e.inside = (e.inside || 0) + 1;
+        if (shove) Object.assign(e, { dir: f, tell: SPEAR.shoveTell, move: 'shove', cd: this.spearCd(), vx: 0, thrustBox: null, warn: { kind: 'shove', box } });
+        else Object.assign(e, { dir: f, tell: .5, move: 'sweep', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
       } else walk(-toward * e.speed * SPEAR.back);
       return true;
     }
     const aim = s.vx * (e.x - s.x) > SPEAR.aimSpeed;
     // lunge (the #50 heavy, 100 damage, glint): a spent dash or a hero walking in draws it from 80-240 px, at most one per SPEAR.lungeEvery s
     if (d > 80 && d <= 240 && near && (d <= s.reach + 30 || (e.mixT <= 0 && (s.dashCd > 0 || aim)))) { e.mixT = SPEAR.lungeEvery; e.dir = toward; if (this.startHeavy(e, d, true)) { e.vx = 0; return true; } }
+    // jab: a hero swinging or dashing inside its weapon reach (but outside the sweep) is met by a quick thrust of its own, on its own timer: standing in the tip is not a free kill
+    if (d > 80 && d <= s.reach + 30 && near && e.jabCd <= 0 && (s.attackCd > 0 || s.attack > 0 || s.dashCd > 0) && this.canStrike(e, SPEAR.jabTell)) { e.dir = toward; e.jabCd = SPEAR.jabCd; this.spearThrust(e, s, SPEAR.jabTell, false); return true; }
     if (d <= (aim ? SPEAR.aimReach : 193) && near && ready && this.canStrike(e, SPEAR.aimTell)) { e.dir = toward; this.spearThrust(e, s, SPEAR.aimTell, aim); return true; }
     walk(d < hold - 10 ? -toward * e.speed * SPEAR.back : d > hold + 10 ? toward * e.speed : 0); // out-space the hero's weapon, inside its own tip
     return true;
   }
-  spearCd() { return Math.max(1.2, 2.2 - this.stage * .12); }
+  spearCd() { return this.brainOn({ type: "spear", hp: 1 }) ? SPEAR.cd : Math.max(1.2, 2.2 - this.stage * .12); }
   // A thrust whose box is fixed now: 10-194 px in front, or (aimed) the same 184 px centred where the hero will stand at contact.
-  spearThrust(e, s, tell, aim) {
-    const f = e.dir, u0 = aim ? Math.max(10, (this.landing(s, tell) - e.x) * f - 92) : 10, u1 = aim ? u0 + 184 : 194;
+  spearThrust(e, s, tell, aim, len = 184) {
+    const f = e.dir, u0 = aim ? Math.max(10, (this.landing(s, tell) - e.x) * f - len / 2) : 10, u1 = aim ? u0 + len : 194;
     const box = { x: Math.min(e.x + f * u0, e.x + f * u1), y: e.y - 54, w: u1 - u0, h: 54 };
     Object.assign(e, { tell, move: '', cd: this.spearCd(), vx: 0, thrustBox: box, warn: { kind: 'thrust', box, ...(aim ? { aimed: true } : {}) } });
+  }
+  // A dodged thrust, sweep or shove chains a second, aimed one 0.45 s later (depth 2: a third follows only if the hero answered the second with its dash or a jump): the box is centred where the dash lands (or the hero stands), on either side of the spear. Once per string.
+  spearChain(e) {
+    const s = this.snap();
+    if (!this.brainOn(e) || this.state !== 'playing' || e.follows >= SPEAR.chainMax || (e.follows >= 1 && !(s.dashCd > 0 || !s.grounded)) || Math.max(s.invulnerable - (this.time - s.t), this.player.invulnerable) >= SPEAR.chainTell) return false;
+    const lx = this.landing(s, SPEAR.chainTell);
+    if (Math.abs(lx - e.x) > SPEAR.aimReach || Math.abs(s.y - e.y) >= 64) return false;
+    e.dir = Math.sign(lx - e.x) || e.dir; e.follows++;
+    this.spearThrust(e, s, SPEAR.chainTell, true, SPEAR.chainLen);
+    Object.assign(e, { punishable: false, recover: 0 });
+    this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'spear', kind: 'thrust', dir: e.dir, follow: true });
+    return true;
   }
   spearAfterHop(e) { // the thrust that follows a pullback, from the new distance
     const s = this.snap(), d = Math.abs(s.x - e.x);
@@ -1638,7 +1660,7 @@ export class Game {
   spearLift(e) {
     const s = this.snap(), dx = s.x - e.x, reach = SPEAR.liftReach + (this.habit('spear') === 'jumped' ? 30 : 0);
     if (!this.brainOn(e) || this.state !== 'playing' || s.grounded || Math.abs(dx) > reach || dx * e.dir < -20 || Math.max(s.invulnerable - (this.time - s.t), this.player.invulnerable) >= SPEAR.liftTell) return false;
-    const f = e.dir, warn = { kind: 'lift', box: { x: Math.min(e.x, e.x + f * 110), y: e.y - SPEAR.liftHigh, w: 110, h: SPEAR.liftHigh - SPEAR.liftLow } };
+    const f = e.dir, u0 = Math.max(0, (this.landing(s, SPEAR.liftTell) - e.x) * f - 55), warn = { kind: 'lift', aimed: true, box: { x: Math.min(e.x + f * u0, e.x + f * (u0 + 110)), y: e.y - SPEAR.liftHigh, w: 110, h: SPEAR.liftHigh } };
     Object.assign(e, { tell: SPEAR.liftTell, move: 'lift', warn, punishable: false, recover: 0, turn: 0, thrustBox: null, vx: 0 });
     this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'spear', kind: 'lift', dir: f, follow: true });
     return true;
@@ -2104,7 +2126,7 @@ export class Game {
     const p = this.player;
     if (e.heavy) { this.heavyStrike(e); return; }
     e.punishable = false;
-    const dmg = e.damage * (e.blessed > 0 ? 1.25 : 1), castle = this.mode === 'castle';
+    const castle = this.mode === 'castle', dmg = e.damage * (e.blessed > 0 ? 1.25 : 1) * (castle && e.type === 'spear' && e.move !== 'sweep' && e.move !== 'shove' && this.brainOn(e) ? SPEAR.dmg : 1); // trait lever: the long spear hits hard (thrust, lift, plant); the sweep inside the tip stays weak
     if (castle && e.move === 'overhead') { this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'overhead' }); this.cutLand(e); return; } // its step already happened inside the tell
     if (castle && e.move === 'stepcut') { // the tell is over: lunge along the stored path
       Object.assign(e, { cutT: .15, cutFrom: e.x });
@@ -2137,6 +2159,12 @@ export class Game {
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: -e.dir, boss: false, kind: 'rimstrike', area: w });
       this.noteHabit('shield', e, hit);
       if (hit) this.hurt(dmg, Math.sign(p.x - e.x) || -e.dir);
+      const s = this.snap(); // a hero who re-crosses to the shield's front within 70 px draws the bash 0.55 s after the rim, with no turn needed
+      if (this.state === 'playing' && (s.x - e.x) * e.dir > 0 && Math.abs(s.x - e.x) <= SHIELD.bashReach && Math.abs(s.y - e.y) < 82 && Math.max(s.invulnerable - (this.time - s.t), p.invulnerable) < SHIELD.bash) {
+        Object.assign(e, { tell: SHIELD.bash, recover: 0, punishable: false, cd: this.lightCd(e) });
+        this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'shield', kind: 'bash', dir: e.dir, follow: true });
+        return;
+      }
       e.action++;
       return;
     }
@@ -2145,8 +2173,27 @@ export class Game {
       Object.assign(e, { plantT: SPEAR.plantLive, plantHit: false });
       return;
     }
+    if (castle && e.type === 'spear' && e.move === 'shove') { // the haft: short and not jumpable once it lands; a hero it hits is pushed back into the tip range, where an aimed thrust follows 0.45 s later
+      const w = e.warn, hit = this.heavyHits(e, w.box), was = p.invulnerable, from = p.x;
+      Object.assign(e, { warn: null, move: '', recover: SPEAR.shoveRecover, punishable: true });
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'shove', area: w });
+      this.noteHabit('spear', e, hit);
+      if (hit) {
+        this.hurt(dmg, e.dir);
+        if (was <= 0 && this.state === 'playing' && !this.frenzyOf('heavy')) { p.x = clamp(p.x + e.dir * SPEAR.shovePush, 25, this.worldWidth - 30); this.keepBeside(p, from); }
+        if (this.state === 'playing' && Math.max(this.snap().invulnerable - (this.time - this.snap().t), p.invulnerable) < SPEAR.chainTell) {
+          const f = e.dir, u0 = Math.max(10, (p.x - e.x) * f - 92), box = { x: Math.min(e.x + f * u0, e.x + f * (u0 + 184)), y: e.y - 54, w: 184, h: 54 }; // centred where the push left the hero
+          Object.assign(e, { tell: SPEAR.chainTell, move: '', follows: 1, recover: 0, punishable: false, thrustBox: box, warn: { kind: 'thrust', box, aimed: true } });
+          this.emit('enemyTell', { x: e.x, y: e.y - e.h * .5, enemy: 'spear', kind: 'thrust', dir: f, follow: true });
+          return;
+        }
+      }
+      if (!hit && this.spearChain(e)) return;
+      e.action++;
+      return;
+    }
     if (castle && e.type === 'spear' && e.move === 'lift') {
-      const w = e.warn, hit = this.heavyHits(e, w.box) && p.y < e.y - 30; // only a hero whose feet are off the ground
+      const w = e.warn, hit = this.heavyHits(e, w.box); // a column 0-170 px above its feet, centred on the landing: it takes the hero in the air and the one who just came down
       Object.assign(e, { warn: null, move: '', recover: SPEAR.liftRecover, punishable: true });
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'lift', area: w });
       this.noteHabit('spear', e, hit);
@@ -2177,7 +2224,8 @@ export class Game {
       const spearHit = !!b && p.x + p.w / 2 > b.x && p.x - p.w / 2 < b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h;
       if (castle && this.brainOn(e)) this.noteHabit('spear', e, spearHit);
       if (spearHit) this.hurt(dmg, e.dir);
-      if (castle && sweep && this.spearLift(e)) return;
+      if (castle && sweep && (this.spearLift(e) || this.spearChain(e))) return;
+      if (castle && !sweep && this.spearChain(e)) return;
       if (castle && sweep) { e.recover = SWEEP_RECOVER; e.punishable = true; e.action++; return; }
     } else {
       const range = e.type === 'bat' ? 55 : e.type === 'shield' ? 70 : 82;
@@ -2267,7 +2315,7 @@ export class Game {
       warn.line = { x1: e.x + d * RAY.from, y1: y, x2: e.x + d * RAY.to, y2: y };
     } else if (h.kind === 'skewer') warn.box = { x: Math.min(e.x + d * 10, e.x + d * SKEWER.reach), y: e.y - SKEWER.high, w: SKEWER.reach - 10, h: SKEWER.high - SKEWER.low };
     else if (h.kind === 'rush') {
-      const to = clamp(e.x + d * 200, 30, this.worldWidth - 40);
+      const to = clamp(opts.aimX !== undefined ? e.x + d * Math.min(260, Math.max(120, (opts.aimX - e.x) * d + 40)) : e.x + d * 200, 30, this.worldWidth - 40);
       warn.to = to; warn.line = { x1: e.x, y1: e.y - 29, x2: to, y2: e.y - 29 };
       warn.box = { x: Math.min(e.x, to) - e.w / 2, y: e.y - 58, w: Math.abs(to - e.x) + e.w, h: 58 };
     } else Object.assign(warn, this.diveLine(e));
