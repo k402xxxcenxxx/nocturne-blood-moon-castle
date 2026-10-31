@@ -547,7 +547,7 @@ export class Game {
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
-        this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy); if (b.hex && this.lastHurt === this.time) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
+        if (this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy) && b.hex) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
@@ -2019,7 +2019,7 @@ export class Game {
   }
   // Prism (elite mage): the bolt becomes a fan of three, aimed once at tell start; the lines are exposed in warn.lines and the shots follow them exactly.
   fan(e, aim = null, dist = 0) {
-    const p = this.player, o = { x: e.x, y: e.y - e.h * .6 }, base = aim ?? Math.atan2(p.y - 30 - o.y, p.x - o.x), spread = aim === null ? 1 : Math.min(4, Math.max(1, 40 / (Math.max(dist, 1) * .3))); // a brain keeps the gaps between the three lines at least the hero's width
+    const p = this.player, o = { x: e.x, y: e.y - e.h * .6 }, base = aim ?? Math.atan2(p.y - 30 - o.y, p.x - o.x), spread = aim === null ? 1 : Math.min(4, Math.max(1, Math.asin(Math.min(1, 43 / Math.max(dist, 1))) / .3)); // a brain keeps the gaps between the three lines at least the hero's width
     return { kind: 'bolt', base, lines: PRISM_FAN.map(a => a * spread).map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(base + a) * RAY.to, y2: o.y + Math.sin(base + a) * RAY.to, angle: base + a })) };
   }
   // Bat `crossover` (read: the hero faces the bat within 140): 0.5 s over the hero's head to 60 px behind them. Not an attack: no hitbox, no tell, no token, so no hyper armor either
@@ -2658,7 +2658,7 @@ export class Game {
     }
     if (e.heavyKind === 'rite') { // ground-centred disc: a grounded hero inside it is hit, a high jump clears it
       const c = w.circles[0];
-      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) { this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true); if (this.brainOn(e) && this.lastHurt === this.time) this.hex(e.type); }
+      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) { if (this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true) && this.brainOn(e)) this.hex(e.type); }
       this.heavyEnd(e);
       return;
     }
@@ -2678,7 +2678,7 @@ export class Game {
     const k = 1 - e.strikeT / e.strikeMax;
     if (e.heavyKind === 'ray') {
       e.vx = 0;
-      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; this.hurt(e.dmg, e.dir, false, true); if (this.brainOn(e) && e.type === 'mage' && this.lastHurt === this.time) this.hex(e.type); }
+      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; if (this.hurt(e.dmg, e.dir, false, true) && this.brainOn(e) && e.type === 'mage') this.hex(e.type); }
     } else if (e.heavyKind === 'rush') {
       e.x = e.from.x + (w.to - e.from.x) * k; e.vx = (e.x - prevX) / dt;
       if (this.collideEnemy(e, prevX, dt)) { w.to = e.x; e.strikeT = 0; } // a barricade stops the rush
@@ -2723,12 +2723,12 @@ export class Game {
     this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += actual;
     this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual, heavy, debt: numb ? p.debt : 0 });
-    if (numb) return;
-    if (castle ? p.blood === 0 : p.hp === 0) this.heroDown(heavy); else this.checkFrenzy();
+    if (!numb) { if (castle ? p.blood === 0 : p.hp === 0) this.heroDown(heavy); else this.checkFrenzy(); }
+    return true; // the hit landed (not absorbed by i-frames)
   }
   heroDown(heavy, cause = '') {
     const p = this.player;
-    this.state = 'dead'; p.plunge = 0; p.move = ''; this.endFrenzy(); this.endFight(false);
+    this.state = 'dead'; this.curseT = 0; p.plunge = 0; p.move = ''; this.endFrenzy(); this.endFight(false);
     this.emit('death', { heavy, cause });
   }
   finishStage() {

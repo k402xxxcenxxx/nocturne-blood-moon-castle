@@ -5414,7 +5414,7 @@ test('mage: highray after a jump habit (80-96 px line), blink + bolt, no bolt wh
 test('prism fan keeps its gaps at least the hero width; shrieker bounce, phalanx, impaler, oathsworn and the i-frame shadow of a flying heavy', () => {
   const pr = brainFoe('mage', 60, { floor: 9 }); pr.e.twist = 'prism'; pr.e.speed = 0; pr.e.cd = 99; pr.e.blinkCd = 99; lull(pr.game, .2); pr.e.cd = 0; pr.player.blood = 10; advance(pr.game, APEX_REACT + .1);
   const ln = pr.e.warn?.lines; assert.ok(ln && ln.length === 3, 'a fan'); const hx = pr.player.x, dist = Math.hypot(hx - ln[0].x1, 0), gap = Math.abs(Math.sin(ln[1].angle - ln[0].angle)) * Math.max(dist, 1);
-  assert.ok(gap >= 28, `adjacent lines ${gap.toFixed(0)} px apart at the hero`);
+  assert.ok(gap - 14 >= 28, `adjacent bolts ${(gap - 14).toFixed(0)} px apart edge to edge (bolt radius 7)`);
   const ph = brainFoe('shield', 90, { floor: 7 }); ph.e.twist = 'phalanx'; ph.e.braceCd = 99; const al = enemy(ph.game, ph.e.x + 60, { type: 'skeleton', hp: 1e5 }); ph.game.brainOff = new Set(['skeleton']); Object.assign(al, { cd: 99, action: 1 });
   noSwing(ph.e); lull(ph.game); ph.player.dir = 1; for (let i = 0; i < 40; i++) { ph.player.attackCd = .5; advance(ph.game, .01); }
   assert.equal(ph.e.interposing, true, 'the Phalanx steps in front of the nearest ally even when it is not in recovery');
@@ -5444,7 +5444,7 @@ test('blood curse: a hero hurt by a priest rite or bolt or a mage ray earns no b
 });
 
 // QA #62 PR 3 (after 04538f7): the curse gate reads lastHurt === time, which an earlier landed hit in the same frame also satisfies
-test('blood curse ends when the hero dies (the death screen shows no curse)', { todo: 'heroDown freezes curseT instead of clearing it, so a cursed death screen keeps the greyed bar and the countdown' }, () => {
+test('blood curse ends when the hero dies (the death screen shows no curse)', () => {
   const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
   c.game.hex('priest'); assert.ok(c.game.curseT > 2.5, 'cursed');
   c.player.invulnerable = 0; c.player.blood = 1; c.game.hurt(50, 1);
@@ -5452,7 +5452,7 @@ test('blood curse ends when the hero dies (the death screen shows no curse)', { 
   assert.equal(c.game.curseT, 0, 'the curse ends with the hero');
 });
 
-test('blood curse: a rite blocked by i-frames in the same frame as an earlier landed hit starts no curse', { todo: 'hex gate checks lastHurt === time, which a hit that landed earlier in the frame also satisfies; a blocked rite then cursed' }, () => {
+test('blood curse: a rite blocked by i-frames in the same frame as an earlier landed hit starts no curse', () => {
   const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
   c.game.hurt(10, 1); // a landed hit this frame: the i-frames now cover the rite
   assert.equal(c.game.curseT, 0, 'the plain hit itself does not curse');
