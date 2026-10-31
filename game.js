@@ -97,8 +97,8 @@ function recordResult(win) { if (game.mode === 'castle') return; if (game.mode =
 function handleEvent(e) {
   const sfx = { enemyBlink: 'mageShimmer', enemyBlinked: 'mageBlink', enemyRecoil: 'priestStep' }[e.type]; if (sfx) audio.play(sfx, 1); // castle caster cues that need no other feedback
   { const w = e.enemy === 'spear'; const ax = { apexStep: ['apexStep', .8], apexGuard: [w ? 'spearGuard' : 'apexGuard', e.blocked ? 1 : .7], apexCrush: [w ? 'spearCrush' : 'apexCrush', 1] }[e.type]; if (ax) audio.play(ax[0], ax[1]); }
-  { const bx = { brainStep: { interpose: 'brainInterpose', brace: 'brainBrace', pullback: 'brainPullback', vault: 'brainVault', parry: 'brainParry', flutter: 'brainFlutter' }[e.kind], cower: 'cower', parry: 'parryClang', squadCall: { herd: 'squadHerd', pincer: 'squadPincer' }[e.tactic] || 'squadCall', squadEnd: 'squadEnd' }[e.type]; if (bx) audio.play(bx, e.type === 'squadEnd' && e.reason !== 'done' ? .6 : 1); } // shield / spearman brains (#62)
-  if (e.type === 'enemyHeavy') { const h = { charge: e.enemy === 'knight' && 'tellCharge', turnrush: 'tellTurnrush', spin: 'tellSpin', pin: 'tellPin', vault: 'tellVault', herd: 'tellHerd', landing: e.enemy === 'bat' ? 'tellDiveLand' : 'tellGreatLand' }[e.variant] || (e.enemy === 'spear' && { spin: 'tellSpin', pin: 'tellPin' }[e.kind]); if (h) audio.play(h, .9); } // brain heavies layer over the shared heavyWarn // apex skeleton guard / crush / backstep (#66)
+  { const bx = { brainStep: { interpose: 'brainInterpose', brace: 'brainBrace', pullback: 'brainPullback', vault: 'brainVault', parry: 'brainParry', flutter: 'brainFlutter' }[e.kind], cower: 'cower', parry: 'parryClang', squadCall: { herd: 'squadHerd', pincer: 'squadPincer', cover: 'squadCover', crossfire: 'squadCrossfire' }[e.tactic] || 'squadCall', squadEnd: 'squadEnd' }[e.type]; if (bx) audio.play(bx, e.type === 'squadEnd' && e.reason !== 'done' ? .6 : 1); } // shield / spearman brains (#62)
+  if (e.type === 'enemyHeavy') { const h = { charge: e.enemy === 'knight' && 'tellCharge', turnrush: 'tellTurnrush', spin: 'tellSpin', pin: 'tellPin', vault: 'tellVault', herd: 'tellHerd', cover: 'tellRiteCover', high: 'tellRayHigh', crossfire: 'tellRayCross', impaler: 'tellSkewerImpale', landing: e.enemy === 'bat' ? 'tellDiveLand' : e.enemy === 'priest' ? 'tellRiteLand' : 'tellGreatLand' }[e.variant] || (e.enemy === 'spear' && { spin: 'tellSpin', pin: 'tellPin' }[e.kind]); if (h) audio.play(h, .9); } // brain heavies layer over the shared heavyWarn // apex skeleton guard / crush / backstep (#66)
   switch (e.type) {
     case 'stage': {
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
@@ -222,7 +222,7 @@ function handleEvent(e) {
     case 'enemyHeavy':
       if (e.enemy === 'king') { if (!e.branch) audio.play('heavyWarn'); const c = { slam: 'kingTellSlam', charge: 'kingTellCharge', descent: 'kingTellDescent' }[e.kind]; if (c) audio.play(c, .8); break; } // a string's charge branch already has glint + commit
       audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8);
-      { const c = { rite: 'tellRite', ray: 'tellRay', skewer: 'tellSkewer' }[e.kind] || (e.bounce && 'tellBounce') || (e.follow && 'knightCommit'); if (c) audio.play(c, .9); }
+      { const c = (e.variant === 'high' ? null : { rite: 'tellRite', ray: 'tellRay', skewer: 'tellSkewer' }[e.kind]) || (e.bounce && 'tellBounce') || (e.follow && 'knightCommit'); if (c) audio.play(c, .9); }
       if (e.bounce || e.follow) effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Shrieker second dive / Oathsworn third hit: one white ring, the knight string's commit cue
     case 'enemyGlint': audio.play('glint'); if (e.branch) audio.play('kingCommit', .9); burst(e.x, e.y, '#ffffff', 6, 120); break;
     case 'enemyTell': { // per-move cue; a tell from an enemy that does not hold an attack token plays 6 dB down
@@ -320,7 +320,7 @@ function handleEvent(e) {
       break;
     case 'trapWarn': if (Math.abs(e.x - game.player.x) < 600) audio.play('trapWarn'); break;
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
-    case 'enemyBuff': audio.play(e.posture ? 'hierophant' : 'bless', .8);
+    case 'enemyBuff': audio.play(e.posture ? 'hierophant' : 'bless', .8); if (e.targets?.length === 1) audio.play('blessPick', .7); // one ally named (a targeted bless)
       if (e.posture) for (const o of e.targets) { effects.push({ type: 'postureBless', x: o.x, y: o.y, life: .7, max: .7 }); burst(o.x, o.y, '#9fd8ff', 6, 70, 0, 2); } break; // Hierophant: a pale-blue shield ring and rising chevrons on each ally whose posture refilled
     case 'enemyBlink': effects.push({ type: 'ringIn', x: e.x, y: e.y, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }, { type: 'ringIn', x: e.toX, y: e.toY, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }); burst(e.x, e.y, '#cdb8ff', 6, 60); burst(e.toX, e.toY, '#cdb8ff', 6, 60); break;
     case 'enemyBlinked': effects.push({ type: 'wardBreak', x: e.fromX, y: e.y, life: .3, max: .3, color: '#cdb8ff', r: 50 }, { type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#e4d8ff', r: 60 }); burst(e.fromX, e.y, '#cdb8ff', 10, 120); burst(e.x, e.y, '#e4d8ff', 10, 120); break;

@@ -876,6 +876,40 @@ export class AudioSystem {
         tone('sawtooth', 220, 0.45, 0.06, 880);
         tone('sine', 1760, 0.4, 0.04, 2640);
         break;
+      case 'tellRiteLand': // priest rite at the landing: the rite bell, a lower toll under it (the circle waits where you will land)
+        tone('sine', 196, 0.45, 0.1, 185);
+        tone('triangle', 98, 0.5, 0.09, 92, 0.05);
+        tone('sine', 784, 0.3, 0.03, 780, 0.08);
+        break;
+      case 'tellRiteCover': // priest rite covering an ally: two soft bell pings, a fifth apart
+        tone('sine', 523, 0.25, 0.06, 510);
+        tone('sine', 784, 0.25, 0.05, 770, 0.1);
+        break;
+      case 'tellRayHigh': // high ray: thin, high, quick whine (no low saw) so "stay grounded" reads apart from the normal ray
+        tone('sine', 1400, 0.3, 0.05, 3200);
+        tone('sine', 2800, 0.25, 0.03, 4200, 0.04);
+        break;
+      case 'tellRayCross': // crossfire ray: the ray whine with a short echo ping
+        tone('sawtooth', 220, 0.35, 0.05, 700);
+        tone('sine', 1760, 0.12, 0.04, 2200, 0.2);
+        break;
+      case 'tellSkewerImpale': // impaler's thrown skewer: a quick metal draw and a hard double tick
+        tone('noise', 3000, 0.14, 0.09, 5200);
+        [0.08, 0.13].forEach(dl => tone('square', 2100, 0.02, 0.05, 2100, dl));
+        break;
+      case 'squadCover': // priest covers an ally: the horn pair, but soft bell on top
+        tone('sawtooth', 147, 0.2, 0.05, 150);
+        tone('sine', 220, 0.3, 0.07, 215, 0.1);
+        tone('sine', 880, 0.2, 0.03, 870, 0.12);
+        break;
+      case 'squadCrossfire': // mage crossfire: two thin rising tones answering each other
+        tone('sawtooth', 165, 0.2, 0.05, 220);
+        tone('sine', 1320, 0.14, 0.04, 1760, 0.08);
+        tone('sawtooth', 247, 0.2, 0.05, 330, 0.12);
+        break;
+      case 'blessPick': // a targeted bless names its ally: one soft low note
+        tone('sine', 165, 0.2, 0.05, 175);
+        break;
       case 'tellSkewer': // impaler skewer: slow metal draw back, a ratchet tick
         tone('noise', 2400, 0.22, 0.09, 4200);
         tone('triangle', 520, 0.2, 0.07, 780);
