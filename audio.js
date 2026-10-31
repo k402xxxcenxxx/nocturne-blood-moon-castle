@@ -212,7 +212,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10 };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, parryClang: [18, 12, 28] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -727,6 +727,15 @@ export class AudioSystem {
         tone('sawtooth', 130, 0.3, 0.07, 260);
         tone('triangle', 480, 0.1, 0.06, 360, 0.2);
         break;
+      case 'tellCharge': // knight armoured charge: three heavy plate footfalls closing up, over a rising rumble
+        [0, 0.17, 0.3].forEach((dl, i) => {
+          tone('sine', 95 - i * 8, 0.12, 0.22, 50, dl);
+          tone('noise', 900 + i * 250, 0.07, 0.12, 300, dl);
+          tone('square', 360 + i * 40, 0.05, 0.04, 300, dl);
+        });
+        tone('sawtooth', 70, 0.5, 0.09, 190);
+        tone('noise', 400, 0.5, 0.08, 1400);
+        break;
       case 'tellSpin': // spear spin: the haft whirling, four whooshes climbing in pitch
         [0, 0.1, 0.19, 0.27].forEach((dl, i) => tone('noise', 1800 + i * 700, 0.09, 0.09, 700 + i * 300, dl));
         break;
@@ -789,6 +798,61 @@ export class AudioSystem {
         [0.04, 0.08, 0.13, 0.19].forEach((dl, i) => tone('triangle', (700 - i * 110) * d, 0.06, 0.07, 260, dl));
         break;
       }
+      // Bat / knight brain cues (#62 PR 2, castle only). One sound per move; tells are fixed pitch.
+      case 'parryClang': { // knight deflects the hero's sword: the signature, a bright steel ring over a hard crack; detune avoids repeats
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 7200, 0.07, 0.2, 2200);
+        tone('triangle', 1760 * d, 0.34, 0.1, 1700 * d);
+        tone('sine', 2640 * d, 0.3, 0.05, 2600 * d, 0.01);
+        tone('sine', 170 * d, 0.1, 0.2, 100);
+        break;
+      }
+      case 'brainParry': // knight raises its blade to parry: a soft steel ready, a light slide and one faint ring
+        tone('noise', 3000, 0.1, 0.05, 5000);
+        tone('triangle', 990, 0.18, 0.04, 1180);
+        break;
+      case 'brainFlutter': // bat hops up and away: a quick high flutter of three flaps
+        [0, 0.05, 0.1].forEach((dl, i) => tone('noise', 2600 + i * 500, 0.04, 0.05, 1200, dl));
+        break;
+      case 'tellRiposte': // knight riposte: the blade snaps back, a quick falling steel hiss ending in a tick
+        tone('noise', 5200, 0.1, 0.1, 1500);
+        tone('square', 1480, 0.03, 0.04, 1480, 0.1);
+        break;
+      case 'tellUpcut': // knight upcut: a low scoop of plate rising into a thin high whistle
+        tone('sawtooth', 140, 0.2, 0.05, 520);
+        tone('triangle', 700, 0.18, 0.07, 1500, 0.04);
+        tone('noise', 1800, 0.14, 0.06, 3600);
+        break;
+      case 'tellSwoopChain': // bat second dart: the squeak doubled, two flicks falling
+        tone('square', 2300, 0.045, 0.05, 1900);
+        tone('square', 1900, 0.045, 0.05, 1500, 0.07);
+        tone('noise', 6400, 0.04, 0.09, 3000, 0.07);
+        break;
+      case 'tellDiveLand': // bat dive aimed at the landing: a thin descending shriek, high with no body
+        tone('sawtooth', 2600, 0.24, 0.05, 1100);
+        tone('noise', 5000, 0.2, 0.06, 2200);
+        break;
+      case 'tellGreatLand': // knight greatswing aimed at the landing: a deep plate groan and a long rising creak
+        tone('sawtooth', 90, 0.4, 0.07, 190);
+        tone('noise', 800, 0.35, 0.07, 1500);
+        tone('sine', 62, 0.3, 0.2, 55);
+        break;
+      case 'tellHerd': // bat herd dive: a wing flick answering the ground move, two stacked high chirps
+        tone('triangle', 1700, 0.08, 0.06, 2400);
+        tone('triangle', 2100, 0.08, 0.05, 2900, 0.08);
+        tone('noise', 4200, 0.12, 0.06, 1800, 0.04);
+        break;
+      case 'squadHerd': // bat joins a ground ally: the pair horn's low note, answered by a high flutter
+        tone('sawtooth', 147, 0.22, 0.06, 150);
+        tone('sine', 98, 0.3, 0.14, 90);
+        tone('noise', 3200, 0.14, 0.05, 1500, 0.1);
+        break;
+      case 'squadPincer': // knight and spearman close from both sides: two notes falling toward each other, a plate tap
+        tone('sawtooth', 220, 0.22, 0.06, 165);
+        tone('sawtooth', 147, 0.22, 0.06, 165, 0.1);
+        tone('sine', 98, 0.3, 0.14, 90);
+        tone('noise', 1200, 0.06, 0.06, 500, 0.2);
+        break;
       // Castle priest / mage / elite cues. Tells are fixed pitch; the two bolt casters and each elite twist get their own sound.
       case 'tellBoltPriest': // priest bolt: low breathy intone with a dull rising hiss
         tone('sine', 196, 0.2, 0.12, 233);

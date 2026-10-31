@@ -82,7 +82,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
     realHurt(amount, dir, hazard, heavy);
   };
   const bot = createBot({ skill: botSkill, seed });
-  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear']); // the #50 shield bearer and spearman (the apex skeleton stays)
+  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear', 'bat', 'knight']); // the #50 shield bearer, spearman, bat and knight (the apex skeleton stays)
   game.start();
   if (weapon in WEAPONS) { game.setWeapon(weapon); game.descend(); }
   else if (startFloor > 1) { game.setWeapon(chooseWeapon(game)); game.descend(); }

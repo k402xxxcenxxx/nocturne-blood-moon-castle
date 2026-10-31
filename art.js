@@ -470,12 +470,12 @@ const PS = { pw: 0, k: 0, km: '', slump: false, calm: false }; // k: progress of
 // Castle knight sword poses: grip x, grip y, tip x, tip y, two-handed. Tells ramp from idle to the pose; r* poses are the recoveries after that move.
 const KN = {
   idle: [23, -34, 55, -59, 0], slash: [16, -60, -34, -94, 0], overhead: [26, -74, 32, -130, 1], turn: [4, -40, -58, -30, 0], great: [12, -54, -50, -72, 1],
-  rslash: [28, -30, 56, -14, 0], roverhead: [30, -52, 36, -4, 1], rturn: [4, -40, -58, -30, 0], rgreat: [28, -30, 58, -8, 1],
+  parry: [18, -62, 54, -66, 0], upcut: [20, -24, 46, -8, 0], rslash: [28, -30, 56, -14, 0], roverhead: [30, -52, 36, -4, 1], rturn: [4, -40, -58, -30, 0], rgreat: [28, -30, 58, -8, 1],
 }; // per-frame pose inputs shared with the body drawers (set by drawEnemy; no allocation)
 const lastWarn = new WeakMap(); // the last light warning kind an enemy showed, so its recovery pose matches the move it just did
 const knS = new WeakMap(); // knight string: the warn object last seen and when, to flash the follow-up commit
 function bat(c, e, time, white) {
-  const tl = e.tell > 0, dart = tl && e.dartT > 0, coil = tl && !e.heavy && !dart, cross = e.crossT > 0, flut = PS.slump && !e.heavy;
+  const tl = e.tell > 0, dart = tl && e.dartT > 0, coil = tl && !e.heavy && !dart, cross = e.crossT > 0, flut = (PS.slump && !e.heavy) || (e.upT > 0 && !tl);
   let flap = Math.sin(time * 16 + (e.x || 0)) * 11;
   if (coil) flap = 17 + (PS.calm ? 0 : Math.sin(time * 50)); // swoop hold: wings thrown up and shivering, claws out
   else if (dart) flap = -10; // dart: wings swept back
@@ -973,7 +973,7 @@ function drawHeavyWarn(ctx, e, time) {
   const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))) : 1, d = e.dir === -1 ? -1 : 1, hot = .22 + .45 * p;
   ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; // light moves (stepcut, counter) get a thinner outline than a heavy
   const b = w.box;
-  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter' || w.kind === 'rising' || w.kind === 'sweep' || w.kind === 'slash' || w.kind === 'overhead' || w.kind === 'turnswipe' || w.kind === 'ray' || w.kind === 'skewer' || w.kind === 'rimstrike' || w.kind === 'lift' || w.kind === 'plant' || w.kind === 'shove' || w.kind === 'spin' || w.kind === 'pin') {
+  if (w.kind === 'cleave' || w.kind === 'greatswing' || w.kind === 'lunge' || w.kind === 'rush' || w.kind === 'stepcut' || w.kind === 'counter' || w.kind === 'rising' || w.kind === 'upcut' || w.kind === 'riposte' || w.kind === 'sweep' || w.kind === 'slash' || w.kind === 'overhead' || w.kind === 'turnswipe' || w.kind === 'ray' || w.kind === 'skewer' || w.kind === 'rimstrike' || w.kind === 'lift' || w.kind === 'plant' || w.kind === 'shove' || w.kind === 'spin' || w.kind === 'pin') {
     const up = w.kind === 'lift', mid = w.kind === 'spin', fw = Math.round((up ? b.h : b.w) * p), g = w.kind === 'turnswipe' || w.kind === 'rimstrike' ? -d : w.kind === 'pin' ? (Math.sign(b.x + b.w / 2 - e.x) || d) : d; ctx.fillStyle = 'rgba(255,74,60,.14)'; ctx.fillRect(b.x, b.y, b.w, b.h); // turnswipe: the box is behind the knight, so the fill grows backwards
     ctx.fillStyle = `rgba(255,74,60,${e.plantT > 0 ? .5 : hot})`; if (up) ctx.fillRect(b.x, b.y + b.h - fw, b.w, fw); else if (mid) ctx.fillRect(b.x + Math.round((b.w - fw) / 2), b.y, fw, b.h); else ctx.fillRect(g === 1 ? b.x : b.x + b.w - fw, b.y, fw, b.h); ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
     if (w.kind === 'sweep') { // low: a bright ground line, chevrons running along it and a hop arrow above, so "jump it" reads before "step back"
@@ -990,8 +990,9 @@ function drawHeavyWarn(ctx, e, time) {
       ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 3; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, my); ctx.lineTo(b.x + b.w, my); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.lineWidth = 2;
       for (let i = 0; i + 8 < b.w; i += 40) { const cx = Math.round(x0 + g * Math.min(b.w - 8, i + off)); ctx.beginPath(); ctx.moveTo(cx - g * 7, my - 6); ctx.lineTo(cx, my); ctx.lineTo(cx - g * 7, my + 6); ctx.stroke(); }
       for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); }
-    } else if (w.kind === 'rising') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up) is hit; the band below it is safe ground
-      const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, 40);
+    } else if (w.kind === 'riposte') { flowChevrons(ctx, b, g, time); // quick counter-cut straight ahead: walk back or hop it
+    } else if (w.kind === 'rising' || w.kind === 'upcut') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up; the upcut 50) is hit; the band below it is safe ground
+      const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, w.kind === 'upcut' ? 50 : 40);
       ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, ly); ctx.lineTo(b.x + b.w, ly); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
       for (let i = 0; i < 3; i++) { const cx = Math.round(b.x + b.w * (i + .5) / 3), cy = Math.round(ly - 6 - ((off + i * 8) % 24)); ctx.beginPath(); ctx.moveTo(cx - 7, cy + 6); ctx.lineTo(cx, cy - 2); ctx.lineTo(cx + 7, cy + 6); ctx.stroke(); }
     } else if (w.kind === 'skewer') { // spikes rising through the zone: only a hero in the air is inside it
@@ -1073,12 +1074,12 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   const x = Math.round(e.x || 0), y = Math.round(e.y ?? FLOOR), boss = e.type === 'boss';
   const heavy = e.heavy && !boss, windup = heavy && e.tell > 0, slump = !boss && e.recover > 0 && e.punishable && !(e.tell > 0) && !(e.strikeT > 0) && !(e.cutT > 0); // heavy and castle light recoveries
   if (!boss && e.warn && e.tell > 0) { if (!tellMax.has(e.warn)) tellMax.set(e.warn, e.tell); lastWarn.set(e, e.warn.kind); }
-  const lk = !boss && !heavy && e.warn ? e.warn.kind : '', lw = lk === 'sweep' || lk === 'slash' || lk === 'overhead' || lk === 'turnswipe' || lk === 'rimstrike' || lk === 'lift' || lk === 'plant' || lk === 'shove'; // castle light moves that draw their warn area through drawHeavyWarn
+  const lk = !boss && !heavy && e.warn ? e.warn.kind : '', lw = lk === 'sweep' || lk === 'slash' || lk === 'overhead' || lk === 'turnswipe' || lk === 'rimstrike' || lk === 'lift' || lk === 'plant' || lk === 'shove' || lk === 'riposte' || lk === 'upcut'; // castle light moves that draw their warn area through drawHeavyWarn
   const tm = tellMax.get(e.warn) || (e.type === 'spear' ? .64 : e.tell || 1), pw = windup ? Math.min(1, (tm - e.tell) / (e.delayed ? Math.max(.1, tm - .8) : tm)) : 0; // delayed: wind-up completes 0.8 s before contact (GLINT_LEAD + DELAY_EXTRA), then holds
   const hold = windup && e.delayed && pw >= 1 && !e.glinted, mv = !boss && !heavy && (e.move === 'stepcut' || e.move === 'counter' || e.move === 'overhead' || e.move === 'rising');
   PS.pw = pw; PS.calm = calm; PS.slump = slump; PS.k = windup ? pw : e.tell > 0 ? Math.min(1, (tm - e.tell) / .2) : 0; // pose inputs for the body drawers
-  const kn = e.type === 'knight' && !boss, ov = lk === 'overhead';
-  PS.km = !kn ? '' : windup ? 'great' : e.tell > 0 ? (lk === 'turnswipe' ? 'turn' : lw ? lk : '') : e.cutT > 0 && ov ? 'roverhead' : slump ? 'r' + (heavy ? 'great' : lastWarn.get(e) === 'turnswipe' ? 'turn' : lastWarn.get(e) === 'overhead' ? 'overhead' : 'slash') : '';
+  const kn = e.type === 'knight' && !boss, ov = lk === 'overhead', par = kn && e.parryT > 0; if (par) PS.k = 1; // parry: blade held across the front
+  PS.km = !kn ? '' : par ? 'parry' : windup ? 'great' : e.tell > 0 ? (lk === 'turnswipe' ? 'turn' : lk === 'riposte' ? 'slash' : lw ? lk : '') : e.cutT > 0 && ov ? 'roverhead' : slump ? 'r' + (heavy ? 'great' : lastWarn.get(e) === 'turnswipe' ? 'turn' : lastWarn.get(e) === 'overhead' ? 'overhead' : 'slash') : '';
   if (kn && e.tell > 0 && lw) { let s = knS.get(e); if (!s) { s = { w: null, t0: -9, f: false, pk: '' }; knS.set(e, s); } if (s.w !== e.warn) { s.f = s.w !== null && s.pk === 'slash' && lk !== 'slash'; s.pk = lk; s.w = e.warn; s.t0 = time; } }
   if (heavy || ((mv || lw) && e.warn)) drawHeavyWarn(ctx, e, time);
   if (mv && e.cutT > 0 && e.cutFrom != null) { ctx.save(); ctx.globalAlpha = .3 + .4 * e.cutT / .15; ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Math.round(e.cutFrom), Math.round(y - e.h / 2)); ctx.lineTo(x, Math.round(y - e.h / 2)); ctx.stroke(); ctx.restore(); } // lunge streak
@@ -1088,7 +1089,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   }
   if (windup) { ctx.save(); ctx.globalAlpha = hold && !calm ? .5 + .2 * Math.sin(time * 40) : .15 + .35 * pw; ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 24 + 6 * pw, e.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.restore(); } // red body glow grows with the tell
   if (windup && e.type === 'bat') { const ay = Math.round(y + 14 + (calm ? 0 : Math.sin(time * 12) * 3)); ctx.save(); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 10, ay); ctx.lineTo(x + 10, ay); ctx.lineTo(x, ay + 14); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); } // down arrow under the bat: it is about to drop
-  if (e.gT > 0 || e.braceT > 0) { ctx.save(); ctx.strokeStyle = '#cfe3f2'; ctx.lineWidth = 3; ctx.globalAlpha = calm ? .7 : .5 + .3 * Math.sin(time * 18); ctx.beginPath(); ctx.arc(x + (e.dir === -1 ? -1 : 1) * 16, y - 52, 30, e.dir === -1 ? Math.PI * .65 : -Math.PI * .35, e.dir === -1 ? Math.PI * 1.35 : Math.PI * .35); ctx.stroke(); ctx.restore(); } // apex guard: a pale arc in front, so a blocked hit reads as a block
+  if (e.gT > 0 || e.braceT > 0 || e.parryT > 0) { ctx.save(); ctx.strokeStyle = '#cfe3f2'; ctx.lineWidth = 3; ctx.globalAlpha = calm ? .7 : .5 + .3 * Math.sin(time * 18); ctx.beginPath(); ctx.arc(x + (e.dir === -1 ? -1 : 1) * 16, y - 52, 30, e.dir === -1 ? Math.PI * .65 : -Math.PI * .35, e.dir === -1 ? Math.PI * 1.35 : Math.PI * .35); ctx.stroke(); ctx.restore(); } // apex guard: a pale arc in front, so a blocked hit reads as a block
   if (slump) { ctx.save(); ctx.globalAlpha = calm ? .7 : .55 + .25 * Math.sin(time * 14); ctx.fillStyle = '#ffd36e'; ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - e.h / 2, 28, e.h / 2 + 5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke(); ctx.restore(); } // gold shimmer: open to punish
   if (e.type !== 'bat') shadow(ctx, x, y, boss ? (e.king ? 96 : 72) : 33);
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? (e.king ? 84 : 70) : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }

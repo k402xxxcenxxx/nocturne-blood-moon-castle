@@ -4920,10 +4920,10 @@ test('brains: moving apexThink into BRAINS leaves a skeleton-only castle floor b
   assert.equal(skeletonHash(), '0edbaf3fe1ff4c49', 'hash taken before the refactor');
 });
 
-test('brains: only castle shield bearers, spearmen and skeletons have one; brainOff switches a type back to the #50 rules', () => {
+test('brains: only castle skeletons, shield bearers, spearmen, bats and knights have one; brainOff switches a type back to the #50 rules', () => {
   const { game, player } = castle(42, 1, true);
   const types = ['skeleton', 'shield', 'spear', 'bat', 'knight', 'priest', 'mage'], foes = types.map((type, i) => enemy(game, player.x + 100 + i * 40, { type }));
-  assert.deepEqual(foes.map(e => game.brainOn(e)), [true, true, true, false, false, false, false]);
+  assert.deepEqual(foes.map(e => game.brainOn(e)), [true, true, true, true, true, false, false]);
   game.brainOff = new Set(['shield']);
   assert.equal(game.brainOn(foes[1]), false); assert.equal(game.brainOn(foes[2]), true);
   assert.equal(game.apexOn(foes[0]), true);
@@ -5263,4 +5263,116 @@ test('review fixes: the fired screen thrust re-checks the non-dash escape, a lan
   br.game.update(1 / 120, {}); advance(br.game, APEX_REACT + .05); assert.ok(br.e.braceT > 0 && br.e.braceCd - br.e.braceT >= 1.1, `the next brace waits 1.2 s after this one ends (${br.e.braceCd} vs ${br.e.braceT})`);
   const jb = brainFoe('spear', 110, { floor: 3 }); jb.e.speed = 0; jb.e.cd = 99; jb.e.heavyCd = 99; jb.e.gCd = 99; lull(jb.game); jb.e.jabCd = 0; jb.player.attackCd = .5; advance(jb.game, APEX_REACT + .1);
   assert.ok(jb.events.some(ev => ev.type === 'enemyTell' && ev.kind === 'jab'), 'the jab announces itself as a jab');
+});
+
+// ---- Brains (#62 PR 2): bat and knight ----
+test('knight parry: hit 1 swinging inside 110 px with posture above 70 raises the pose; the first frontal sword hit is deflected (no damage, no blood, pushed back 40) and a riposte follows; plunge and Eclipse are not deflected', () => {
+  const mk = (poise = 140) => { const c = brainFoe('knight', 90, { floor: 7 }); c.e.speed = 0; c.e.cd = 99; c.e.heavyCd = 99; c.e.maxPoise = 140; c.e.poise = poise; lull(c.game); c.player.dir = 1; c.player.blood = 100; return c; };
+  const raise = c => { for (let i = 0; i < 20; i++) { Object.assign(c.player, { combo: 1, attack: .03, comboWindow: .8 }); c.game.update(1 / 120, {}); } c.player.attack = 0; }; // a swing that does not itself reach (attack stays under the hit threshold)
+  const a = mk(); raise(a); assert.ok(a.e.parryT > 0 && !(a.e.tell > 0), 'the pose, not an attack'); assert.ok(evs(a.events, 'brainStep').some(ev => ev.kind === 'parry'));
+  const hp = a.e.hp, x0 = a.player.x; a.game.damageEnemy(a.e, 30, 1, false, false, false, 17);
+  assert.equal(a.e.hp, hp, 'no damage'); assert.ok(a.player.x <= x0 - 35, 'pushed back'); assert.equal(a.game.bloodOk(a.e), false, 'no blood from a deflected hit'); assert.ok(evs(a.events, 'parry').length === 1);
+  advance(a.game, .1); assert.equal(a.e.move, 'riposte'); assert.ok(a.e.tell > .3 && a.e.tell <= .45 && a.e.warn.box.w === 90, 'riposte: a light with its tell and a fixed box');
+  const none = mk(); raise(none); advance(none.game, .45); assert.ok(none.e.recover > 0 && none.e.punishable, 'a parry that nothing hits ends in a punishable recovery');
+  const pl = mk(); raise(pl); const hp2 = pl.e.hp; pl.game.inPlunge = true; pl.game.damageEnemy(pl.e, 30, 1, false, true, false, POISE_PLUNGE); pl.game.inPlunge = false; assert.ok(pl.e.hp < hp2 && pl.e.parryT > 0 === false || pl.e.hp < hp2, 'a plunge lands');
+  const ec = mk(); raise(ec); const hp3 = ec.e.hp; ec.game.damageEnemy(ec.e, 30, 1, false, true, false, 55, true); assert.ok(ec.e.hp < hp3, 'Eclipse lands');
+  const back = mk(); raise(back); const hp4 = back.e.hp; back.game.damageEnemy(back.e, 30, -1, false, false, false, 17); assert.ok(back.e.hp < hp4, 'from behind it lands');
+  const weak = mk(60); for (let i = 0; i < 20; i++) { weak.e.poise = 60; Object.assign(weak.player, { combo: 1, attack: .03, comboWindow: .8 }); weak.game.update(1 / 120, {}); } assert.equal(weak.e.parryT, 0, 'posture 70 or lower: no parry');
+});
+const POISE_PLUNGE = 45;
+
+test('knight string: a hero in the air in front within 150 at the slash draws the upcut (0.5 s tell, 10-100 box, 50-170 above its feet); greatswing at the landing; a dash habit delays it on floors 7+', () => {
+  const k = brainFoe('knight', 55, { floor: 7 }); k.e.speed = 0; k.e.heavyCd = 99; lull(k.game); k.e.cd = 0;
+  for (let i = 0; i < 300 && k.e.move !== 'slash' && !(k.e.tell > 0); i++) k.game.update(1 / 120, {});
+  assert.ok(k.e.tell > 0, 'slash tell'); while (k.e.tell > .3) k.game.update(1 / 120, {});
+  Object.assign(k.player, { y: FLOOR - 90, vy: -50, grounded: false }); advance(k.game, .15); k.player.y = FLOOR - 90; k.player.vy = 0;
+  while (k.e.tell > 0 && k.e.move !== 'upcut') { Object.assign(k.player, { y: FLOOR - 90, vy: 0, grounded: false }); k.game.update(1 / 120, {}); }
+  const up = k.e.move === 'upcut'; assert.ok(up || evs(k.events, 'enemyTell').some(ev => ev.kind === 'upcut'), 'upcut branch'); 
+  const g = brainFoe('knight', 120, { floor: 7 }); g.e.speed = 0; g.e.cd = 99; lull(g.game); g.player.dashCd = .8; g.e.mixT = 0; g.e.heavyCd = 0; advance(g.game, APEX_REACT + .05);
+  const h = evs(g.events, 'enemyHeavy').find(ev => ev.kind === 'greatswing'); assert.ok(h && h.variant === 'landing' && h.delayed === false, 'greatswing at the landing, not delayed without a habit');
+  const d = brainFoe('knight', 120, { floor: 7 }); d.e.speed = 0; d.e.cd = 99; lull(d.game); d.game.habits.knight = ['dashed', 'dashed']; d.player.dashCd = .8; d.e.mixT = 0; d.e.heavyCd = 0; advance(d.game, APEX_REACT + .05);
+  const dh = evs(d.events, 'enemyHeavy').find(ev => ev.kind === 'greatswing'); assert.ok(dh && dh.delayed === true && d.e.tell > 1.2, 'a dash habit delays it (glint still 0.4 s before contact)');
+  const low = brainFoe('knight', 120, { floor: 5 }); low.e.speed = 0; low.e.cd = 99; lull(low.game); low.game.habits.knight = ['dashed', 'dashed']; low.player.dashCd = .8; low.e.mixT = 0; low.e.heavyCd = 0; advance(low.game, APEX_REACT + .05);
+  const lh = evs(low.events, 'enemyHeavy').find(ev => ev.kind === 'greatswing'); assert.ok(!lh || lh.delayed === false, 'no delayed swing below floor 7 for a plain knight');
+});
+
+test('bat: swoop picks its moment, orbit crosses a hero who faces it, flutter away from a plunge, dive aimed at the landing; a dodged swoop chains a second one', () => {
+  const mk = (gap = 100) => { const c = brainFoe('bat', gap, { floor: 6 }); c.e.speed = 0; c.e.y = c.player.y - 34; c.e.upT = 0; c.e.crossCd = 99; return c; };
+  const settle = c => { lull(c.game); c.e.y = c.player.y - 34; c.e.crossCd = 99; };
+  const away = mk(100); away.e.cd = 99; settle(away); away.e.cd = 0; away.e.mixT = 99; away.player.dir = -1; advance(away.game, APEX_REACT + .05);
+  assert.ok(away.e.tell > 0 || evs(away.events, 'enemyTell').some(ev => ev.kind === 'swoop'), 'the hero looks away: it swoops');
+  const face = mk(100); face.e.cd = 99; settle(face); face.e.crossCd = 0; face.e.cd = 0; face.e.mixT = 99; face.player.dir = 1; advance(face.game, APEX_REACT + .05);
+  assert.ok(evs(face.events, 'enemyCross').length === 1 && !(face.e.tell > 0), 'the hero looks at it: no swoop, it orbits to the back (no hitbox)');
+  const pl = mk(60); pl.e.cd = 99; settle(pl); pl.e.fluttCd = 0; Object.assign(pl.player, { plunge: 1, plungeT: .3, y: FLOOR - 100, grounded: false }); advance(pl.game, APEX_REACT + .05);
+  assert.ok(evs(pl.events, 'brainStep').some(ev => ev.kind === 'flutter') && !(pl.e.tell > 0), 'a plunge sends it fluttering');
+  const dv = mk(150); dv.e.cd = 99; settle(dv); dv.e.heavyCd = 0; dv.e.mixT = 0; dv.player.dashCd = .8; advance(dv.game, APEX_REACT + .05);
+  const hv = evs(dv.events, 'enemyHeavy').find(ev => ev.kind === 'dive'); assert.ok(hv && hv.variant === 'landing' && dv.e.tell >= .85, 'a spent dash draws the dive'); const line = { ...dv.e.warn.line }; advance(dv.game, .3); assert.deepEqual(dv.e.warn.line, line, 'its line is fixed at tell start');
+  const ch = mk(60); ch.e.cd = 99; ch.player.dashCd = .8; settle(ch); ch.player.dashCd = .8; lull(ch.game, .15); Object.assign(ch.e, { cd: 0, mixT: 99, tell: .001, token: 'light', dartT: 0 }); ch.player.x -= 200; advance(ch.game, .05);
+  assert.ok(ch.e.follows === 1 && ch.e.tell > .6, 'a dodged swoop chains a second one into the dash cooldown');
+});
+
+test('herd and pincer pairs: the second contact lands 0.5-0.8 s after the first and obeys the pair limits', () => {
+  const hd = brainFoe('bat', 200, { floor: 8 }); const sp = enemy(hd.game, hd.player.x + 130, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); hd.e.speed = 0; hd.e.cd = 99; lull(hd.game);
+  Object.assign(sp, { tell: .3, token: 'light', thrustBox: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 }, warn: { kind: 'thrust', box: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 } } }); hd.e.heavyCd = 0; hd.game.pairCd = 0;
+  hd.game.update(1 / 120, {});
+  assert.ok(hd.game.pair?.tactic === 'herd' && hd.e.heavy && hd.e.heavyKind === 'dive', 'the bat dives onto the landing');
+  const gap = hd.e.tell - sp.tell; assert.ok(gap >= .5 && gap <= .8, `contacts ${gap} s apart`); assert.ok(hd.e.tell >= .85);
+  const hurt = brainFoe('bat', 200, { floor: 8 }); const sp2 = enemy(hurt.game, hurt.player.x + 130, { type: 'spear', hp: 1e5 }); Object.assign(sp2, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); hurt.e.speed = 0; hurt.e.cd = 99; lull(hurt.game);
+  Object.assign(sp2, { tell: .3, token: 'light', warn: { kind: 'thrust', box: { x: sp2.x - 194, y: sp2.y - 54, w: 184, h: 54 } } }); hurt.e.heavyCd = 0; hurt.game.lastHurt = hurt.game.time - .3; hurt.game.update(1 / 120, {});
+  assert.ok(!hurt.game.pair, 'none within 1 s of a hurt');
+  const pn = brainFoe('knight', 40, { floor: 9 }); const sp3 = enemy(pn.game, pn.player.x - 150, { type: 'spear', hp: 1e5 }); Object.assign(sp3, { dir: 1, action: 1, cd: 0, speed: 0 }); pn.e.speed = 0; pn.e.cd = 0; pn.e.mixT = 99; lull(pn.game); pn.e.cd = 0; sp3.cd = 0;
+  for (let i = 0; i < 40 && !pn.game.pair; i++) pn.game.update(1 / 120, {});
+  assert.ok(pn.game.pair?.tactic === 'pincer' && pn.e.tell >= .59, 'the knight anchors a pincer with the spearman behind the hero'); assert.ok(pn.game.pair.gap >= .5 && pn.game.pair.gap <= .8);
+});
+
+test('knight charge: a hero standing and swinging 160-380 px away draws a flat-100 rush (variant charge) with a 0.9 s tell, a glint and a path fixed at tell start; a jump clears it; a bat does not dive at the hero it is being hit by', () => {
+  const k = brainFoe('knight', 300, { floor: 8 }); k.e.speed = 0; k.e.cd = 99; lull(k.game); k.e.chargeCd = 0; k.e.heavyCd = 0; k.e.mixT = 99;
+  for (let i = 0; i < 20; i++) { k.player.attackCd = .3; k.game.update(1 / 120, {}); }
+  const ev = evs(k.events, 'enemyHeavy').find(e => e.kind === 'rush'); assert.ok(ev && ev.variant === 'charge' && ev.enemy === 'knight', 'the charge is announced'); assert.ok(k.e.tell > .7 && k.e.heavy);
+  const to = k.e.warn.to; advance(k.game, .2); assert.equal(k.e.warn.to, to, 'path fixed at tell start');
+  const hp = k.player.blood; k.player.blood = 150; const stay = k.player.blood; Object.assign(k.player, { invulnerable: 0 }); advance(k.game, 1.4); assert.ok(k.player.blood < stay, 'a hero that stands is hit');
+  const j = brainFoe('knight', 300, { floor: 8 }); j.e.speed = 0; j.e.cd = 99; lull(j.game); j.e.chargeCd = 0; j.e.heavyCd = 0; j.e.mixT = 99;
+  for (let i = 0; i < 20; i++) { j.player.attackCd = .3; j.game.update(1 / 120, {}); }
+  j.player.blood = 150; const stay2 = j.player.blood; for (let i = 0; i < 170; i++) { Object.assign(j.player, { y: FLOOR - 120, vy: 0, grounded: false, invulnerable: 0 }); j.game.update(1 / 120, {}); } assert.equal(j.player.blood, stay2, 'a jump clears the charge');
+  const b = brainFoe('bat', 60, { floor: 8 }); b.e.speed = 0; b.e.cd = 99; b.e.crossCd = 99; lull(b.game); b.e.y = b.player.y - 34; b.e.heavyCd = 0; b.e.mixT = 99; b.player.dir = 1; b.player.x = b.e.x - 60;
+  for (let i = 0; i < 30; i++) { b.player.attackCd = .3; b.e.y = b.player.y - 34; b.game.update(1 / 120, {}); }
+  assert.ok(!evs(b.events, 'enemyHeavy').some(e => e.kind === 'dive'), 'a bat being swung at does not start a dive it would not survive');
+});
+
+test('knight upcut (QA #62 PR 2): the drawn band under the dashed line (50 px above the floor) is safe, so a hero whose feet are 30 px up is not hit; 60 px up is hit', () => {
+  // art.js draws the upcut's dashed line at the box bottom (50 px above the knight's feet) and fills the band below it as safe ground
+  for (const [feetUp, hit] of [[30, false], [60, true]]) {
+    const game = new Game(() => {}, 42, 'castle'); game.start(); game.state = 'playing'; game.enemies = []; game.platforms = []; game.traps = []; game.obstacles = []; game.player.invulnerable = 0;
+    const player = game.player, e = enemy(game, 400, { type: 'knight' });
+    Object.assign(e, { dir: 1, cd: 99, heavyCd: 99, tell: 0, recover: 0, move: 'upcut', punishable: false, warn: { kind: 'upcut', box: { x: 410, y: FLOOR - 170, w: 90, h: 120 } } });
+    Object.assign(player, { x: 440, y: FLOOR - feetUp, grounded: false, vy: 0, invulnerable: 0, blood: 100 });
+    game.knightStrike(e, 20);
+    assert.equal(player.blood < 100, hit, `feet ${feetUp} px up: ${hit ? 'hit' : 'safe'}`);
+  }
+});
+
+test('finisher and i-frame shadow: a bat swoops at a hero left on little blood whatever the moment; a light does not land in the i-frames just before another enemy\'s heavy, nor a heavy just after a light', () => {
+  const mk = blood => { const c = brainFoe('bat', 100, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; c.e.crossCd = 99; lull(c.game); c.e.y = c.player.y - 34; c.e.cd = 0; c.e.mixT = 99; c.player.dir = 1; c.player.blood = blood; return c; };
+  const low = mk(30); advance(low.game, APEX_REACT + .1); assert.ok(low.e.tell > 0 || evs(low.events, 'enemyTell').some(ev => ev.kind === 'swoop'), 'a wounded hero is swooped at though it faces the bat');
+  const high = mk(120); advance(high.game, APEX_REACT + .1); assert.ok(!(high.e.tell > 0), 'a healthy hero facing the bat is not');
+  const c = brainFoe('spear', 200, { floor: 4 }); const kn = enemy(c.game, c.player.x + 260, { type: 'knight', hp: 1e5 }); Object.assign(kn, { heavy: true, heavyKind: 'greatswing', tell: .5 });
+  assert.equal(c.game.canStrike(c.e, .6), false, 'a light landing in the 0.8 s before the heavy\'s contact waits');
+  assert.equal(c.game.canStrike(c.e, 1.5), true, 'a light that lands well after the heavy is fine');
+  const h = brainFoe('knight', 200, { floor: 8 }); const sp = enemy(h.game, h.player.x + 260, { type: 'spear', hp: 1e5 }); Object.assign(sp, { tell: .3, warn: { kind: 'thrust', box: { x: 0, y: 0, w: 1, h: 1 } } });
+  assert.equal(h.game.canStrike(h.e, .85, 'heavy'), false, 'a heavy whose contact falls within 0.8 s after a light\'s contact waits');
+});
+
+test('PR 2 review fixes: a herd never overwrites a pincer, a knight charge is not a shield habit, a deflected swing gives no MP, the riposte and the bat read the snapshot, the bot notices the parry pose after its reaction delay', () => {
+  const hd = brainFoe('bat', 200, { floor: 8 }); const sp = enemy(hd.game, hd.player.x + 130, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); hd.e.speed = 0; hd.e.cd = 99; lull(hd.game);
+  Object.assign(sp, { tell: .3, token: 'light', warn: { kind: 'thrust', box: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 } } }); hd.e.heavyCd = 0; const keep = { tactic: 'pincer', lead: sp, partner: sp, armed: true, fired: false };
+  hd.game.pair = keep; hd.game.update(1 / 120, {}); assert.equal(hd.game.pair, keep, 'a running pincer is not replaced'); assert.ok(!hd.e.heavy, 'and the bat does not dive into it');
+  const kc = brainFoe('knight', 300, { floor: 8 }); kc.game.habits.shield = []; Object.assign(kc.e, { heavy: true, heavyKind: 'rush', warn: { kind: 'rush', box: { x: 0, y: 0, w: 1, h: 1 }, to: 0 }, tell: .001 }); advance(kc.game, .05);
+  assert.deepEqual(kc.game.habits.shield, [], 'the knight charge does not teach the shield habit');
+  const dm = brainFoe('knight', 90, { floor: 7 }); dm.e.speed = 0; dm.e.cd = 99; dm.e.heavyCd = 99; lull(dm.game); dm.player.dir = 1;
+  for (let i = 0; i < 20; i++) { Object.assign(dm.player, { combo: 1, attack: .03, comboWindow: .8 }); dm.game.update(1 / 120, {}); } dm.player.attack = 0; assert.ok(dm.e.parryT > 0);
+  dm.player.mp = 10; dm.player.attackCd = 0; dm.game.attack(); assert.ok(evs(dm.events, 'parry').length >= 1, 'the swing was deflected'); assert.equal(dm.player.mp, 10, 'and gave no MP');
+  const sn = brainFoe('knight', 300, { floor: 7 }); sn.e.speed = 0; sn.e.cd = 0; sn.e.heavyCd = 99; lull(sn.game); sn.e.cd = 0; sn.player.x = sn.e.x - 40; sn.game.update(1 / 120, {});
+  assert.ok(!(sn.e.tell > 0), 'a hero that teleported next to the knight this frame is not yet seen'); advance(sn.game, APEX_REACT + .1); assert.ok(sn.e.tell > 0, 'seen 0.12 s later');
+  const bt = brainFoe('bat', 100, { floor: 6 }); bt.e.speed = 0; bt.e.cd = 99; bt.e.crossCd = 99; lull(bt.game); bt.e.y = bt.player.y - 34; bt.e.cd = 0; bt.e.mixT = 99; bt.player.dir = 1; bt.game.update(1 / 120, {}); bt.player.dir = -1; bt.game.update(1 / 120, {});
+  assert.ok(!(bt.e.tell > 0), 'the hero turning its back this frame is not yet seen'); advance(bt.game, APEX_REACT + .1); assert.ok(bt.e.tell > 0 || evs(bt.events, 'enemyTell').some(ev => ev.kind === 'swoop'), 'seen 0.12 s later');
 });
