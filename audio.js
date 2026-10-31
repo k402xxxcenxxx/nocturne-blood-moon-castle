@@ -212,7 +212,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, parryClang: [18, 12, 28] };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, parryClang: [18, 12, 28], curse: [20, 40, 30] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -517,6 +517,11 @@ export class AudioSystem {
           tone('sine', f * 2 * d, 0.7, 0.03, undefined, 0.1 + i * 0.03);
         });
         tone('noise', 900, 0.6, 0.05, 2200, 0.05);
+        break;
+      case 'curse': // priest/mage curse: hollow choral hiss sinking downward, flat minor second under it; softer than bless
+        [146.83, 155.56].forEach((f, i) => tone('triangle', f, 0.9, 0.05, f * 0.62, i * 0.04));
+        tone('sine', 293.66, 0.7, 0.03, 170, 0.08);
+        tone('noise', 2600, 0.7, 0.05, 500);
         break;
       case 'chestOpen': { // intensity 1 = plain chest, ~1.25 = optional (richer: extra high partial and longer tail)
         const d = 0.98 + Math.random() * 0.04, rich = amount > 1.1;
