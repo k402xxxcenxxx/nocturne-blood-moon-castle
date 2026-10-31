@@ -547,7 +547,7 @@ export class Game {
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
-        const blood0 = p.blood; this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy); if (b.hex && p.blood < blood0) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
+        this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy); if (b.hex && this.lastHurt === this.time) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
@@ -1692,7 +1692,7 @@ export class Game {
   }
   // Blood curse (priest rite and bolt, mage ray): a hero these casters hurt earns no blood from hits or kills for BLOOD_CURSE s, so a wounded hero is not topped up by the melee while the casters finish it. Not in Normal or Endless.
   hex(src) {
-    if (this.mode !== 'castle') return;
+    if (this.mode !== 'castle' || this.state !== 'playing') return;
     this.curseT = BLOOD_CURSE;
     this.emit('curse', { x: this.player.x, y: this.player.y - 60, duration: BLOOD_CURSE, enemy: src });
   }
@@ -2019,7 +2019,7 @@ export class Game {
   }
   // Prism (elite mage): the bolt becomes a fan of three, aimed once at tell start; the lines are exposed in warn.lines and the shots follow them exactly.
   fan(e, aim = null, dist = 0) {
-    const p = this.player, o = { x: e.x, y: e.y - e.h * .6 }, base = aim ?? Math.atan2(p.y - 30 - o.y, p.x - o.x), spread = aim === null ? 1 : Math.max(1, 40 / (Math.max(dist, 1) * .3)); // a brain keeps the gaps between the three lines at least the hero's width
+    const p = this.player, o = { x: e.x, y: e.y - e.h * .6 }, base = aim ?? Math.atan2(p.y - 30 - o.y, p.x - o.x), spread = aim === null ? 1 : Math.min(4, Math.max(1, 40 / (Math.max(dist, 1) * .3))); // a brain keeps the gaps between the three lines at least the hero's width
     return { kind: 'bolt', base, lines: PRISM_FAN.map(a => a * spread).map(a => ({ x1: o.x, y1: o.y, x2: o.x + Math.cos(base + a) * RAY.to, y2: o.y + Math.sin(base + a) * RAY.to, angle: base + a })) };
   }
   // Bat `crossover` (read: the hero faces the bat within 140): 0.5 s over the hero's head to 60 px behind them. Not an attack: no hitbox, no tell, no token, so no hyper armor either
@@ -2658,7 +2658,7 @@ export class Game {
     }
     if (e.heavyKind === 'rite') { // ground-centred disc: a grounded hero inside it is hit, a high jump clears it
       const c = w.circles[0];
-      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) { const blood0 = p.blood; this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true); if (this.brainOn(e) && p.blood < blood0) this.hex(e.type); }
+      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) { this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true); if (this.brainOn(e) && this.lastHurt === this.time) this.hex(e.type); }
       this.heavyEnd(e);
       return;
     }
@@ -2678,7 +2678,7 @@ export class Game {
     const k = 1 - e.strikeT / e.strikeMax;
     if (e.heavyKind === 'ray') {
       e.vx = 0;
-      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; const blood0 = p.blood; this.hurt(e.dmg, e.dir, false, true); if (this.brainOn(e) && e.type === 'mage' && p.blood < blood0) this.hex(e.type); }
+      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; this.hurt(e.dmg, e.dir, false, true); if (this.brainOn(e) && e.type === 'mage' && this.lastHurt === this.time) this.hex(e.type); }
     } else if (e.heavyKind === 'rush') {
       e.x = e.from.x + (w.to - e.from.x) * k; e.vx = (e.x - prevX) / dt;
       if (this.collideEnemy(e, prevX, dt)) { w.to = e.x; e.strikeT = 0; } // a barricade stops the rush
@@ -2704,7 +2704,8 @@ export class Game {
   perfectDodge() {
     const p = this.player;
     if (p.perfect <= 0 || p.perfectUsed || p.otherInv > 0) return; // only if the dash itself stopped the hit
-    p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); this.gainBlood(5); p.thrustWindow = Math.max(p.thrustWindow, .9);
+    p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); if (this.mode === 'castle' && !this.noBlood && this.state === 'playing') this.addBlood(p.frenzy ? 2 : 5); // the curse does not stop a perfect dodge's blood
+    p.thrustWindow = Math.max(p.thrustWindow, .9);
     this.freeze = Math.max(this.freeze, .05);
     this.emit('perfectDash', { x: p.x, y: p.y - 30 });
   }
