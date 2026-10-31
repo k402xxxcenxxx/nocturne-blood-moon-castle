@@ -65,10 +65,19 @@ const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this c
 export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
 export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon frenzies (#61)
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
+export const WARDEN_HP = 1100; // user decision 2026-10-31: the boss is the gate the 5.3x regulars guard, so it carries more than the regulars it commands (was 520)
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
+// The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
+const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
+const GUARDS = { count: 2, keep: 180, from: 420, apart: .5 }; // gate guards: a skeleton and a shield bearer from the arena's ends; in a frenzy they keep 180 px away
+const BELL = { tell: 1.6, recover: 1.5, speed: 420, range: 900, gap: 1, lowTop: 60, highLo: 70, highTop: 200, at: .75, every: 30, thick: 30 }; // Phase 1 ultimate: a low ring, then a high ring 1.0 s behind it
+const GREAT = { tell: 1.8, recover: 1.6, pull: 80, near: 10, far: 330, high: 90, extra: 40, back: 160, at: .25, every: 30 }; // Phase 2 ultimate: the Great Toll
+const SPAM = { n: 2, window: 2.5 }; // two dashes in 2.5 s make the next opening heavy a delayed one
+const WARDEN_FIXED = ['gate', 'bell', 'greatToll', 'call']; // never delayed, never cut by phase 2, never followed
 const WARDEN_MOVES = { // tell and recovery in seconds; heavy ones deal a flat HEAVY_DAMAGE and glint GLINT_LEAD before contact
   sweep: { tell: .6, recover: .6 }, backhand: { tell: .5, recover: .6 },
   slam: { tell: .95, recover: 1.2, heavy: true }, charge: { tell: .9, recover: 1, heavy: true }, seize: { tell: 1.1, recover: 1.3, heavy: true },
+  gate: { tell: GATE.tell, recover: GATE.recover, heavy: true }, bell: { tell: BELL.tell, recover: BELL.recover, heavy: true }, greatToll: { tell: GREAT.tell, recover: GREAT.recover, heavy: true }, call: { tell: .8, recover: 1 },
 };
 // Warden strings: a follow-up starts at the end of a sweep, charge, slam or seize, picked by where the hero stands then; its tell is FOLLOW_TELL (heavies still glint GLINT_LEAD before contact), it is never delayed, and a pick draws at most MAX_FOLLOWS[phase] of them.
 const FOLLOW_TELL = { charge: .5, seize: .75, backhand: .5, slam: .7 }, PHASE2_RECOVER_CUT = .3, MAX_FOLLOWS = { 1: 2, 2: 3 };
@@ -173,7 +182,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
-    this.brainOff = new Set(); this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
+    this.brainOff = new Set(); this.rings = []; this.dashLog = []; this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
     this.apex = true; this.snaps = []; this.guardedHit = false; // apex skeletons (castle only); the hero snapshot ring
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
@@ -205,7 +214,7 @@ export class Game {
     this.stage = index;
     const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
-    this.tier = tier; this.gaps = []; this.snaps = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
+    this.tier = tier; this.gaps = []; this.snaps = []; this.rings = []; this.dashLog = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
     this.worldWidth = spec.width;
@@ -230,7 +239,8 @@ export class Game {
     for (let i = 0; i < regular; i++) this.spawnEnemy(rollType(i), this.mirrorX(540 + i * (spec.width - 900) / total + this.rand() * 65), tier);
     if (this.mode === 'endless' && this.floor >= ENDLESS_ELITE_FROM) for (const e of this.enemies) if (this.rand() < ENDLESS_ELITE_CHANCE) this.makeElite(e, index).bonus = true; // extra elites: no reward pick
     if (boss) {
-      if (king) this.spawnKing(spec.width - 700); else if (fight) this.spawnWarden(spec.width - 700); else this.spawnEnemy('boss', spec.width - 400, index).required = true;
+      // presence: on floor 10 a portcullis slams shut behind the hero (no damage, no solid: the arena's wall is already there)
+      if (king) this.spawnKing(spec.width - 700); else if (fight) { this.spawnWarden(spec.width - 700); if (this.apex && !this.brainOff.has('warden')) this.emit('wardenWake', { x: 40, w: GATE.w, h: GATE.h, duration: GATE.wake }); } else this.spawnEnemy('boss', spec.width - 400, index).required = true;
       // Boss arena: the centre stays flat, two raised ledges near the edges are escape routes.
       this.platforms = [this.makePlatform(60, FLOOR - 110, 190, 'cathedral', 'ledge'), this.makePlatform(spec.width - 250, FLOOR - 110, 190, 'cathedral', 'ledge')];
     } else {
@@ -456,6 +466,7 @@ export class Game {
   }
   // Damage from sword, shot, plunge or Eclipse. No statuses, poise, MP or drops; an altar takes its linked pillars down with it.
   damageObstacle(o, amount) {
+    if (o.gate) return; // a portcullis only lifts by itself
     o.hp = Math.max(0, o.hp - amount); o.flash = .12;
     this.emit('obstacleHit', { x: o.x, y: o.y - o.h / 2, amount, kind: o.kind });
     if (o.hp > 0) return;
@@ -542,6 +553,7 @@ export class Game {
     if (this.curseT > 0) this.curseT = Math.max(0, this.curseT - dt);
     this.updateTraps(dt);
     for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
+    if (this.rings.length || this.obstacles.length) this.updateWardenField(dt);
     this.updateShots(dt);
     if (this.state !== 'playing' || this.eliteBeat > 0) return; // an elite that died this frame: the beat starts now, no chest, portal or projectile step
     for (const b of this.projectiles) {
@@ -608,6 +620,7 @@ export class Game {
     if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26 || (assault && p.dash > 0)) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played; an assault dash is one at a time
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = assault ? 0 : .15; p.perfectUsed = assault;
     p.dash = .18; p.dashCd = assault ? 0 : p.dashCooldown;
+    if (this.mode === 'castle') { this.dashLog.push(this.time); if (this.dashLog.length > 6) this.dashLog.shift(); } // the Warden reads dash spam
     if (!assault) p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap; an assault has none
     p.vy = Math.min(p.vy, 0);
     this.emit('dash', { x: p.x, y: p.y, dir: p.dir, assault });
@@ -901,7 +914,7 @@ export class Game {
         this.gainBlood(8);
       }
       this.emit('kill', { x: e.x, y: e.y - e.h * .5, boss: e.type === 'boss', warden: !!e.warden, king: !!e.king });
-      if (e.warden && this.state === 'playing') { this.projectiles = []; this.pools = []; this.endFight(true); this.vigilT = 1.6; } // the Moon Gate is skipped: the second Vigil follows the kill
+      if (e.warden && this.state === 'playing') { this.projectiles = []; this.pools = []; this.rings = []; this.endWardenField(); this.endFight(true); this.vigilT = 1.6; } // the Moon Gate is skipped: the second Vigil follows the kill
       if (e.king && this.state === 'playing') { this.projectiles = []; this.pools = []; this.endFight(true); this.kingT = 1.6; } // the slice-end screen follows the kill
       if (e.required) this.emit('guards', this.guardStatus());
       if (e.affix === 'splitting') this.splitElite(e);
@@ -1044,6 +1057,7 @@ export class Game {
   canWindUp(e, kind = 'light') {
     const p = this.player;
     if (this.mode === 'castle' && e.type !== 'boss') {
+      if (e.add && this.addHeld(e)) return false;
       if (e.x - p.x < -SCREEN_LEFT || e.x - p.x > SCREEN_RIGHT) return false; // nothing attacks from off screen
       if (kind === 'support') return !this.enemies.some(o => o !== e && o.hp > 0 && o.blessRadius && o.tell > 0);
       const holders = this.enemies.filter(o => o.hp > 0 && o.token), free = this.tokenCap() - holders.length - this.gaps.length;
@@ -1187,7 +1201,8 @@ export class Game {
     }
     if (e.travel > 0) { this.bossCharge(e, dt, face); return; }
     const tellBefore = e.tell;
-    if (brain && BRAINS[e.type](this, e, dt)) { /* the brain acted */ }
+    if (brain && e.add && this.guardKeep(e, dt)) { /* a gate guard cowers in the hero's frenzy */ }
+    else if (brain && BRAINS[e.type](this, e, dt)) { /* the brain acted */ }
     else if (this.mode === 'castle' && e.type !== 'boss' && this.startHeavy(e, distance)) e.vx = 0;
     else if (e.type === 'bat') {
       if (castle && this.startCross(e, distance)) e.vx = 0; // the bat flies over the hero (no hitbox, no token)
@@ -1475,6 +1490,7 @@ export class Game {
   // May e start an attack whose contact falls contactIn s from now: it holds a token (canWindUp: token, on screen), and the contact is not inside the hero's remaining invulnerability.
   canStrike(e, contactIn, kind = 'light') {
     const s = this.snap(), left = Math.max(s.invulnerable - (this.time - s.t), this.player.invulnerable); // the live timer too: fairness outranks the 0.12 s lag when a hit lands just now
+    if (e.add) { const w = this.enemies.find(o => o.warden && o.hp > 0); if (w && w.tell > 0 && !w.heavy && Math.abs(contactIn - w.tell) < GUARDS.apart) return false; } // a gate guard's contact keeps 0.5 s from the Warden's
     for (const b of this.projectiles) { // a bolt already flying at the hero will hurt it and start 0.8 s of i-frames: a strike landing inside them would be wasted, so it waits
       if (!b.vx || b.ground || (s.x - b.x) * b.vx <= 0) continue;
       const th = (s.x - b.x) / b.vx;
@@ -2045,7 +2061,8 @@ export class Game {
   // --- The Gate Warden (#50 section 5): a boss with a super armor gauge, a Gate Toll and blood pools. It reuses the boss body (type 'boss', warden: true) but none of the King's moves. ---
   spawnWarden(x) {
     const e = this.spawnEnemy('boss', x, 0);
-    Object.assign(e, { warden: true, armored: true, required: true, hp: 520, maxHp: 520, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false });
+    Object.assign(e, { warden: true, armored: true, required: true, hp: WARDEN_HP, maxHp: WARDEN_HP, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false, bellAt: 0, tollAt: 0, gateAt: 0, called: false, stepT: 0 });
+    this.habits.warden = e.habit; // one memory: the shared noteHabit writes into it
     return e;
   }
   // Blood from a hit on the Warden: none while the gauge is up, except during a heavy's recovery (and the break stun, when the gauge is empty).
@@ -2072,6 +2089,7 @@ export class Game {
     this.cancelAttack(e);
     Object.assign(e, { bossPhase: 2, chain: '', pause: 1.1, stun: 0, breakStun: 0, vx: 0, superArmor: ARMOR_MAX, armorLock: 1.1 }); // the roar ends a break stun and restores the gauge, locked through the pause
     this.emit('wardenPhase', { phase: 2, x: e.x, y: e.y - e.h * .5 });
+    if (this.wardenBrain(e)) this.callGuards(e, false); // the roar calls the gate guards
   }
   moveWarden(e, dt) {
     const p = this.player;
@@ -2088,6 +2106,7 @@ export class Game {
     const dx = p.x - e.x, distance = Math.abs(dx);
     if (e.tell > 0) {
       e.tell -= dt; e.vx = 0;
+      if (e.move === 'greatToll') this.greatPull(e, dt);
       if (e.move === 'string' && e.tell <= GLINT_LEAD) this.kingBranch(e); // the second hit of a slash string commits at the glint
       else if (e.heavy && !e.glinted && e.tell <= GLINT_LEAD) { e.glinted = true; e.glint = .1; this.emit('enemyGlint', { x: e.x, y: e.y - e.h * .5, kind: e.move, enemy: e.king ? 'king' : 'warden', delayed: e.delayed }); }
       if (e.tell > 0) return;
@@ -2104,31 +2123,37 @@ export class Game {
     e.dir = dx >= 0 ? 1 : -1;
     if (!e.engaged) { if (distance > 900) { e.vx = 0; return; } e.engaged = true; }
     const side = e.x - p.x; // nothing attacks from off screen
-    if (e.cd <= 0 && side >= -SCREEN_LEFT && side <= SCREEN_RIGHT) {
+    const brain = this.wardenBrain(e);
+    if (e.cd <= 0 && side >= -SCREEN_LEFT && side <= SCREEN_RIGHT && !(brain && this.enemies.some(o => o.add && o.hp > 0 && o.tell > 0))) { // a gate guard's tell is finished before the Warden starts another
       if (e.king) { const pick = this.kingPick(e, distance); this.kingStart(e, pick.move, pick.delay); return; }
-      const pick = this.wardenPick(e, distance); this.wardenStart(e, pick.move, pick.delay); return;
+      const s = brain ? this.snap() : null, pick = (brain && this.wardenUlt(e, s)) || this.wardenPick(e, s ? Math.abs(s.x - e.x) : distance, s);
+      this.wardenStart(e, pick.move, pick.delay); return;
     }
     if (e.king && p.frenzy && distance < 320 && e.x - e.dir * 20 > 100 && e.x - e.dir * 20 < this.worldWidth - 100) { e.vx = -e.dir * e.speed * 1.3; e.x += e.vx * dt; return; } // kites the burn: backsteps while the hero is frenzied, unless cornered
-    e.vx = distance > (e.king ? 105 : 95) ? e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40);
+    e.vx = distance > (e.king ? 105 : 95) ? e.dir * e.speed : 0; e.x = this.wallClip(e, clamp(e.x + e.vx * dt, 30, this.worldWidth - 40));
+    if (brain && e.vx && (e.stepT -= dt) <= 0) { e.stepT = .6; this.emit('wardenStep', { x: e.x, y: FLOOR, dir: e.dir }); } // presence: each footfall shakes the screen
   }
   // Move choice. Habit memory first (two of the last three heavy answers match), then the Toll against an overfed hero, then the band's pool.
-  wardenPick(e, distance) {
-    const p = this.player, close = distance < 150, counts = {};
+  // s: the hero 0.12 s ago (the brain's view); without it the live hero is read, as before.
+  wardenPick(e, distance, s = null) {
+    const p = s || this.player, close = distance < 150, counts = {}, brain = !!s;
     for (const h of e.habit.slice(-3)) counts[h] = (counts[h] || 0) + 1;
-    const read = ['crossed', 'jumped', 'retreated'].find(k => counts[k] >= 2);
+    const read = ['crossed', 'jumped', 'retreated', 'dashed'].find(k => counts[k] >= 2);
     e.chain = ''; e.read = read || ''; e.follows = 0;
-    if (read) {
-      e.habit = [];
-      if (read === 'crossed') { e.chain = 'backhand'; return { move: close ? 'sweep' : 'charge' }; }
-      if (read === 'jumped') return close ? { move: 'slam' } : { move: 'charge', delay: true };
-      return { move: 'charge' };
-    }
-    if ((p.frenzy || p.blood > 150) && distance <= 160 && (e.lastMove !== 'seize' || p.frenzy && e.bossPhase >= 2)) return { move: 'seize' }; // phase 2 seizes a frenzied hero again and again
+    const spam = brain && (read === 'dashed' || this.dashSpam(s)); // dash spam: the next opening heavy is held 0.4 s longer, so an early dash is spent when it lands
+    if (spam) this.dashLog.length = 0;
+    const spot = brain && e.bossPhase < 3 ? this.gateSpot(e, s) : null;
+    if (read) e.habit.length = 0;
+    if (read === 'crossed') { e.chain = 'backhand'; return { move: close ? 'sweep' : 'charge', delay: spam && !close }; }
+    if (read === 'jumped') return close ? { move: 'slam', delay: spam } : { move: 'charge', delay: true };
+    if (read === 'retreated') return spot && this.time >= e.gateAt ? { move: 'gate' } : { move: 'charge', delay: spam }; // a retreating hero is penned in
+    if (brain && spot && this.time >= e.gateAt && this.rand() < GATE.pick) return { move: 'gate' };
+    if ((p.frenzy || p.blood > 150) && distance <= 160 && (e.lastMove !== 'seize' || p.frenzy && e.bossPhase >= 2)) return { move: 'seize', delay: spam }; // phase 2 seizes a frenzied hero again and again
     const approach = p.vx * (e.x - p.x) > 0 && Math.abs(p.vx) > 100;
     const pool = close ? (e.bossPhase >= 2 ? ['sweep', 'slam', 'seize', 'charge'] : ['sweep', 'slam', 'seize']) : distance <= 330 ? (approach ? ['charge', 'slam', 'seize'] : ['charge', 'slam']) : ['charge']; // mid range: the slam's floor wave covers it too
     const list = pool.filter(m => m !== e.lastMove);
-    const from = list.length ? list : pool;
-    return { move: from[Math.floor(this.rand() * from.length)] };
+    const from = list.length ? list : pool, move = from[Math.floor(this.rand() * from.length)];
+    return { move, delay: spam && WARDEN_MOVES[move].heavy };
   }
   // Starts a tell and exposes the exact hit area in e.warn. Heavies (slam, charge, seize) are held 0.4 s longer when delayed; their glint always comes GLINT_LEAD before contact.
   wardenStart(e, move, forceDelay = false, follow = false) {
@@ -2139,12 +2164,20 @@ export class Game {
     else if (move === 'backhand') warn.box = front(-120, -10, e.h);
     else if (move === 'slam') { warn.box = front(0, 112, 123); warn.wave = { x1: e.x + d * 40, y1: FLOOR - 6, x2: e.x + d * 760, y2: FLOOR - 6 }; }
     else if (move === 'seize') warn.box = front(10, 95, 80);
+    else if (move === 'gate') { // the column falls 240 px behind the hero (the side away from the Warden), fixed at tell start
+      const gx = this.gateSpot(e, this.wardenBrain(e) ? this.snap() : this.heroSnap()) ?? clamp(this.player.x + (Math.sign(this.player.x - e.x) || 1) * GATE.behind, GATE.edge, this.worldWidth - GATE.edge);
+      Object.assign(warn, { x: gx, box: { x: gx - GATE.w / 2, y: 0, w: GATE.w, h: FLOOR }, column: { x: gx, w: GATE.w, h: GATE.h, life: GATE.life } });
+    }
+    else if (move === 'bell') warn.rings = this.bellRings(e);
+    else if (move === 'greatToll') warn.box = front(GREAT.near, GREAT.far, GREAT.high);
+    else if (move === 'call') { /* the horn: no hitbox */ }
     else {
-      e.chargeTo = clamp(e.x + d * 305, 30, this.worldWidth - 40);
+      e.chargeTo = this.wallClip(e, clamp(e.x + d * 305, 30, this.worldWidth - 40));
       warn.line = { x1: e.x, y1: e.y - e.h * .5, x2: e.chargeTo, y2: e.y - e.h * .5 };
       warn.box = { x: Math.min(e.x, e.chargeTo) - e.w / 2, y: e.y - e.h, w: Math.abs(e.chargeTo - e.x) + e.w, h: e.h };
     }
-    const delayed = !!def.heavy && !follow && (forceDelay || (e.bossPhase >= 2 && this.rand() < .5)); // phase 2: any opening heavy, the seize included
+    const delayed = !!def.heavy && !follow && !WARDEN_FIXED.includes(move) && (forceDelay || (e.bossPhase >= 2 && this.rand() < .5)); // phase 2: any opening heavy, the seize included
+    if (move === 'gate') e.gateAt = this.time + GATE.cd; else if (move === 'bell') e.bellAt = this.time + BELL.every; else if (move === 'greatToll') e.tollAt = this.time + GREAT.every;
     if (move === 'slam' && e.bossPhase >= 2) warn.wave2 = { x1: e.x - d * 40, y1: FLOOR - 6, x2: e.x - d * 760, y2: FLOOR - 6 }; // phase 2: a second wave runs out behind it
     Object.assign(e, { move, lastMove: move, warn, tell: follow ? FOLLOW_TELL[move] : def.tell + (delayed ? DELAY_EXTRA : 0), follow, heavy: !!def.heavy, heavyKind: def.heavy ? move : '', delayed, glinted: false, glint: 0, punishable: false, recover: 0, vx: 0, struck: false, noted: false });
     if (def.heavy) this.emit('enemyHeavy', { x: e.x, y: e.y - e.h * .5, kind: move, enemy: 'warden', area: warn, delayed });
@@ -2152,28 +2185,30 @@ export class Game {
   }
   wardenRecover(e, move) {
     if (e.king) { this.kingRecover(e, move); return; }
-    const cut = e.bossPhase >= 2 && WARDEN_MOVES[move].heavy ? PHASE2_RECOVER_CUT : 0;
+    const cut = e.bossPhase >= 2 && WARDEN_MOVES[move].heavy && !WARDEN_FIXED.includes(move) ? PHASE2_RECOVER_CUT : 0;
     Object.assign(e, { warn: null, move: '', vx: 0, recover: Math.max(cut ? .9 : 0, WARDEN_MOVES[move].recover - cut), punishable: true, cd: Math.max(e.cd, .35) });
-    const next = this.wardenFollow(e, move);
+    const next = this.wardenFollow(e, move, this.wardenBrain(e) ? this.snap() : null);
     if (next) { e.chain = ''; e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.wardenStart(e, next, false, true); }
   }
   // Which follow-up (if any) ends a sweep, charge, slam or seize, from where the hero is at that moment (visible state only); a backhand ends the string. A crossed read always ends in the backhand.
-  wardenFollow(e, move) {
-    const p = this.player, side = e.x - p.x, behind = (p.x - e.x) * e.dir < 0, gap = Math.abs(side);
-    if (this.state !== 'playing' || move === 'backhand' || (e.follows || 0) >= MAX_FOLLOWS[e.bossPhase] || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
+  // s: the hero 0.12 s ago; the brain picks from where the hero will stand when the follow-up lands (a dash in progress adds the rest of its run), never from the live frame.
+  wardenFollow(e, move, s = null) {
+    const p = this.player, hx = s ? this.landing(s, FOLLOW_TELL.charge) : p.x, grounded = s ? s.grounded : p.grounded, side = e.x - hx, behind = (hx - e.x) * e.dir < 0, gap = Math.abs(side);
+    if (move === 'gate' && s && this.state === 'playing' && !behind && gap <= 330 && (e.follows || 0) < MAX_FOLLOWS[e.bossPhase]) return 'charge'; // the door is shut: the charge meets a hero with a wall at its back
+    if (this.state !== 'playing' || move === 'backhand' || WARDEN_FIXED.includes(move) || (e.follows || 0) >= MAX_FOLLOWS[e.bossPhase] || side < -SCREEN_LEFT || side > SCREEN_RIGHT) return '';
     if (e.chain === 'backhand') return 'backhand'; // a crossed read expects the hero behind it
     if (move === 'slam') return gap <= 330 ? 'charge' : ''; // the floor wave pins the hero to a jump; the charge meets the landing
-    if (move === 'seize' && (e.struck || !p.grounded)) return !e.struck && gap <= 200 ? 'slam' : ''; // a landed Toll ends the string; a jumped gauntlet meets the slam on the landing
+    if (move === 'seize' && (e.struck || !grounded)) return !e.struck && gap <= 200 ? 'slam' : ''; // a landed Toll ends the string; a jumped gauntlet meets the slam on the landing
     if (move === 'charge') return behind && gap <= 330 ? 'charge' : ''; // the return charge: a dash through the first one leaves the dash on cooldown; a return may draw another
     if (behind) return gap <= 140 ? 'backhand' : 'charge';
-    return gap <= 130 && p.grounded && move === 'sweep' ? 'seize' : gap <= 330 ? 'charge' : ''; // walked out: the gauntlet (after a sweep) or the charge follows
+    return gap <= 130 && grounded && move === 'sweep' ? 'seize' : gap <= 330 ? 'charge' : ''; // walked out: the gauntlet (after a sweep) or the charge follows
   }
   // How the hero answered a heavy at contact: jumped (airborne), crossed (behind the Warden), stood (in the area) or retreated (out of range).
-  noteAnswer(e, answer) { e.habit.push(answer); if (e.habit.length > 3) e.habit.shift(); }
+  noteAnswer(e, answer) { const p = this.player; if (this.wardenBrain(e) && (p.dash > 0 || p.dashCd > p.dashCooldown - .35)) answer = 'dashed'; e.habit.push(answer); if (e.habit.length > 3) e.habit.shift(); }
   wardenStrike(e) {
     const p = this.player, w = e.warn, move = e.move, d = e.dir;
     e.tell = 0;
-    const hit = p.x + p.w / 2 > w.box.x && p.x - p.w / 2 < w.box.x + w.box.w && p.y > w.box.y && p.y - p.h < w.box.y + w.box.h;
+    const hit = !!w.box && p.x + p.w / 2 > w.box.x && p.x - p.w / 2 < w.box.x + w.box.w && p.y > w.box.y && p.y - p.h < w.box.y + w.box.h;
     const answer = hit ? 'stood' : 'retreated', seen = !p.grounded ? 'jumped' : (p.x - e.x) * d < 0 ? 'crossed' : answer;
     this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: d, boss: true, kind: move, heavy: e.heavy, enemy: 'warden', area: w });
     if (move === 'charge') { e.warn = w; e.travel = .5; return; }
@@ -2184,6 +2219,14 @@ export class Game {
       if (hit) this.hurt(HEAVY_DAMAGE, d, false, true);
       for (const [wave, dir] of [[w.wave, d], [w.wave2, -d]]) if (wave) this.projectiles.push({ x: wave.x1, y: wave.y1, vx: dir * 240, vy: 0, r: 14, life: 3, damage: HEAVY_DAMAGE, heavy: true, ground: true });
       this.spawnPools(e);
+    } else if (move === 'gate') {
+      if (hit) this.hurt(HEAVY_DAMAGE, Math.sign(p.x - w.x) || d, false, true);
+      this.dropGate(w.x);
+    } else if (move === 'bell') this.ringBell(e, w);
+    else if (move === 'call') this.callGuards(e, true);
+    else if (move === 'greatToll') {
+      this.noteAnswer(e, seen);
+      if (hit) this.wardenToll(e, true);
     } else { // seize: the Toll takes a hero inside its 80 px tall box, so a jump must clear the box at contact (a late jump is still caught)
       this.noteAnswer(e, seen);
       if (hit) this.wardenToll(e);
@@ -2192,7 +2235,7 @@ export class Game {
   }
   wardenCharge(e, dt) {
     const p = this.player, step = (e.chargeTo - e.x) * Math.min(1, dt / e.travel);
-    e.travel -= dt; e.x += step; e.vx = step / dt;
+    e.travel -= dt; e.x = this.wallClip(e, e.x + step); e.vx = step / dt;
     if (Math.abs(p.x - e.x) < (p.w + e.w) / 2 && p.y > e.y - e.h && p.y - p.h < e.y) { const was = p.invulnerable; this.hurt(HEAVY_DAMAGE, e.dir, false, true); if (was <= 0) e.struck = true; } // i-frames (0.8 s) outlast the 0.5 s charge: once per charge
     if (!e.noted && (p.x - e.x) * e.dir < 0) { e.noted = true; this.noteAnswer(e, !p.grounded ? 'jumped' : e.struck ? 'stood' : 'crossed'); }
     if (e.travel > 0) return;
@@ -2202,16 +2245,104 @@ export class Game {
     this.wardenRecover(e, 'charge');
   }
   // The Gate Toll: all blood above 100 (30 at 100 or below) goes to the Warden's gauge. A dash or the 0.8 s of invulnerability avoids it.
-  wardenToll(e) {
+  // The Great Toll (great): all blood above 100, then 40 more (40 at 100 or less); the hero is thrown 160 px back.
+  wardenToll(e, great = false) {
     const p = this.player;
     if (p.invulnerable > 0) { this.perfectDodge(); return; }
-    const taken = Math.min(p.blood, p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
+    const taken = Math.min(p.blood, great ? Math.max(0, p.blood - BLOOD_HALF) + GREAT.extra : p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
     if (numb) p.debt += Math.round(taken); else p.blood -= taken; // debt stays whole so the HUD, lethal cue and payment agree
     e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
-    p.invulnerable = .8; if (!numb) p.x = clamp(p.x + e.dir * 120, 25, this.worldWidth - 30); this.freeze = .06;
+    p.invulnerable = .8; if (!numb) p.x = clamp(p.x + e.dir * (great ? GREAT.back : 120), 25, this.worldWidth - 30); this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += taken;
-    this.emit('toll', { x: p.x, y: p.y - 30, amount: taken, debt: numb });
-    if (p.blood <= 0) this.heroDown(true, 'toll'); else this.checkFrenzy();
+    this.emit('toll', { x: p.x, y: p.y - 30, amount: taken, debt: numb, great });
+    if (p.blood <= 0) this.heroDown(true, great ? 'greatToll' : 'toll'); else this.checkFrenzy();
+  }
+  // --- The Gate Warden's brain (#62 PR 4) ---
+  wardenBrain(e) { return this.mode === 'castle' && this.apex && !!e.warden && !this.brainOff.has('warden'); }
+  // Two dashes within 2.5 s, as the snapshot saw them.
+  dashSpam(s) { let n = 0; for (const t of this.dashLog) if (t <= s.t && t >= s.t - SPAM.window) n++; return n >= SPAM.n; }
+  // Where a portcullis would fall: 240 px behind the hero (away from the Warden), inside the arena, 300 px from another gate, not on the hero or the Warden. null when none fits.
+  gateSpot(e, s) {
+    const side = Math.sign(s.x - e.x) || 1, x = clamp(s.x + side * GATE.behind, GATE.edge, this.worldWidth - GATE.edge);
+    if (Math.abs(x - s.x) < GATE.near || Math.abs(x - e.x) < 100 || this.obstacles.some(o => o.gate && Math.abs(o.x - x) < GATE.apart)) return null;
+    return x;
+  }
+  // A standing gate behind the hero (the side away from the Warden) within 330 px: walking away from a toll is capped.
+  penned(e, s) { return this.obstacles.some(o => o.gate && (o.x - s.x) * (s.x - e.x) > 0 && Math.abs(o.x - s.x) < 330); }
+  dropGate(x) {
+    const gates = this.obstacles.filter(o => o.gate);
+    while (gates.length >= GATE.max) this.liftGate(gates.shift()); // the older one lifts first
+    this.obstacles.push({ id: (this.obstacleId = (this.obstacleId || 0) + 1), kind: 'gate', gate: true, x, y: FLOOR, w: GATE.w, h: GATE.h, hp: 1, maxHp: 1, flash: 0, life: GATE.life });
+    this.emit('gateDrop', { x, w: GATE.w, h: GATE.h, life: GATE.life });
+  }
+  liftGate(o) { this.obstacles = this.obstacles.filter(q => q !== o); this.emit('gateLift', { x: o.x }); }
+  endWardenField() { for (const o of this.obstacles.filter(q => q.gate)) this.liftGate(o); for (const o of this.enemies) if (o.add) o.hp = 0; } // the Warden's death takes its gates and guards with it
+  // A standing gate stops the Warden (and a charge path drawn toward it ends at the gate).
+  wallClip(e, x) {
+    for (const o of this.obstacles) if (o.gate) { const half = (e.w + o.w) / 2; if ((e.x - o.x) * (x - o.x) < 0 || Math.abs(x - o.x) < half) x = o.x + (e.x < o.x ? -1 : 1) * half; }
+    return x;
+  }
+  // Ultimates and the horn, in order of urgency: the Bell (phase 1, at 75% then every 30 s), the call at 25% when fewer than two guards live, then the Great Toll (once at 25%, then every 30 s) for a hero within its reach.
+  wardenUlt(e, s) {
+    const hp = e.hp / e.maxHp, t = this.time;
+    if (e.bossPhase < 2) return hp <= BELL.at && t >= e.bellAt ? { move: 'bell' } : null;
+    if (hp > GREAT.at) return null;
+    if (!e.called) { e.called = true; if (this.enemies.filter(o => o.add && o.hp > 0).length < GUARDS.count) return { move: 'call' }; }
+    if (t < e.tollAt || Math.abs(s.x - e.x) > GREAT.far + 60) return null;
+    if (!this.penned(e, s) && t >= e.gateAt && this.gateSpot(e, s) !== null) return { move: 'gate' }; // the gatekeeper shuts the door, then collects the toll
+    return { move: 'greatToll' };
+  }
+  // The gate guards: a skeleton and a shield bearer (castle kits at this floor's tier) walk in from the arena's ends; at most two live.
+  callGuards(e, horn) {
+    const p = this.player, W = this.worldWidth, alive = this.enemies.filter(o => o.add && o.hp > 0);
+    let count = 0;
+    for (const [type, end] of [['skeleton', 0], ['shield', 1]]) {
+      if (alive.length + count >= GUARDS.count || alive.some(o => o.type === type)) continue;
+      let x = end ? W - 80 : 80;
+      if (Math.abs(x - p.x) < GUARDS.from) x = clamp(p.x + (end ? 1 : -1) * GUARDS.from, 80, W - 80);
+      const g = this.spawnEnemy(type, x, this.tier);
+      Object.assign(g, { add: true, required: false, dir: p.x >= x ? 1 : -1 }); count++;
+    }
+    this.emit('wardenCall', { x: e.x, y: e.y - e.h * .6, count, horn: !!horn });
+  }
+  // Gate guards cower in the hero's frenzy and keep 180 px away, so the frenzy duel is with the Warden. Returns true while it holds the guard.
+  guardKeep(e, dt) {
+    const s = this.snap();
+    if (!s.frenzy) return false;
+    const away = Math.sign(e.x - s.x) || 1;
+    e.vx = 0;
+    if (Math.abs(s.x - e.x) < GUARDS.keep && e.x + away * 30 > 40 && e.x + away * 30 < this.worldWidth - 50) { e.dir = -away; e.vx = away * e.speed; e.x += e.vx * dt; }
+    return true;
+  }
+  // A guard never opens a tell during a Warden heavy (tell, contact, recovery), and the guards share one token.
+  addHeld(e) {
+    const w = this.enemies.find(o => o.warden && o.hp > 0);
+    if (w && w.heavy) return true;
+    return this.enemies.some(o => o !== e && o.add && o.hp > 0 && (o.token || this.attacking(o)));
+  }
+  // The Great Toll's chains pull the hero toward the Warden during the tell, 80 px/s (not during a dash).
+  greatPull(e, dt) {
+    const p = this.player, stop = (p.w + e.w) / 2 + 6, dx = e.x - p.x;
+    if (p.dash > 0 || this.state !== 'playing' || Math.abs(dx) <= stop) return;
+    const from = p.x; p.x += Math.sign(dx) * Math.min(GREAT.pull * dt, Math.abs(dx) - stop);
+    this.keepBeside(p, from);
+  }
+  // The two bell rings, leaving the Warden both ways: ring 1 low (on the floor), ring 2 high (70-200 px up) 1.0 s behind it.
+  bellRings() { return [{ kind: 'low', top: FLOOR - BELL.lowTop, bottom: FLOOR, delay: 0 }, { kind: 'high', top: FLOOR - BELL.highTop, bottom: FLOOR - BELL.highLo, delay: BELL.gap }]; }
+  ringBell(e, w) {
+    for (const r of w.rings) for (const dir of [-1, 1]) this.rings.push({ x: e.x, dir, kind: r.kind, top: r.top, bottom: r.bottom, wait: r.delay, dist: 0, hit: false });
+    for (const r of this.rings) if (r.wait <= 0 && r.dist === 0) this.emit('ring', { x: r.x, y: (r.top + r.bottom) / 2, dir: r.dir, kind: r.kind, speed: BELL.speed, range: BELL.range, top: r.top, bottom: r.bottom });
+  }
+  // Rings travel and gates count down.
+  updateWardenField(dt) {
+    const p = this.player;
+    for (const r of this.rings) {
+      if (r.wait > 0) { r.wait -= dt; if (r.wait <= 0) this.emit('ring', { x: r.x, y: (r.top + r.bottom) / 2, dir: r.dir, kind: r.kind, speed: BELL.speed, range: BELL.range, top: r.top, bottom: r.bottom }); continue; }
+      r.x += r.dir * BELL.speed * dt; r.dist += BELL.speed * dt;
+      if (!r.hit && this.state === 'playing' && Math.abs(p.x - r.x) < (BELL.thick + p.w) / 2 && p.y > r.top && p.y - p.h < r.bottom) { r.hit = true; this.hurt(HEAVY_DAMAGE, r.dir, false, true); }
+    }
+    if (this.rings.length) this.rings = this.rings.filter(r => r.dist < BELL.range);
+    for (const o of this.obstacles) if (o.gate && (o.life -= dt) <= 0) this.liftGate(o);
   }
   // Two pools on the floor beside the boss after a slam (+-200, phase 2 +-260); the newest MAX_POOLS stay.
   spawnPools(e) {

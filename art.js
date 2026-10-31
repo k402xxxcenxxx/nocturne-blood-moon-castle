@@ -681,8 +681,12 @@ const WP = {
   rBack: [.22, .92, -30, -70, Math.PI + .15, 62, -30, -60, 0, 0, -1, 1],
   stun: [.35, .8, 8, -36, 1.4, 14, -10, -42, 0, 0, 1, 0], // armor broken: kneeling, maul dropped
   roar: [-.2, 1.02, 22, -96, -1.2, 62, -2, -100, 0, 0, 1, 0], // phase 2 roar: both arms raised
+  gate: [-.16, 1.02, 20, -100, -1.45, 62, 4, -104, 0, 0, 1, 0], // both arms hauling the bar up: the portcullis is dropped from above
+  bell: [-.1, 1, 8, -92, -1.7, 62, 24, -70, 0, 0, 1, 0], // maul hoisted straight up, off hand on the haft: the Gate Bell
+  greatToll: [.14, 1, -12, -52, 2.4, 50, 64, -76, 0, 1, 1, 0], // seize reach, held wide: chains
+  call: [-.12, 1.02, 18, -64, 1.0, 46, 20, -104, 0, 0, 1, 0], // off hand lifts the horn to the helm
 };
-const REC = { sweep: 'rSweep', slam: 'rSlam', charge: 'rCharge', seize: 'rSeize', backhand: 'rBack' };
+const REC = { sweep: 'rSweep', slam: 'rSlam', charge: 'rCharge', seize: 'rSeize', backhand: 'rBack', gate: 'rSlam', bell: 'rSlam', greatToll: 'rSeize' };
 const wp = new Array(12).fill(0), wardenTip = [30, -60]; // wardenTip: where the glint star goes
 const wState = new WeakMap();
 function makeShell(cy, rx, ry, lock) { // faceted armor shell (decagon) with crack lines and a padlock spot, built once per boss
@@ -766,6 +770,7 @@ function wardenBody(c, e, time, white, pw, hold, calm, turn) {
       for (let n = 0; n < 9; n++) { const sw = open && !calm ? Math.sin(time * 18 + n * .9) * (1 + n * .5) : 0, x = wx - 2 + sw, y = wy + 8 + n * 6; rect(c, dark, x - 3, y - 3, 6, 6 - (n % 2)); rect(c, n % 2 ? '#fff0b0' : '#d9c27a', x - 2, y - 2, 4, 4 - (n % 2)); }
     }
   }
+  if (key === 'call') { rect(c, dark, ox - 3, oy - 5, 22, 10); rect(c, WC.gold, ox - 1, oy - 3, 20, 6); rect(c, dark, ox + 17, oy - 9, 8, 18); rect(c, WC.hi, ox + 19, oy - 7, 4, 14); } // war horn at the mouth, bell flaring forward
   if (key === 'seize') { wardenTip[0] = ox + 12; wardenTip[1] = oy; } else if (front) { wardenTip[0] = ox + 8; wardenTip[1] = oy - 14; } else { wardenTip[0] = Math.round(gx + Math.cos(ma) * (L + 12)); wardenTip[1] = Math.round(gy + Math.sin(ma) * (L + 12)); }
   c.restore();
 }
@@ -928,6 +933,44 @@ function warnCircles(ctx, circles, rgb, edge, p, time) {
       for (let i = 0; i < 6; i++) { const a = time * 1.5 + i * Math.PI / 3; ctx.fillStyle = edge; ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy - 1 + Math.sin(a) * 8) - 1, 3, 3); }
   }
 }
+// Gate Warden (#62 PR 4) warn art. Gate: a shadow column grows down from above; the dashed rectangle at the foot is the 150 px wall that will stand.
+function wardenGateWarn(ctx, w, p, time) {
+  const b = w.box, c = w.column, x = Math.round(b.x), cw = Math.round(b.w), fall = Math.round((b.y + b.h) * p);
+  ctx.fillStyle = `rgba(16,8,28,${.22 + .2 * p})`; ctx.fillRect(x, b.y, cw, b.h);
+  ctx.fillStyle = `rgba(231,92,80,${.18 + .3 * p})`; ctx.fillRect(x, b.y, cw, fall);
+  for (let i = 1; i < 4; i++) { ctx.fillStyle = `rgba(19,17,27,${.4 + .4 * p})`; ctx.fillRect(x + Math.round(cw * i / 4) - 1, b.y, 3, fall); } // bar shadows
+  ctx.strokeStyle = '#ff7a6a'; ctx.lineWidth = 3; ctx.strokeRect(x + 1, b.y + 1, cw - 2, b.h - 2);
+  ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.strokeStyle = '#ffe0d0'; ctx.strokeRect(x - 3, FLOOR - c.h, cw + 6, c.h); ctx.setLineDash(NO_WARN_DASH); // the wall to come
+  const off = PS.calm ? 6 : (time * 70) % 30; ctx.strokeStyle = '#ffe0d0';
+  for (let k = 0; k < 4; k++) { const cy = Math.round(20 + k * 30 + off) , cx = Math.round(x + cw / 2); if (cy > FLOOR - c.h - 8) break; ctx.beginPath(); ctx.moveTo(cx - 8, cy - 6); ctx.lineTo(cx, cy + 3); ctx.lineTo(cx + 8, cy - 6); ctx.stroke(); }
+}
+// Bell: both ways, ring 1 (low, hop it) in amber, ring 2 (high, stay down) in violet; each lane shows its band and a legend glyph.
+function wardenBellWarn(ctx, e, w, p, time) {
+  const calm = PS.calm, off = calm ? 0 : (time * 90) % 24;
+  w.rings.forEach((r, n) => {
+    const low = r.kind === 'low', col = low ? '255,176,72' : '170,140,255', edge = low ? '#ffc880' : '#cbb6ff', h = r.bottom - r.top;
+    for (const s of [-1, 1]) {
+      const x0 = Math.round(e.x + s * 50), x1 = x0 + s * (low ? 150 : 290), bx = Math.min(x0, x1), bw = Math.abs(x1 - x0);
+      ctx.fillStyle = `rgba(${col},${.1 + .2 * p})`; ctx.fillRect(bx, r.top, bw, h);
+      ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, r.top + 1, bw - 2, h - 2);
+      ctx.beginPath(); for (let cx = bx + (s === 1 ? off : 24 - off); cx < bx + bw - 10; cx += 24) { const my = Math.round(r.top + h / 2); ctx.moveTo(cx, my - 7); ctx.lineTo(cx + 6 * s, my); ctx.lineTo(cx, my + 7); } ctx.stroke();
+      const mx = Math.round(bx + bw / 2);
+      if (low) { const ay = Math.round(r.top - 16 - (calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(mx, ay - 9); ctx.lineTo(mx + 8, ay + 3); ctx.lineTo(mx - 8, ay + 3); ctx.fill(); ctx.fillRect(mx - 3, ay + 3, 6, 6); } // up arrow: jump
+      else highRaySafe(ctx, { x: bx, w: bw, y: r.top }, time); // stay down: green strip and the crossed-out jump
+      ctx.fillStyle = 'rgba(19,17,27,.85)'; ctx.beginPath(); ctx.arc(bx + (s === 1 ? 12 : bw - 12), r.top + h / 2, 9, 0, 7); ctx.fill(); ctx.fillStyle = edge; ctx.font = 'bold 12px Georgia'; ctx.textAlign = 'center'; ctx.fillText(String(n + 1), bx + (s === 1 ? 12 : bw - 12), r.top + h / 2 + 4); // firing order
+    }
+  });
+}
+// Great Toll: magenta pen in front of the Warden; chains run along it toward him (the pull), a hop arrow shows the 90 px ceiling and a bar marks the far edge.
+function wardenTollWarn(ctx, e, w, p, d, time, fillBox) {
+  const b = w.box; fillBox(b);
+  const off = PS.calm ? 0 : (time * 80) % 16; // toward the Warden is -d
+  for (const y of [b.y + 28, b.y + 62]) for (let cx = b.x + 4; cx < b.x + b.w - 8; cx += 16) { const lx = Math.round(cx + (-d) * off); if (lx < b.x || lx > b.x + b.w - 6) continue; ctx.fillStyle = '#13111b'; ctx.fillRect(lx - 1, y - 3, 8, 6); ctx.fillStyle = (cx / 16 | 0) % 2 ? '#fff0b0' : '#d9c27a'; ctx.fillRect(lx, y - 2, 6, 4); }
+  ctx.strokeStyle = '#ffb0d8'; ctx.lineWidth = 2; const my = Math.round(b.y + b.h / 2);
+  for (let i = 0; i < 3; i++) { const cx = Math.round(b.x + b.w * (.3 + .2 * i)); ctx.beginPath(); ctx.moveTo(cx + 7 * d, my - 8); ctx.lineTo(cx, my); ctx.lineTo(cx + 7 * d, my + 8); ctx.stroke(); }
+  ctx.fillStyle = '#ff7ab8'; ctx.fillRect(Math.round(d === 1 ? b.x + b.w - 3 : b.x), b.y - 10, 3, b.h + 10); // far edge: past it you are out
+  const ax = Math.round(b.x + b.w / 2), ay = Math.round(b.y - 16 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 3, ay + 3, 6, 6);
+}
 function drawBossWarn(ctx, e, time) {
   const w = e.warn; if (!w || !(e.tell > 0)) return;
   if (!tellMax.has(w)) tellMax.set(w, e.tell);
@@ -942,6 +985,10 @@ function drawBossWarn(ctx, e, time) {
   if (w.kind === 'turnslash') { rgb = '176,120,255'; edge = '#c9a2ff'; } // the King's hit behind him: violet, so it never reads as the red slash in front
   if (w.kind === 'seize') { rgb = '214,74,138'; edge = '#ff7ab8'; } // the Toll: magenta, so it never reads as a plain hit
   if (w.kind === 'slash' || w.kind === 'slam' || w.kind === 'sweep' || w.kind === 'seize' || w.kind === 'backhand' || w.kind === 'turnslash') { fillBox(w.box); wardenWarnArt(ctx, w, p, rgb, edge, d, time); }
+  if (w.kind === 'gate') wardenGateWarn(ctx, w, p, time);
+  else if (w.kind === 'bell') wardenBellWarn(ctx, e, w, p, time);
+  else if (w.kind === 'greatToll') wardenTollWarn(ctx, e, w, p, d, time, fillBox);
+  else if (w.kind === 'call') { ctx.strokeStyle = '#ffd36e'; ctx.lineWidth = 3; for (let i = 0; i < 3; i++) { const q = (p * 1.5 + i * .33) % 1; ctx.globalAlpha = (1 - q) * .8; ctx.beginPath(); ctx.arc(Math.round(e.x + d * 34), Math.round(e.y - 100), 14 + q * 46, d === 1 ? -1 : Math.PI - 1, d === 1 ? 1 : Math.PI + 1); ctx.stroke(); } ctx.globalAlpha = 1; } // horn: sound arcs leave the helm, no hit area
   if (w.kind === 'charge') {
     fillBox(w.box); const l = w.line; ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 2; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -time * 40 * d;
     ctx.beginPath(); ctx.moveTo(Math.round(l.x1), Math.round(l.y1)); ctx.lineTo(Math.round(l.x2), Math.round(l.y2)); ctx.stroke(); ctx.setLineDash([]);
@@ -1109,6 +1156,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? (e.king ? 84 : 70) : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
   if (e.tell > 0 && e.poiseHit > 0 && !e.warn && !e.thrustBox && !heavy && !boss && (e.type === 'skeleton' || e.type === 'shield')) { const rx = x + (e.dir === -1 ? -1 : 1) * (e.type === 'shield' ? 70 : 82); ctx.save(); ctx.fillStyle = '#ff6a5c'; ctx.fillRect(Math.min(x, rx), y - 3, Math.abs(rx - x), 3); ctx.fillRect(rx - 1, y - 16, 3, 16); ctx.restore(); } // provoked poke from afar: the slash's real reach on the floor, so a whiff reads as out of range
   if (boss) drawBossWarn(ctx, e, time);
+  if (e.add && !boss && e.hp > 0) { ctx.save(); ctx.fillStyle = '#13111b'; ctx.fillRect(x - 7, y + 6, 14, 9); ctx.fillStyle = '#8d93a2'; for (let i = 0; i < 4; i++) ctx.fillRect(x - 5 + i * 3, y + 7, 1, 7); ctx.fillRect(x - 6, y + 9, 12, 1); ctx.restore(); } // gate guard: a small portcullis mark under the feet
   if (!boss && e.tell > 0 && e.warn?.lines) { // Prism: the three real bolt paths (band = orb width 14, dashed core, tip dot)
     const wl = e.warn, pp = Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(wl) || e.tell))); ctx.save();
     for (const l of wl.lines) { ctx.strokeStyle = `rgba(255,74,60,${.1 + .14 * pp})`; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
@@ -1264,7 +1312,39 @@ export function drawTrap(ctx, tr, time = 0) {
   ctx.restore();
 }
 
+// Portcullis (#62 PR 4): iron bars between stone guides, a beam on top with rivets, spiked feet. `lift` raises it off its feet (px), `shake` jitters it.
+const gateSeen = new WeakMap();
+export function drawGate(ctx, cx, y, w, h, lift = 0, shake = 0) {
+  const x = Math.round(cx - w / 2 + shake), top = Math.round(y - h - lift), n = 4;
+  rect(ctx, '#1b1a22', x - 4, top - 300, 3, 300 + h); rect(ctx, '#1b1a22', x + w + 1, top - 300, 3, 300 + h); // stone guides
+  rect(ctx, '#3a3a44', x - 4, top, 2, h); rect(ctx, '#3a3a44', x + w + 2, top, 2, h);
+  for (const cxx of [x + 6, x + w - 8]) for (let cy = top - 300; cy < top; cy += 8) { rect(ctx, '#13111b', cxx - 1, cy, 6, 7); rect(ctx, (cy / 8 | 0) % 2 ? '#8a8f9a' : '#5a5f6a', cxx, cy + 1, 4, 5); } // chains up out of sight
+  for (let i = 0; i < n; i++) { const bx = x + 3 + Math.round(i * (w - 10) / (n - 1)); rect(ctx, '#13111b', bx - 1, top, 7, h - 6); rect(ctx, '#3b3f4a', bx, top, 5, h - 8); rect(ctx, '#7d8494', bx, top, 1, h - 8); poly(ctx, '#13111b', [[bx - 1, top + h - 8], [bx + 6, top + h - 8], [bx + 2.5, top + h]]); poly(ctx, '#9aa1b0', [[bx + 1, top + h - 8], [bx + 4, top + h - 8], [bx + 2.5, top + h - 2]]); } // spiked feet
+  for (const f of [.28, .62]) { const by = top + Math.round(h * f); rect(ctx, '#13111b', x - 2, by - 1, w + 4, 7); rect(ctx, '#4a4e5a', x - 1, by, w + 2, 5); rect(ctx, '#8d93a2', x - 1, by, w + 2, 1); }
+  rect(ctx, '#13111b', x - 6, top - 2, w + 12, 14); rect(ctx, '#585d69', x - 5, top - 1, w + 10, 12); rect(ctx, '#868b95', x - 5, top - 1, w + 10, 2); rect(ctx, '#7d5b3a', x - 5, top + 8, w + 10, 2);
+  for (let i = 0; i < 3; i++) rect(ctx, '#d9c27a', x - 1 + i * Math.round((w - 2) / 2), top + 3, 3, 3); // rivets
+}
+// Gate Bell ring (#62 PR 4): a travelling sound front over its real band (top..bottom). Low = amber with an up arrow (jump or dash), high = violet with a down arrow (stay low).
+export function drawRing(ctx, r, time = 0) {
+  const low = r.kind === 'low', col = low ? '#ffb048' : '#b79cff', pale = low ? '#ffe2b0' : '#e6dcff', top = Math.round(r.top), h = Math.round(r.bottom - r.top), mid = top + h / 2, x = Math.round(r.x), d = r.dir;
+  ctx.save();
+  ctx.globalAlpha = .22; ctx.fillStyle = col; ctx.fillRect(d === 1 ? x - 46 : x, top, 46, h); // wake behind the front
+  for (let i = 0; i < 3; i++) { ctx.globalAlpha = 1 - i * .28; ctx.strokeStyle = i ? col : pale; ctx.lineWidth = 4 - i; ctx.beginPath(); ctx.ellipse(x - d * i * 11, mid, 8, h / 2, 0, d === 1 ? -Math.PI / 2 : Math.PI / 2, d === 1 ? Math.PI / 2 : Math.PI * 1.5); ctx.stroke(); }
+  ctx.globalAlpha = 1; ctx.fillStyle = pale; ctx.beginPath();
+  if (low) { const ay = top - 14 - (PS.calm ? 0 : Math.sin(time * 12) * 2); ctx.moveTo(x, ay - 8); ctx.lineTo(x + 8, ay + 4); ctx.lineTo(x - 8, ay + 4); } else { const ay = r.bottom + 14 + (PS.calm ? 0 : Math.sin(time * 12) * 2); ctx.moveTo(x, ay + 8); ctx.lineTo(x + 8, ay - 4); ctx.lineTo(x - 8, ay - 4); }
+  ctx.fill(); ctx.restore();
+}
 export function drawObstacle(ctx, o, time = 0, stage = 0, traps = null) {
+  if (o.gate) {
+    let t0 = gateSeen.get(o); if (t0 === undefined) { t0 = time; gateSeen.set(o, t0); }
+    const q = Math.min(1, (time - t0) / .16), age = time - t0, dying = o.life !== undefined && o.life < 1, lift = dying ? (1 - o.life) * 10 : 0;
+    ctx.save(); const gx = Math.round(o.x);
+    ctx.globalAlpha = .35; rect(ctx, '#0c0a10', gx - o.w / 2 - 3, o.y - 3, o.w + 6, 5); ctx.globalAlpha = 1; // floor slot
+    drawGate(ctx, o.x, o.y, o.w, o.h, (1 - q * q) * (o.h + 40) + lift, dying && !PS.calm ? Math.sin(time * 50) * 1.2 : 0);
+    if (dying) { ctx.globalAlpha = .5 + .3 * Math.sin(time * 16); rect(ctx, '#ffd36e', gx - o.w / 2, o.y - 4, o.w, 3); } // last second: it is about to lift
+    else if (age < .5 && q >= 1) { ctx.globalAlpha = .5 * (1 - age / .5); rect(ctx, '#ffffff', gx - o.w / 2, o.y - o.h, o.w, o.h); }
+    ctx.restore(); return;
+  }
   const p = palettes[stage] || palettes[0], x = Math.round(o.x - o.w / 2), y = o.y, w = o.w, h = o.h, hit = o.flash > 0, r = o.hp / o.maxHp;
   ctx.save();
   if (o.kind === 'altar') {

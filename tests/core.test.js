@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
+import { Game, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3229,7 +3229,7 @@ test('warden: floor 10 is the Warden alone in the boss arena, with its base stat
   assert.equal(game.enemies.length, 1);
   const b = game.enemies[0];
   assert.ok(b.warden && b.required);
-  assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [520, 75, ARMOR_MAX, 100]);
+  assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [WARDEN_HP, 75, ARMOR_MAX, 100]);
   assert.equal(game.worldWidth, STAGES[4].width); assert.equal(game.platforms.length, 2);
   assert.deepEqual(game.fightStats, { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 });
   assert.equal(new Game(() => {}, 1).loadFloor(KING_FLOOR), false, 'only Castle Descent has the castle King floor');
@@ -3309,7 +3309,7 @@ test('warden: a hit never flinches, staggers or interrupts a tell, and gives no 
   b.dir = 1; game.wardenStart(b, 'sweep');
   const tell = b.tell; player.x = 960; player.dir = 1; player.blood = 100; player.attackCd = 0;
   game.attack(); // swing costs 2 and the hit pays nothing
-  assert.ok(b.hp < 520); assert.equal(b.stun, 0); assert.ok(b.tell > 0 && b.tell <= tell); assert.equal(b.poise, 1);
+  assert.ok(b.hp < WARDEN_HP); assert.equal(b.stun, 0); assert.ok(b.tell > 0 && b.tell <= tell); assert.equal(b.poise, 1);
   assert.equal(player.blood, 98);
 });
 
@@ -3431,7 +3431,7 @@ test('warden habit memory records how the hero answered each heavy, and a crosse
 
 test('warden phase 2 at 50% health: 1.1 s pause, an event, and pools move out to +-260', () => {
   const { game, events, b } = warden(1000, 940);
-  hit(game, b, 259); assert.equal(b.bossPhase, 1);
+  hit(game, b, WARDEN_HP / 2 - 1); assert.equal(b.bossPhase, 1);
   hit(game, b, 2);
   assert.equal(b.bossPhase, 2); assert.ok(Math.abs(b.pause - 1.1) < 1e-9);
   assert.equal(events.filter(e => e.type === 'wardenPhase').length, 1);
@@ -3512,7 +3512,7 @@ test('warden phase change: the roar ends a break stun and restores the gauge, lo
   const { game, player, b } = warden(1000, 940);
   player.frenzy = true; player.blood = 190; hit(game, b); // phase 1: the frenzy hit breaks
   assert.ok(b.stun > 0 && b.superArmor === 0);
-  hit(game, b, 250);
+  hit(game, b, WARDEN_HP / 2);
   assert.equal(b.bossPhase, 2); assert.equal(b.stun, 0); assert.equal(b.breakStun, 0);
   assert.equal(b.superArmor, ARMOR_MAX); assert.ok(Math.abs(b.armorLock - 1.1) < 1e-9);
   hit(game, b); assert.equal(b.superArmor, ARMOR_MAX, 'no chip during the roar');
@@ -4896,6 +4896,7 @@ function brainFoe(type, gap = 100, { floor = 1, hp = 1e5 } = {}) {
   const e = enemy(c.game, c.player.x + gap, { type, hp }); e.dir = -1; e.maxPoise = e.poise = 500; e.armor = 0; e.action = 1; e.braceCd = 99; // brace off unless a test turns it on; // action 1: a brain has already acted, so cooldowns hold (no spawn cooldown override)
   return { ...c, e };
 }
+const WARDEN_HEAVIES = ['slam', 'charge', 'seize'];
 const evs = (events, type) => events.filter(ev => ev.type === type);
 const lull = (game, s = .3) => { const keep = game.enemies.map(e => [e.cd, e.mixT]); for (const e of game.enemies) Object.assign(e, { cd: 99, mixT: 99 }); advance(game, s); game.enemies.forEach((e, i) => Object.assign(e, { cd: keep[i][0], mixT: keep[i][1] })); }; // let the snapshot ring fill with the foes holding still
 const noSwing = e => Object.assign(e, { cd: 99, mixT: 99 }); // keep a foe from picking an attack while a test sets the scene
@@ -5481,6 +5482,140 @@ test('skeleton stat profiles: the normal profile (halved) from floor 1, the old 
   assert.ok(stats('bat', 1).hp < stats('priest', 1).hp && stats('priest', 1).hp < stats('knight', 1).hp, 'identity kept: bat most fragile, knight toughest');
   const off = new Game(() => {}, 5, 'castle'); off.apex = false; off.enemies = []; assert.equal(off.spawnEnemy('knight', 900, 0).hp, 65, 'apex off: the #50 numbers');
   for (const mode of ['normal', 'endless']) { const g = new Game(() => {}, 5, mode); g.enemies = []; assert.equal(g.spawnEnemy('knight', 900, 0).hp, Math.round(65 * (mode === 'endless' ? floorScale(g.floor).hp : 1)), `${mode}: unchanged`); }
-  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, 520, 'the Warden is unchanged');
+  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, WARDEN_HP, 'the Warden has WARDEN_HP (1100, user decision 2026-10-31)'); assert.equal(WARDEN_HP, 1100);
   const k = new Game(() => {}, 5, 'castle'); k.apex = true; k.enemies = []; const kg = k.spawnKing(1400); assert.equal(kg.hp, KING_HP, 'the King is unchanged');
+});
+
+// --- The Gate Warden's brain (#62 PR 4) ---
+function wardenBrainArena(hx = 900, wx = 1300) { // floor 10 with the apex brain on: the Warden alone, idle (cd 99), hero placed
+  const t = castle(42, WARDEN_FLOOR, true), b = t.game.spawnWarden(wx);
+  Object.assign(b, { x: wx, engaged: true, cd: 99, dir: -1 }); Object.assign(t.player, { x: hx, invulnerable: 0, blood: 200 }); t.game.snaps = [];
+  return { ...t, b };
+}
+
+test('warden gate: the column falls 240 px behind the hero, hurts a hero under it, and stands as a wall that blocks walking and dashing but not a double jump', () => {
+  const { game, player, events, b } = wardenBrainArena(900, 1300);
+  assert.equal(game.gateSpot(b, game.heroSnap()), 660, '240 px on the side away from the Warden');
+  game.wardenStart(b, 'gate'); assert.equal(b.warn.x, 660); assert.ok(b.warn.box.w === 44 && b.warn.box.h >= FLOOR, 'the shadow column runs ceiling to floor'); assert.ok(b.tell >= 1, 'a 1.0 s tell');
+  player.x = 670; // hero stands in the column during the tell: caught at contact
+  advance(game, 1.1); const g = game.obstacles.find(o => o.gate); assert.ok(g && g.x === 660 && g.h === 150, 'a 150 px wall');
+  assert.equal(evs(events, 'gateDrop').length, 1); assert.ok(evs(events, 'hurt').some(h => h.heavy && h.amount === 100), 'a hero under the column takes 100');
+  player.invulnerable = 0; player.x = g.x + 60; player.dir = -1;
+  advance(game, 1.2, { left: true }); assert.ok(player.x >= g.x + 36 - 1, 'walking is blocked');
+  game.dash(); advance(game, .3, { left: true }); assert.ok(player.x >= g.x + 36 - 1, 'a dash is blocked too');
+  advance(game, .8); player.dashCd = 0; game.jump(); advance(game, .37, { left: true }); game.jump(); advance(game, 1.2, { left: true });
+  assert.ok(player.x < g.x - 20, `a double jump clears the wall (x ${player.x.toFixed(0)})`);
+  game.obstacles.find(o => o.gate); const hp0 = g.hp; game.damageObstacle(g, 999); assert.equal(g.hp, hp0, 'a portcullis cannot be broken');
+});
+
+test('warden gates: at most 2 stand (the older lifts first), each lifts after 5 s, none within 300 px of another, and a gate stops the Warden', () => {
+  const { game, events, b } = wardenBrainArena(900, 1300);
+  game.dropGate(400); game.dropGate(900); assert.equal(game.obstacles.filter(o => o.gate).length, 2);
+  game.dropGate(1500); const xs = game.obstacles.filter(o => o.gate).map(o => o.x); assert.deepEqual(xs, [900, 1500], 'the older one lifted'); assert.equal(evs(events, 'gateLift')[0].x, 400);
+  const s = { ...game.heroSnap(), x: 1100 }; assert.equal(game.gateSpot(b, { ...s, x: 1100 }), null, 'a spot within 300 px of a standing gate is refused');
+  b.x = 1400; assert.ok(game.wallClip(b, 1000) > 900, 'the Warden cannot pass the gate at 900'); assert.ok(game.wallClip(b, 1300) === 1300);
+  advance(game, 5.1); assert.equal(game.obstacles.filter(o => o.gate).length, 0, 'gates lift by themselves after 5 s'); assert.equal(evs(events, 'gateLift').length, 3);
+  game.dropGate(b.x + b.dir * 150); game.wardenStart(b, 'charge'); assert.ok(Math.abs(b.chargeTo - b.x) <= 150, 'a charge drawn toward a gate ends at the gate');
+});
+
+test('warden reads move onto the shared brain: a retreating hero is penned in, the follow-up is chosen from where a dash lands, and brainOff keeps the old pick', () => {
+  const a = wardenBrainArena(900, 1300); a.b.habit.push('retreated', 'retreated'); a.game.time = 10;
+  assert.equal(a.game.wardenPick(a.b, 400, a.game.heroSnap()).move, 'gate', 'retreated twice: a gate behind the hero');
+  a.b.habit.push('retreated', 'retreated'); assert.equal(a.game.wardenPick(a.b, 400).move, 'charge', 'without the brain it is still the charge');
+  assert.ok(a.game.habits.warden === a.b.habit, 'the shared habit memory is the Warden\'s');
+  const k = wardenBrainArena(900, 1300); k.game.noteHabit('warden', k.b, false); k.game.noteHabit('warden', k.b, false); assert.deepEqual(k.b.habit, ['retreated', 'retreated']);
+  const d = wardenBrainArena(1200, 1300); d.player.dash = .1; d.player.dir = -1; d.game.noteAnswer(d.b, 'stood'); assert.equal(d.b.habit.at(-1), 'dashed', 'a dash is its own answer');
+  // a dash in the snapshot lands the hero behind the Warden: the follow-up is the backhand/charge for there, not for where the hero was
+  const f = wardenBrainArena(1200, 1300); const s = { ...f.game.heroSnap(), x: 1230, dash: .18, dir: 1, vx: 730, t: f.game.time - .12 };
+  assert.equal(f.game.landing(s, .5) > 1300, true, 'the dash carries the hero past the Warden'); f.b.follows = 0;
+  assert.equal(f.game.wardenFollow(f.b, 'sweep', s), 'backhand', 'chosen for the dash landing: behind it'); assert.equal(f.game.wardenFollow(f.b, 'sweep', { ...s, dash: 0, vx: 0, x: 1200 }) !== 'backhand', true, 'the same hero standing in front gets another follow-up');
+});
+
+test('warden gate string: after the door shuts the charge follows a hero in front of the Warden, never a hero behind it or out of reach, and the brainOff Warden has no gate', () => {
+  const { game, b } = wardenBrainArena(1100, 1300); const s = game.heroSnap(); b.follows = 0;
+  assert.equal(game.wardenFollow(b, 'gate', s), 'charge'); assert.equal(game.wardenFollow(b, 'gate', { ...s, x: 1500 }), '', 'behind the Warden'); assert.equal(game.wardenFollow(b, 'gate', { ...s, x: 800 }), '', 'out of the charge\'s 330 px');
+  assert.equal(game.wardenFollow(b, 'gate'), '', 'no snapshot (brain off): no follow-up'); game.brainOff = new Set(['warden']); assert.equal(game.wardenBrain(b), false);
+});
+
+test('warden dash spam: two dashes within 2.5 s hold the next opening heavy 0.4 s longer (one delay per string), a single dash does not', () => {
+  const t = wardenBrainArena(1200, 1300); const { game, player, b } = t; game.rand = () => .99;
+  game.dash(); player.dashCd = 0; advance(game, .3); game.dash(); advance(game, .3); const s = game.snap();
+  assert.equal(game.dashSpam(game.heroSnap()), true, 'two dashes in the log');
+  const pick = game.wardenPick(b, 100, game.heroSnap()); assert.ok(WARDEN_HEAVIES.includes(pick.move) && pick.delay === true, `${pick.move} delayed`);
+  assert.equal(game.dashLog.length, 0, 'the read is spent');
+  const one = wardenBrainArena(1200, 1300); one.game.rand = () => .99; one.game.dash(); advance(one.game, .3); assert.notEqual(one.game.wardenPick(one.b, 100, one.game.heroSnap()).delay, true);
+  game.wardenStart(b, 'charge', true); assert.ok(b.delayed && b.tell > .95 + .3, 'the delayed opener'); game.cancelAttack(b); b.follows = 0;
+  game.wardenStart(b, 'charge', true, true); assert.equal(b.delayed, false, 'a follow-up is never delayed');
+});
+
+test('warden guards: the phase 2 roar calls a skeleton and a shield bearer from the arena ends (at most 2 live); the horn at 25% calls only the missing one; brainOff calls none', () => {
+  const { game, player, events, b } = wardenBrainArena(900, 1300);
+  game.wardenPhase(b); const guards = () => game.enemies.filter(o => o.add && o.hp > 0);
+  assert.deepEqual(guards().map(o => o.type).sort(), ['shield', 'skeleton']); assert.ok(guards().every(o => !o.required && Math.abs(o.x - player.x) >= 420), 'they walk in from the ends');
+  assert.equal(evs(events, 'wardenCall')[0].count, 2); game.wardenPhase(b); assert.equal(guards().length, 2, 'never more than 2');
+  const sk = guards().find(o => o.type === 'skeleton'); sk.hp = 0;
+  advance(game, 1.2); game.wardenStart(b, 'call'); assert.ok(b.tell >= .8 && !b.heavy, 'a 0.8 s horn, not an attack'); advance(game, .85);
+  assert.deepEqual(guards().map(o => o.type).sort(), ['shield', 'skeleton'], 'the missing one is called'); assert.ok(evs(events, 'wardenCall').at(-1).horn && evs(events, 'wardenCall').at(-1).count === 1);
+  assert.ok(b.punishable && b.recover > .9, 'then a 1.0 s punishable recovery');
+  const off = wardenBrainArena(900, 1300); off.game.brainOff = new Set(['warden']); off.game.wardenPhase(off.b); assert.equal(off.game.enemies.filter(o => o.add).length, 0);
+});
+
+test('warden guards: no add tell during a Warden heavy tell, strike or recovery, one token shared by the adds, contacts 0.5 s from the Warden\'s, and they cower at 180 px in the hero\'s frenzy', () => {
+  const { game, player, b } = wardenBrainArena(900, 1300); game.wardenPhase(b);
+  const [g1, g2] = game.enemies.filter(o => o.add); Object.assign(g1, { x: 1000 }); Object.assign(g2, { x: 800 });
+  game.wardenStart(b, 'charge'); assert.equal(game.addHeld(g1), true, 'a heavy tell holds the guards'); game.cancelAttack(b); b.heavy = false;
+  b.heavy = true; b.recover = 1; assert.equal(game.addHeld(g1), true, 'and its recovery'); b.heavy = false; b.recover = 0;
+  assert.equal(game.addHeld(g1), false); g2.token = 'light'; assert.equal(game.addHeld(g1), true, 'one token for both adds'); g2.token = '';
+  game.wardenStart(b, 'sweep'); b.tell = .3; assert.equal(game.canStrike(g1, .45), false, 'a contact 0.15 s from the Warden\'s sweep waits');
+  game.cancelAttack(b); b.tell = 0; player.frenzy = true; game.snaps = [];
+  g1.x = player.x + 100; g1.speed = 60; const x0 = g1.x; assert.equal(game.guardKeep(g1, .1), true, 'a frenzied hero: the guard holds'); assert.ok(g1.x > x0, 'and backs off to 180 px');
+  g1.x = player.x + 300; assert.equal(game.guardKeep(g1, .1), true); assert.equal(g1.x, player.x + 300, 'at 180 px or more it stands still'); player.frenzy = false; game.snaps = []; assert.equal(game.guardKeep(g1, .1), false, 'out of frenzy it fights');
+});
+
+test('warden bell: rings leave both ways, ring 1 low and ring 2 high 1.0 s behind; a standing hero is hit by the low ring only, an airborne hero by the high one, a dash by neither', () => {
+  const { game, events, player, b } = wardenBrainArena(1000, 1300);
+  game.wardenStart(b, 'bell'); assert.ok(b.tell >= 1.6 && b.heavy, 'a 1.6 s heavy tell'); assert.equal(b.warn.rings.length, 2);
+  advance(game, 1.65); assert.equal(evs(events, 'ring').filter(r => r.kind === 'low').length, 2, 'two low rings at contact (one each way)'); assert.equal(game.rings.filter(r => r.kind === 'high').length, 2, 'the high pair waits');
+  advance(game, 1.2); assert.equal(evs(events, 'ring').filter(r => r.kind === 'high').length, 2, 'the high pair 1.0 s later'); const hurts = evs(events, 'hurt'); assert.equal(hurts.length, 1, 'a grounded hero is hit once, by ring 1'); assert.equal(hurts[0].amount, 100);
+  const air = wardenBrainArena(1000, 1300); air.player.invulnerable = 0; air.game.rings.push({ x: 1000, dir: 1, kind: 'high', top: FLOOR - 200, bottom: FLOOR - 70, wait: 0, dist: 0, hit: false }); air.player.x = 1060;
+  for (let i = 0; i < 40; i++) { Object.assign(air.player, { y: FLOOR - 110, vy: 0, grounded: false }); air.game.update(1 / 120, {}); } assert.ok(evs(air.events, 'hurt').length === 1, 'a hero 110 px up is inside ring 2');
+  const st = wardenBrainArena(1000, 1300); st.game.rings.push({ x: 1000, dir: 1, kind: 'high', top: FLOOR - 200, bottom: FLOOR - 70, wait: 0, dist: 0, hit: false }); st.player.x = 1060; advance(st.game, .5); assert.equal(evs(st.events, 'hurt').length, 0, 'ring 2 misses a standing hero');
+  const dash = wardenBrainArena(1000, 1300); dash.game.rings.push({ x: 1000, dir: 1, kind: 'low', top: FLOOR - 60, bottom: FLOOR, wait: 0, dist: 0, hit: false }); dash.player.x = 1060; dash.player.invulnerable = .5; advance(dash.game, .5); assert.equal(evs(dash.events, 'hurt').length, 0, 'i-frames pass a ring');
+  advance(game, 3); assert.equal(game.rings.length, 0, 'rings end at 900 px');
+});
+
+test('warden Great Toll: all blood above 100 plus 40, gauge gain, 160 px throw, debt in Greatsword frenzy, its own death cause; the chains pull at 80 px/s but not during a dash; the box is 330 px by 90', () => {
+  const run = blood => { const t = wardenBrainArena(1100, 1300); t.player.blood = blood; t.b.superArmor = 10; t.b.dir = -1; t.game.wardenStart(t.b, 'greatToll'); return t; };
+  const a = run(180); assert.ok(a.b.tell >= 1.8 && a.b.heavy, 'a 1.8 s heavy tell'); a.player.invulnerable = 0; a.game.wardenToll(a.b, true);
+  assert.equal(Math.round(a.player.blood), 60, '180 - 80 - 40'); assert.equal(a.b.superArmor, 100, 'the gauge gains the amount (capped)'); assert.equal(evs(a.events, 'toll')[0].great, true); assert.ok(a.player.x < 1100 - 100, 'thrown back 160 px');
+  const lo = run(100); lo.game.wardenToll(lo.b, true); assert.equal(Math.round(lo.player.blood), 60, '100 pays 40'); const frenzy = run(150); frenzy.player.frenzy = true; frenzy.game.wardenToll(frenzy.b, true); assert.equal(frenzy.player.frenzy, false, 'frenzy ends at 100 or less');
+  const dead = run(30); dead.game.wardenToll(dead.b, true); assert.equal(dead.game.state, 'dead'); assert.equal(evs(dead.events, 'death')[0].cause, 'greatToll');
+  const numb = run(180); numb.player.frenzy = true; numb.player.weapon = 'heavy'; numb.game.wardenToll(numb.b, true); assert.ok(numb.player.debt >= 100 && numb.player.blood === 180, 'Greatsword frenzy: the toll is debt'); assert.equal(numb.b.superArmor, 100);
+  const pull = run(150); pull.b.tell = 1.8; const x0 = pull.player.x; advance(pull.game, .5); assert.ok(Math.abs((pull.player.x - x0) - 40) < 6, `pulled ~80 px/s (${pull.player.x - x0})`);
+  const dash = run(150); dash.player.dash = .18; const d0 = dash.player.x; dash.game.greatPull(dash.b, .5); assert.equal(dash.player.x, d0, 'no pull during a dash');
+  const far = wardenBrainArena(900, 1300); far.player.blood = 150; far.b.dir = -1; far.game.wardenStart(far.b, 'greatToll'); far.b.tell = 0; far.game.wardenStrike(far.b); assert.equal(far.player.blood, 150, '400 px away: outside the 330 px box');
+  const up = wardenBrainArena(1100, 1300); up.player.blood = 150; up.b.dir = -1; up.game.wardenStart(up.b, 'greatToll'); up.b.tell = 0; up.player.y = FLOOR - 100; up.player.grounded = false; up.game.wardenStrike(up.b); assert.equal(up.player.blood, 150, 'above 90 px at contact: clear');
+});
+
+test('warden ultimates: the Bell at 75% then every 30 s of phase 1; in phase 2 the call at 25% (only if a guard is missing), then the Great Toll, then every 30 s; reading the snapshot', () => {
+  const { game, b } = wardenBrainArena(1100, 1300); const s = () => game.heroSnap();
+  assert.equal(game.wardenUlt(b, s()), null, 'full health: none'); b.hp = b.maxHp * .74; assert.equal(game.wardenUlt(b, s()).move, 'bell');
+  game.wardenStart(b, 'bell'); game.cancelAttack(b); assert.equal(game.wardenUlt(b, s()), null, 'not again for 30 s'); game.time += 30.1; assert.equal(game.wardenUlt(b, s()).move, 'bell');
+  game.wardenPhase(b); b.hp = b.maxHp * .3; assert.equal(game.wardenUlt(b, s()), null, 'phase 2 above 25%: none'); b.hp = b.maxHp * .24; game.cancelAttack(b);
+  assert.equal(game.enemies.filter(o => o.add && o.hp > 0).length, 2); assert.equal(game.wardenUlt(b, s()).move === 'call', false, 'both guards alive: no horn'); 
+  const t2 = wardenBrainArena(1100, 1300); t2.game.wardenPhase(t2.b); t2.game.enemies.filter(o => o.add)[0].hp = 0; t2.b.hp = t2.b.maxHp * .24; assert.equal(t2.game.wardenUlt(t2.b, t2.game.heroSnap()).move, 'call', 'a guard is missing: the horn first');
+  assert.equal(t2.game.wardenUlt(t2.b, t2.game.heroSnap()).move === 'call', false, 'the horn blows once');
+  const t3 = wardenBrainArena(1100, 1300); t3.game.wardenPhase(t3.b); t3.b.hp = t3.b.maxHp * .24; const pick = t3.game.wardenUlt(t3.b, t3.game.heroSnap()); assert.ok(['gate', 'greatToll'].includes(pick.move), `${pick.move}: the door shuts first, then the toll`);
+  t3.game.dropGate(1100 - 240); assert.equal(t3.game.wardenUlt(t3.b, t3.game.heroSnap()).move, 'greatToll', 'a penned hero pays the toll');
+  const far = wardenBrainArena(500, 1300); far.game.wardenPhase(far.b); far.b.hp = far.b.maxHp * .24; far.game.wardenUlt(far.b, far.game.heroSnap()); assert.equal(far.game.wardenUlt(far.b, far.game.heroSnap()), null, 'a hero out of the toll\'s reach is not tolled');
+});
+
+test('warden presence and cleanup: a gate slams behind the hero on floor 10, footfalls shake while it walks, and its death takes the gates, guards and rings with it; brainOff restores the #50 Warden', () => {
+  const events = []; const g = new Game(e => events.push(e), 42, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(WARDEN_FLOOR);
+  assert.equal(evs(events, 'wardenWake').length, 1); assert.equal(evs(events, 'wardenWake')[0].duration, 1.2);
+  const off = []; const o = new Game(e => off.push(e), 42, 'castle'); o.brainOff = new Set(['warden']); o.start(); o.setWeapon('spear'); o.descend(); o.loadFloor(WARDEN_FLOOR); assert.equal(evs(off, 'wardenWake').length, 0);
+  const { game, events: ev, player, b } = wardenBrainArena(300, 900); b.cd = 99; b.engaged = true; advance(game, 1.5); assert.ok(evs(ev, 'wardenStep').length >= 2, 'footfalls while it walks'); assert.ok(evs(ev, 'wardenStep')[0].y === FLOOR);
+  game.wardenPhase(b); game.dropGate(500); game.rings.push({ x: 800, dir: 1, kind: 'low', top: FLOOR - 60, bottom: FLOOR, wait: 0, dist: 0, hit: false }); player.invulnerable = 99;
+  b.hp = 1; b.superArmor = 0; game.damageEnemy(b, 50, 1, false, false, false, 17);
+  assert.equal(game.obstacles.filter(q => q.gate).length, 0, 'gates lift'); assert.ok(game.enemies.filter(q => q.add).every(q => q.hp === 0), 'guards fall'); assert.equal(game.rings.length, 0);
 });
