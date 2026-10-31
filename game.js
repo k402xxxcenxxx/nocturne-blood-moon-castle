@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawChest, drawPool, drawPairThread } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawChest, drawPool, drawPairThread } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -221,8 +221,14 @@ function handleEvent(e) {
     case 'bloodPool': audio.play('poolSplash', .8); if (e.tithe && game.enemies.some(o => o.king && o.hp > 0 && o.bossPhase >= 3)) { audio.play('kingMoonPool', .8); effects.push({ type: 'moonPool', x: e.x, y: e.y, life: .6, max: .6 }); } // Blood Moon: a missed heavy sheds a pool, with a red moon rising off it
      burst(e.x, e.y - 4, '#a93959', 12, 130, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 3, life: .3, max: .3, color: '#a93959', r: 36 }); break;
     case 'poolTaken': audio.play('poolGulp', 1); flashNumber({ ...e, y: e.y - 40, amount: `+${e.amount}` }, '#e0584c'); burst(e.x, e.y - 8, '#e0584c', 12, 120); break;
-    case 'wardenCall': banner(t('boss.warden.call')); break;
-    case 'gateDrop': if (!gateHinted) { gateHinted = true; pendingToast = t('hint.gate'); } break; // one-time portcullis hint
+    case 'wardenCall': banner(t('boss.warden.call')); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#ffd36e', r: 120 }); burst(e.x, e.y, '#ffd36e', 10, 160); rumble(3, .2);
+      for (const gx of [60, game.worldWidth - 60]) { effects.push({ type: 'dust', x: gx, y: FLOOR, radius: 60, life: .5, max: .5 }); burst(gx, FLOOR - 4, '#9a8c77', 8, 120, 0, 3); } break; // horn: gold ring at the Warden, dust at both arena ends where the guards come in
+    case 'gateDrop': if (!gateHinted) { gateHinted = true; pendingToast = t('hint.gate'); }
+      rumble(9, .3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 90, life: .4, max: .4 }); burst(e.x, FLOOR - 4, '#9a8c77', 16, 220, 0, 3); burst(e.x, FLOOR - 6, '#e4dccb', 8, 150); break;
+    case 'gateLift': effects.push({ type: 'gateLift', x: e.x, life: .45, max: .45 }); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 40, life: .3, max: .3 }); break; // the bars rise away
+    case 'ring': effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: e.kind === 'low' ? '#ffb048' : '#b79cff', r: 50 }); rumble(2, .08); break; // the bell is struck: the front itself is drawn from game.rings
+    case 'wardenWake': effects.push({ type: 'wardenWake', x: e.x, w: e.w, h: e.h, life: e.duration, max: e.duration }); rumble(5, e.duration); { const w = game.enemies.find(o => o.warden); if (w) { effects.push({ type: 'dust', x: w.x, y: FLOOR, radius: 160, life: .8, max: .8 }); burst(w.x, FLOOR - 4, '#9a8c77', 20, 200, 0, 3); } } break; // presence: the gate slams behind the hero, the Warden rises in dust
+    case 'wardenStep': effects.push({ type: 'dust', x: e.x + e.dir * 14, y: FLOOR, radius: 22, life: .22, max: .22 }); rumble(2, .08); break; // one-time portcullis hint
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; lastFightKing = game.floor === KING_FLOOR; break; // metric for the #44 playtest; the result screen shows a compact line
     case 'enemyHeavy':
       if (e.enemy === 'king') { if (!e.branch) audio.play('heavyWarn'); const c = { slam: 'kingTellSlam', charge: 'kingTellCharge', descent: 'kingTellDescent' }[e.kind]; if (c) audio.play(c, .8); break; } // a string's charge branch already has glint + commit
@@ -676,6 +682,10 @@ function drawEffects(dt) {
       ctx.restore();
     } else if (fx.type === 'snap') { // the broken altar's glow line to a trap fades out
       ctx.save(); ctx.globalAlpha = (1 - progress) * .8; ctx.strokeStyle = '#ff8a9a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(fx.x), fx.y); ctx.lineTo(Math.round(fx.x + (fx.x2 - fx.x) * (1 - progress)), fx.y); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'gateLift') { // bars ghost upward out of the floor slot
+      ctx.save(); ctx.globalAlpha = (1 - progress) * .8; drawGate(ctx, fx.x, FLOOR, 44, 150, progress * progress * 190); ctx.restore();
+    } else if (fx.type === 'wardenWake') { // floor 10 entrance: a portcullis falls shut at the arena mouth, holds, then fades (the real wall is already there)
+      const q = Math.min(1, progress * 6), k = progress < .75 ? 1 : (1 - progress) * 4; ctx.save(); ctx.globalAlpha = Math.max(0, k) * .9; drawGate(ctx, fx.x, FLOOR, fx.w, fx.h, (1 - q * q) * (fx.h + 60)); ctx.restore();
     } else if (fx.type === 'dust') { // ring of dust expanding along the floor to the plunge radius
       const r = fx.radius * Math.sin(progress * Math.PI / 2);
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .8;
@@ -831,6 +841,7 @@ function render(dt) {
     for (const c of game.chests) if (c.x > camera - 150 && c.x < camera + viewWidth + 150) drawChest(ctx, c, worldTime);
     for (const tr of game.traps) if (tr.x > camera - 150 && tr.x < camera + viewWidth + 150) drawTrap(ctx, tr, worldTime);
     for (const o of game.obstacles) if (o.x > camera - 150 && o.x < camera + viewWidth + 150) drawObstacle(ctx, o, worldTime, game.stage, game.traps);
+    for (const r of game.rings) if (r.wait <= 0 && r.x > camera - 80 && r.x < camera + viewWidth + 80) drawRing(ctx, r, worldTime);
     if (game.pair) drawPairThread(ctx, game.pair, worldTime, !settings.shake);
     for (const e of game.enemies) {
       if (e.hp <= 0 || e.x < camera - 150 || e.x > camera + viewWidth + 150) continue;
