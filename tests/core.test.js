@@ -5424,3 +5424,26 @@ test('prism fan keeps its gaps at least the hero width; shrieker bounce, phalanx
   const fl = brainFoe('spear', 200, { floor: 5 }); const kn = enemy(fl.game, fl.player.x + 260, { type: 'knight', hp: 1e5 }); Object.assign(kn, { heavy: true, heavyKind: 'rush', tell: 0, strikeT: .2 });
   assert.equal(fl.game.canStrike(fl.e, .1), false, 'a light landing in the 0.8 s before a flying heavy\'s hit waits');
 });
+
+test('blood curse: a hero hurt by a priest rite or bolt or a mage ray earns no blood for 3 s; a dodged hit curses nothing; it wears off', () => {
+  const rite = () => { const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150; Object.assign(c.e, { heavy: true, heavyKind: 'rite', tell: .001, token: 'heavy', warn: { kind: 'rite', circles: [{ x: c.player.x, y: c.player.y, r: 56 }] } }); return c; };
+  const a = rite(); advance(a.game, .05); assert.ok(a.game.curseT > 2.5, 'cursed'); assert.ok(evs(a.events, 'curse').length === 1 && evs(a.events, 'curse')[0].enemy === 'priest');
+  const b0 = a.player.blood; a.game.gainBlood(10); assert.equal(a.player.blood, b0, 'hits and kills pay nothing while cursed'); advance(a.game, 3.2); a.game.gainBlood(3); assert.ok(a.player.blood > b0 - 1 && a.game.curseT === 0, 'and it wears off');
+  const d = rite(); d.player.invulnerable = 5; advance(d.game, .05); assert.equal(d.game.curseT, 0, 'a dodged rite curses nothing');
+  const bolt = brainFoe('priest', 300, { floor: 6 }); bolt.e.speed = 0; bolt.e.cd = 99; lull(bolt.game); bolt.player.blood = 150; bolt.game.projectiles.push({ x: bolt.player.x - 5, y: bolt.player.y - 30, vx: 250, vy: 0, r: 7, life: 1, damage: 16, hex: true }); advance(bolt.game, .05);
+  assert.ok(bolt.game.curseT > 0, 'a priest bolt curses');
+  const plain = brainFoe('mage', 300, { floor: 7 }); plain.e.speed = 0; plain.e.cd = 99; lull(plain.game); plain.player.blood = 150; plain.game.projectiles.push({ x: plain.player.x - 5, y: plain.player.y - 30, vx: 250, vy: 0, r: 7, life: 1, damage: 16 }); advance(plain.game, .05); assert.equal(plain.game.curseT, 0, 'a mage bolt does not');
+  const ray = brainFoe('mage', 300, { floor: 7 }); ray.e.speed = 0; ray.e.cd = 99; lull(ray.game); ray.player.blood = 150; ray.player.x = ray.e.x - 200; ray.player.y = FLOOR;
+  Object.assign(ray.e, { heavy: true, heavyKind: 'ray', strikeT: .1, strikeMax: .15, struck: false, dmg: 100, token: 'heavy', warn: { kind: 'ray', box: { x: ray.e.x - 460, y: FLOOR - 40, w: 440, h: 16 } } }); advance(ray.game, .05);
+  assert.ok(ray.game.curseT > 0, 'a mage ray curses');
+  const n = new Game(() => {}, 4, 'normal'); n.hex('priest'); assert.equal(n.curseT, 0, 'never in Normal');
+});
+
+test('a cover rite is a ground circle and a crossfire ray aims at the landing height, even for an airborne snapshot', () => {
+  const mk = type => { const c = brainFoe(type, 300, { floor: 8 }); c.game.escapes = () => true; const sp = enemy(c.game, c.player.x + 140, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.e.mixT = 99; c.e.blinkCd = 99;
+    Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); for (let i = 0; i < 20; i++) { Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); c.game.update(1 / 120, {}); }
+    Object.assign(sp, { tell: .35, token: '', warn: { kind: 'thrust', box: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 } } }); c.e.heavyCd = 0; c.game.pairCd = 0; Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); c.game.update(1 / 120, {}); return c; };
+  const pr = mk('priest'); assert.ok(pr.game.pair, 'cover opened'); assert.equal(pr.e.warn.circles[0].y, FLOOR, 'the circle sits on the floor, not in the air');
+  const mg = mk('mage'); assert.ok(mg.game.pair, 'crossfire opened'); assert.ok(Math.abs(mg.e.warn.line.y1 - (FLOOR - 30)) < 1, 'the ray aims at the landing height');
+  assert.ok(pr.game.pair || mg.game.pair, 'at least one of the pairs opened for the airborne hero');
+});

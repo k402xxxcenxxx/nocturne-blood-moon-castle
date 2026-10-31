@@ -555,6 +555,8 @@ Same framework and rules (snapshot decisions, fixed boxes, tell floors, castle o
 | Eclipse read | Eclipse ready within 230 px | no bolts (Eclipse would clear them): a ray, or it backs off at x0.9 | |
 | bolt | else | the casters' bolt; Prism: three lines centred on the predicted position, gaps kept at least the hero's width (28 px) | |
 
+**Blood curse (new, priest and mage trait)**: a hero hurt by a priest's rite or bolt or by a mage's ray earns no blood from its hits or kills for 3 s (`curseT`, `gainBlood` pays nothing; castle only). It adds no damage and no tell of its own: it rides on telegraphed hits the hero could dodge, and it answers the Greatsword's numb-and-refill play (a hit that leaves a few blood used to be topped up by the melee). Event `curse` {x, y, duration, enemy: 'priest' | 'mage'}; the hero's remaining time is `game.curseT`. Non-dash answer: dodge the hit; once cursed, fight on defense for 3 s.
+
 **The seven elite rows**:
 
 | Elite | Brain row |
@@ -581,7 +583,7 @@ Same framework and rules (snapshot decisions, fixed boxes, tell floors, castle o
 | Round 1 (brains) | 100 | 100 (hits 0.6-1.0 per fight) | 100 | priest+mage Twin 28% (bolts flew 4 s, the bot dodged forever) | 100 | 100 | 84-97 / 91-92 | | |
 | Round 2 (bolt range, targeted heavies, shadow rules) | 100 | 100 | 100 | 100 | 100 (average 92% vs spear and knight elites) | 100 | 89-100 / 90-91 | 1 / 8 / 12 | 0 / 0 / 0 |
 
-Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites, with every weapon; seed 1 wins each: `node tools/bot-run.mjs --duel 1 --type priest|mage|elite:<type> --floor 9 --tier 3 --weapon heavy|twin|spear --seeds 1`; the elite bar is 30%). **Mash bot (floor 9, tier 3, Greatsword / Twin / Spear)**: five priests 13 / 0 / 0% (was 100 / 100 / 100%), five mages 13 / 0 / 0% (was 96 / 95 / 97%), 3 priest + 3 mage 13 / 0 / 0%, knight+spear+shield+priest+mage+bat 11 / 0 / 0%, 2 priest + 2 mage + 2 knight 1 / 0 / 0%; the PR 1 and PR 2 rooms and castle floors 1-5 stay at 0-2%. The 13% cells are the Greatsword alone (the rite or ray lands and leaves a few blood that kills refill). G3 full runs: expert 1 / 8 / 12%, average 0 / 0 / 0%, no timeouts.
+Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites, with every weapon; seed 1 wins each: `node tools/bot-run.mjs --duel 1 --type priest|mage|elite:<type> --floor 9 --tier 3 --weapon heavy|twin|spear --seeds 1`; the elite bar is 30%). **Mash bot (floor 9, tier 3, Greatsword / Twin / Spear)**: five priests 0 / 0 / 0% (was 100 / 100 / 100%), five mages 0 / 0 / 0% (was 96 / 95 / 97%), 3 priest + 3 mage 0 / 0 / 0%, knight+spear+shield+priest+mage+bat 10 / 0 / 0%, 2 priest + 2 mage + 2 knight 1 / 0 / 0%; the PR 1 and PR 2 rooms and castle floors 1-5 stay at 0-2%. The Greatsword's 13% in the caster rooms was the rite or ray landing and kills refilling the few blood left; the blood curse closed it. G3 full runs: expert 1 / 7 / 12%, average 0 / 0 / 0%, no timeouts. The cover rite circle is placed on the floor (or platform) under the predicted landing and the crossfire ray aims at the landing height, never at an airborne snapshot's height.
 
 **User decisions** (2026-10-21): castle elites give no relic pick (keep); the shield bearer's late reads from floor 5 (keep).
 

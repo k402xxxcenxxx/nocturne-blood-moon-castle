@@ -119,6 +119,7 @@ const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 
 // Brains (#62 PR 1): a castle type with a BRAINS entry decides from snap() (the hero 0.12 s ago) and answers the hero's visible state. Playtest starting points.
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4, bat: 5, priest: 6, knight: 8, mage: 7 };
+const BLOOD_CURSE = 3;
 const PRIEST = { recoilRange: 160 }, MAGE = { blinkRange: 160 }; // a type joins pairs from the floor after its intro
 const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
 const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, vaultDist: 160, vaultTime: .3, vaultCd: 2.5, spinReach: 130, spinCd: 4, guardTime: .6, guardCd: 1.5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
@@ -168,7 +169,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
-    this.brainOff = new Set(); this.habits = {}; this.pair = null; this.pairCd = 0; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
+    this.brainOff = new Set(); this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
     this.apex = true; this.snaps = []; this.guardedHit = false; // apex skeletons (castle only); the hero snapshot ring
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
@@ -200,7 +201,7 @@ export class Game {
     this.stage = index;
     const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
-    this.tier = tier; this.gaps = []; this.snaps = []; this.pair = null; this.pairCd = 0; this.habits = {}; // splitting copies use the floor tier; attack-token retake gaps start clear
+    this.tier = tier; this.gaps = []; this.snaps = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
     this.worldWidth = spec.width;
@@ -322,7 +323,7 @@ export class Game {
   // Blood gain from a hit, kill or perfect dodge; halved (min 1) during frenzy. Skill and damage-over-time hits set noBlood.
   gainBlood(amount) {
     const p = this.player;
-    if (this.mode !== 'castle' || this.noBlood || this.state !== 'playing') return;
+    if (this.mode !== 'castle' || this.noBlood || this.state !== 'playing' || this.curseT > 0) return; // a blood curse: hits and kills pay nothing
     this.addBlood(p.frenzy ? Math.max(1, amount >> 1) : amount);
   }
   // Adds blood unhalved (pools use it directly), counts it for the fight stats and starts the frenzy at the cap.
@@ -533,6 +534,7 @@ export class Game {
     this.wasFrenzy = p.frenzy;
     for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
     this.updatePair(dt);
+    if (this.curseT > 0) this.curseT = Math.max(0, this.curseT - dt);
     this.updateTraps(dt);
     for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
     this.updateShots(dt);
@@ -540,7 +542,7 @@ export class Game {
     for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
-        this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
+        const blood0 = p.blood; this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy); if (b.hex && p.blood < blood0) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
@@ -1672,7 +1674,7 @@ export class Game {
     if (!s.frenzy && this.floor >= 7 && e.heavyCd <= 0 && this.startSupportPair(e, s, 'crossfire')) return true;
     // highray: a hero who jumped 2 of its last 3 rays meets a ray 80-96 px above the floor, which a standing hero (58 tall) is under
     const ray = high => {
-      const f = toward, y = high ? e.y - 88 : s.y - 30, box = { x: Math.min(e.x + f * RAY.from, e.x + f * RAY.to), y: y - RAY.thick / 2, w: RAY.to - RAY.from, h: RAY.thick };
+      const f = toward, y = high ? e.y - 88 : (s.grounded ? s.y : FLOOR) - 30, box = { x: Math.min(e.x + f * RAY.from, e.x + f * RAY.to), y: y - RAY.thick / 2, w: RAY.to - RAY.from, h: RAY.thick };
       e.dir = f;
       return this.startBrainHeavy(e, 'ray', box, 1, { line: { x1: e.x + f * RAY.from, y1: y, x2: e.x + f * RAY.to, y2: y }, variant: high ? 'high' : undefined });
     };
@@ -1683,16 +1685,22 @@ export class Game {
     walk(eclipseNear ? -toward * e.speed * .9 : d > 320 ? toward * e.speed * .6 : d < 260 ? -toward * e.speed * .6 : 0);
     return true;
   }
+  // Blood curse (priest rite and bolt, mage ray): a hero these casters hurt earns no blood from hits or kills for BLOOD_CURSE s, so a wounded hero is not topped up by the melee while the casters finish it. Not in Normal or Endless.
+  hex(src) {
+    if (this.mode !== 'castle') return;
+    this.curseT = BLOOD_CURSE;
+    this.emit('curse', { x: this.player.x, y: this.player.y - 60, duration: BLOOD_CURSE, enemy: src });
+  }
   // A cover (priest rite) or crossfire (mage ray) pair: an ally of another type holds a light tell with 0.2-0.5 s left, so the heavy (tell 1.0 s, glint) lands 0.5-0.8 s after that contact.
   startSupportPair(e, s, tactic) {
     if (this.pair) return false;
     const lead = this.findAlly(e, 360, a => a.state === 'tell' && a.o.type !== e.type && a.o.type !== 'bat' && !a.o.heavy && a.o.tell > .2 && a.o.tell < .5 && (a.o.warn?.box || a.o.thrustBox) && this.brainOn(a.o))?.o;
     if (!lead || !this.pairOk(lead, e)) return false;
-    const lx = this.landing(s, 1), ab = lead.warn?.box || lead.thrustBox, sh = PAIR.react, rite = tactic === 'cover';
+    const lx = this.landing(s, 1), gy = s.grounded ? s.y : FLOOR, ab = lead.warn?.box || lead.thrustBox, sh = PAIR.react, rite = tactic === 'cover'; // gy: the floor (or platform) under the predicted landing: a rite circle is on the ground and a ray aims at the height the hero comes down at
     let box2, kind, extra;
-    if (rite) { kind = 'rite'; box2 = { x: lx - RITE_R, y: s.y - RITE_R, w: RITE_R * 2, h: RITE_R }; extra = { circles: [{ x: lx, y: s.y, r: RITE_R }], variant: 'cover' }; }
+    if (rite) { kind = 'rite'; box2 = { x: lx - RITE_R, y: gy - RITE_R, w: RITE_R * 2, h: RITE_R }; extra = { circles: [{ x: lx, y: gy, r: RITE_R }], variant: 'cover' }; }
     else {
-      const f = Math.sign(s.x - e.x) || e.dir, y = this.habit('mage') === 'jumped' ? e.y - 88 : s.y - 30;
+      const f = Math.sign(s.x - e.x) || e.dir, y = this.habit('mage') === 'jumped' ? e.y - 88 : gy - 30;
       kind = 'ray'; e.dir = f; box2 = { x: Math.min(e.x + f * RAY.from, e.x + f * RAY.to), y: y - RAY.thick / 2, w: RAY.to - RAY.from, h: RAY.thick };
       extra = { line: { x1: e.x + f * RAY.from, y1: y, x2: e.x + f * RAY.to, y2: y }, variant: 'crossfire' };
     }
@@ -2511,7 +2519,7 @@ export class Game {
       } else {
         const base = e.aim ?? Math.atan2(p.y - 30 - (e.y - e.h * .6), p.x - e.x); // a brain fixed its aim at tell start
         if (e.aim !== undefined) e.aim = null;
-        this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base) * 250, vy: Math.sin(base) * 250, r: 7, life: castle && this.brainOn(e) ? RAY.to / 250 : 4, damage: dmg }); // a brain's bolt flies the same 460 px as the Prism fan, not 4 s across the room
+        this.projectiles.push({ x: e.x, y: e.y - e.h * .6, vx: Math.cos(base) * 250, vy: Math.sin(base) * 250, r: 7, life: castle && this.brainOn(e) ? RAY.to / 250 : 4, damage: dmg, ...(castle && this.brainOn(e) && e.type === 'priest' ? { hex: true } : {}) }); // a brain's bolt flies the same 460 px as the Prism fan, not 4 s across the room
       }
     } else if (e.type === 'spear') {
       const b = e.thrustBox, sweep = e.move === 'sweep'; e.turn = sweep ? SWEEP_RECOVER : .72; e.thrustBox = null;
@@ -2645,7 +2653,7 @@ export class Game {
     }
     if (e.heavyKind === 'rite') { // ground-centred disc: a grounded hero inside it is hit, a high jump clears it
       const c = w.circles[0];
-      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true);
+      if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) { const blood0 = p.blood; this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true); if (this.brainOn(e) && p.blood < blood0) this.hex(e.type); }
       this.heavyEnd(e);
       return;
     }
@@ -2665,7 +2673,7 @@ export class Game {
     const k = 1 - e.strikeT / e.strikeMax;
     if (e.heavyKind === 'ray') {
       e.vx = 0;
-      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; this.hurt(e.dmg, e.dir, false, true); }
+      if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; const blood0 = p.blood; this.hurt(e.dmg, e.dir, false, true); if (this.brainOn(e) && e.type === 'mage' && p.blood < blood0) this.hex(e.type); }
     } else if (e.heavyKind === 'rush') {
       e.x = e.from.x + (w.to - e.from.x) * k; e.vx = (e.x - prevX) / dt;
       if (this.collideEnemy(e, prevX, dt)) { w.to = e.x; e.strikeT = 0; } // a barricade stops the rush
