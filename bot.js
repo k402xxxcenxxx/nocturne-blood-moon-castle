@@ -268,11 +268,18 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const dirAway = e => Math.sign(p.x - e.x) || -p.dir;
     // A dash covers 131 px: take the side whose landing spot no other announced attack covers (a dash into a second skeleton's lunge box is the dash trap).
     const dashSide = d => { const lands = x => threats.some(th => th.e && th.t > .2 && hitTime(th.e, Math.max(25, Math.min(W - 30, x)), p.y) < Infinity), out = x => fenced && (x < rm.x + 20 || x > rm.x + rm.w - 20), cost = x => (lands(x) ? 2 : 0) + (out(x) ? 1 : 0); return cost(p.x - d * 131) < cost(p.x + d * 131) ? -d : d; };
+    const casters = foes.filter(e => e.type === 'priest' || e.type === 'mage'), ranged = th => !th.e || th.e.type === 'priest' || th.e.type === 'mage';
+    const chaseTo = casters.sort((a, c) => Math.abs(a.x - p.x) - Math.abs(c.x - p.x))[0], casterChase = !!chaseTo && threats.length > 0 && threats.every(ranged) && foes.every(f => f.type === 'priest' || f.type === 'mage' || !(Math.abs(f.x - p.x) < 400)), chaseDir = chaseTo ? Math.sign(chaseTo.x - p.x) || p.dir : 0;
     let danger = Infinity;
     if (threats.length) {
       const { e, t } = threats[0]; danger = t;
       if (greedyOn(now) && ready && t > .05 && t < .6) { o.attack = true; greedyUntil = 0; } // a greedy extra swing instead of dodging
       else if (e && flinches(e) && canHit(e) && ready && t > .05) o.attack = true; // a landed light hit cancels the swing
+      else if (casterChase && !(e && (e.heavyKind === 'rite' || e.warn?.variant === 'high'))) { // only casters shoot at the hero: close the distance instead of backing away along the bolt (a human runs at a caster)
+        if (t <= DASH_LEAD + jit(e || threats[0].b) && dashReady) { o.dash = true; o.urgent = true; o.dir = chaseDir; } // i-frames through the bolt, landing closer
+        else if (p.grounded && t <= .32 && t >= .12 && (!e || e.warn?.kind === 'ray' || e.warn?.kind === 'bolt')) { o.jump = true; o.urgent = true; o.dir = chaseDir; } // hop it while still moving in
+        else { o.dir = chaseDir; o.urgent = true; }
+      }
       else if (t <= DASH_LEAD + jit(e || threats[0].b) && dashReady) { o.dash = true; o.urgent = true; o.dir = e ? (e.heavy ? flip(e, dashSide(dirAway(e))) : dashSide(dirAway(e))) : -Math.sign(threats[0].b.vx); } // i-frames; the dash direction is picked by the core on the same frame
       else if (t <= .25 && !dashReady && canCast && (e ? e.heavy && Math.hypot(e.x - p.x, e.y - p.y) < 205 : true)) o.magic = true; // Eclipse cancels a heavy and clears projectiles
       else { // walk out of the area if the time allows

@@ -42,9 +42,9 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   for (const id of relics) { RELICS.find(x => x.id === id).apply(game.player); game.relics.push(id); }
   game.enemies = []; game.traps = []; game.obstacles = []; game.chests = []; game.pickups = [];
   game.setWeapon(w); // setWeapon rebuilds stats on top of the relics and resets the hero's x, so the hero is placed after it
-  const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8;
+  const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8; game.portalX = 1e9; // the duel room has no Moon Gate: a hero chasing a caster would otherwise walk into it and end the fight with a reward pick
   const kinds = foeTypes(type, n); n = kinds.length; game.floor = floor; if (brainOff) game.brainOff = new Set(kinds.map(k => k.replace('elite:', '')));
-  kinds.forEach((k, i) => { const elite = k.startsWith('elite:'), e = game.spawnEnemy(elite ? k.slice(6) : k, p.x + [300, 420, -250][i], tier); if (elite) game.makeElite(e, tier); }); // elite:<type> spawns that type's elite (its twist, health x1.5)
+  kinds.forEach((k, i) => { const elite = k.startsWith('elite:'), e = game.spawnEnemy(elite ? k.slice(6) : k, p.x + [300, 420, -250][i], tier); if (elite) game.makeElite(e, tier); e.required = true; }); // required, like the foes of a real room: the bot hunts a straggler instead of walking to the Moon Gate // elite:<type> spawns that type's elite (its twist, health x1.5)
   const bot = createBot({ skill: botSkill, seed });
   let last = p.blood, t0 = game.elapsed; const room0 = game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w);
   while (game.state === 'playing') {
@@ -58,7 +58,7 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   }
   if (game.state === 'dead') r.dead = true;
   if (r.kills >= n) r.win = true;
-  r.time = game.elapsed - t0;
+  r.time = game.elapsed - t0; r.state = game.state;
   return r;
 }
 

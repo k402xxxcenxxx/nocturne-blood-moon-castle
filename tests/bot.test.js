@@ -212,3 +212,11 @@ test('the bot treats a planted spear as a standing box: it neither walks nor ass
   const hurts = runBot(game, 1.1, createBot(), () => { game.player.blood = Math.max(150, Math.min(190, game.player.blood)); });
   assert.equal(hurts.length, 0, 'no hit from the planted tip'); assert.ok(p.x < e.x - 194, 'it waits outside the tip box');
 });
+
+test('the bot closes on a caster that is its only threat instead of backing away along the bolt (a human runs at a mage)', () => {
+  const { game, p, e } = brainGame('mage', 380, 9); e.blinkCd = 99;
+  game.projectiles.push({ x: e.x - 20, y: p.y - 30, vx: -250, vy: 0, r: 7, life: 2, damage: 16 });
+  const bot = createBot(), x0 = p.x; let dashed = false;
+  for (let i = 0; i < 90 && game.state === 'playing'; i++) { const input = bot.input(game); if (input.dash) dashed = true; game.update(DT, input); }
+  assert.ok(p.x > x0 + 40, `it advanced toward the mage (${p.x - x0} px)`); assert.ok(game.player.blood >= 150 - 20, 'and the bolt did not land');
+});

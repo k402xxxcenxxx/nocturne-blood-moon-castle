@@ -602,13 +602,15 @@ Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites,
 | Cell | Result |
 | --- | --- |
 | skeleton 1v1 (Greatsword / Twin / Spear) | 100 / 100 / 100%, 5.9-8.3 s, audit 0 |
-| skeleton 1v3 expert | 99.5 / 94 / 100% (was 34 / 9.5 / 23% with the old numbers); average bot 51.5 / 32.5 / 58.5% |
+| skeleton 1v3 expert | 100 / 100 / 100% in 19-24 s (was 34 / 9.5 / 23% with the old numbers); average bot 89.5 / 70.5 / 75% |
 | 1v1 shield, spear, bat, knight, priest, mage, each elite | 100% with every weapon, no deaths, no timeouts, 3.9-13.9 s per win; seed 1 wins each; audit 0 |
-| 1v2 and frenzy 1v1 for those types | 99.5-100%, except **1v2 mage, Twin Blades: 0% (all 60 s timeouts)**: two 482 HP mages out-range a short-reach hero that keeps dodging |
-| mixes | 82-100%; weak spots: mage+spear Greatsword 34% (132 deaths), priest+mage Spear 32% (136 timeouts), shield+mage 78-85% (about 30 timeouts each) |
+| 1v2 and frenzy 1v1 for those types | 99.5-100%, no timeouts (the 1v2 mage stall is fixed on the bot side, see below) |
+| mixes | 88-100%: bat+knight Twin 90.5%, shield+mage 88-95.5%, shield+bat Twin 99.5%; the rest 100% |
 | average bot 1v1 | skeleton 99.5-100%, shield 100%, spear 89.5-91.5%, bat 100%, knight 79.5 / 92 / 81%, priest and mage 100%, elites spear 85.5-89.5%, knight 87.5-92% |
 | mash bot | 0% in every caster, bat/knight, shield/spear and mixed room, and on castle floors 1-9 |
-| full runs expert (100 seeds, floors 1-10) | clear 47 / 41 / 55%, timeouts 0 / 3 / 1; average 0 / 0 / 0% (deaths on floors 1-3, mostly light hits) |
+| full runs expert (100 seeds, floors 1-10) | clear 40 / 53 / 47%, timeouts 0 / 1 / 0; average 0 / 0 / 0% (deaths on floors 1-3, mostly light hits) |
+
+**Caster stall (bot side)**: with 482 HP casters the first re-measure showed 1v2 mage with the Twin Blades at 0% (all 60 s timeouts) and priest+mage, shield+mage and mage+spear mixes with up to 136 timeouts. Two causes, both on the harness and bot side: the duel foes were not `required`, so the bot walked to the Moon Gate once no foe was within 700 px (now they are required, like a real room's, and the gate is out of reach), and when casters were its only threat it backed away along each bolt instead of closing. The expert (and average) bot now chases a caster that is its only threat: it dashes through the bolt toward it (i-frames), hops a flat bolt or ray while moving in, and otherwise keeps walking toward it; it does not do this while a non-caster foe is within 400 px, in a rite circle, or under a high ray. Human limits are unchanged (0.18 s reaction, 8 presses/s, on-screen info). No duel cell times out any more, and no enemy number changed.
 
 The mash and full-run numbers above replace the earlier tables; the audit stays 0.
 
