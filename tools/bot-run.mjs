@@ -48,7 +48,7 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   const bot = createBot({ skill: botSkill, seed });
   let last = p.blood, t0 = game.elapsed; const room0 = game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w);
   while (game.state === 'playing') {
-    if (type === 'skeleton' && game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room (kiting foes may lead it out: only skeleton cells stop there)
+    if (type === 'skeleton' && process.env.DUEL_ROOM && game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room: only checked with DUEL_ROOM=1 (the old skeleton cells; foes slower than the hero no longer lead it out of a room)
     if (game.elapsed - t0 > capSeconds) { r.timeout = true; break; }
     if (r.kills >= n) { r.win = true; break; }
     game.update(DT, bot.input(game));

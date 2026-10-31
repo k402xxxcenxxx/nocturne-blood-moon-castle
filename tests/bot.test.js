@@ -181,7 +181,7 @@ test('the expert bot fights a three-skeleton apex group inside its room and wins
   assert.ok(wins >= 1, `won ${wins} of 6`);
 });
 
-test('replayable apex wins: the expert bot beats the apex skeletons (HP x9.6) on known seeds (1v1 and 1v3)', async () => {
+test('replayable apex wins: the expert bot beats the apex skeletons (normal profile, HP x4.8) on known seeds (1v1 and 1v3)', async () => {
   const { playDuel } = await import('../tools/bot-run.mjs');
   for (const [n, weapon, seed] of [[1, 'heavy', 1], [1, 'twin', 2], [1, 'spear', 1], [3, 'heavy', 3], [3, 'twin', 1], [3, 'spear', 10]]) {
     const r = playDuel(seed, { n, weapon });

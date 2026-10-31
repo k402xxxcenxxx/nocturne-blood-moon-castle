@@ -365,7 +365,7 @@ Differences from #44: the Warden has the #50 moveset instead of the King's slash
 Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelist elite, which keeps its `slash2` twist and draws no chain) runs the apex brain while `game.apex` is true (the default; set `__nocturne.game.apex = false` on `?test` to get the #50 skeleton back). Normal and Endless skeletons and every other enemy keep their rules. Constants: `APEX_REACT` and `APEX` in `core.js`; every number is a playtest starting point.
 
 - **Perception**: each frame the core stores a hero snapshot (`heroSnap()`: position, velocity, grounded, facing, attack and combo state, plunge, thrust window, whiff, dash and dash cooldown, invulnerability, blood, frenzy, weapon, debt, Eclipse cooldown, Lunatic Moon, reach, plunge radius, armor, `takenMul`; the ring keeps about 0.2 s and is not recorded when `game.apex` is off). An apex skeleton decides from the newest snapshot at least `APEX_REACT` **0.12 s** old (`snap()`), never from the live frame, input, buffers or future rolls. It has no spawn cooldown: its first answer comes as soon as it reads one. It also re-faces instantly toward the snapshot hero when it starts a move (no `REFACE` delay, unlike the #50 skeleton); the locked box and the 0.45 s tell keep that fair, so it is not a bug. A guard cut short by a stun still starts its 1.5 s cooldown.
-- **Stats** (stat levers, rounds 2-3): HP ×9.6 (×12 until the user's playtest on 2026-10-30 asked for 20% less), light damage ×8, posture ×12, speed ×2.5 on top of the castle skeleton (`APEX.hp`, `dmg`, `poise`, `speed`). The heavy `cleave` stays a flat 100.
+- **Stats** (user decision 2026-10-31, superseding the rounds 2-3 levers): from floor 1 the skeleton uses the **normal profile**, the old multipliers halved: HP ×4.8, light damage ×4, posture ×6, speed ×1.25 (`APEX_PROFILES.normal`). The old numbers (HP ×9.6, damage ×8, posture ×12, speed ×2.5) are kept as the **enraged profile**, selected by `apexProfile(floor)` for castle floors above `ENRAGED_FLOOR` = 100 (nothing reaches it yet). The heavy `cleave` stays a flat 100. Brain, moves, reach, tokens and chain are unchanged. Every other castle regular (shield bearer, spearman, bat, knight, priest, mage) has **5.3× its own castle base health** (`CASTLE_HP_MUL`, tier scaling included; bat 143 and knight 345 at tier 0, so identities keep their order); elites keep their ×1.5 on top; the Warden, the King and the Normal and Endless enemies are unchanged.
 - **Light tells**: `slash` tell 0.45 s, box 10-82, cooldown 0.6 s (`lightCd`), 0.45 s punishable recovery. `stepcut`: backstep 0.25 s at 280 px/s, then a 0.5 s tell with the drawn line, an 80 px lunge in 0.15 s, box 10-**280** px in front × 70 (`cutReach`), recovery **0.5 s** (`cutRecover`) and no 1.2 s attack cooldown after it. Every tell needs a token, the on-screen rule and `canWindUp`, and none starts if its contact would fall inside the hero's remaining invulnerability (snapshot `invulnerable` − 0.12).
 - **Attack tokens**: while `game.apex` is on, a castle floor has **3 attack tokens** (`APEX.tokens`, still at most 1 heavy) for every enemy on it, not only skeletons (`tokenCap()`).
 
@@ -400,6 +400,8 @@ Every skeleton in Castle Descent (regular skeletons, gate guards, and the Duelis
 "Reach" is the snapshot's weapon reach + 24 when hit 3 is next + 14. No heavy starts while Eclipse is ready within 230 px. Ties never roll: the brain is deterministic from the snapshot, so a run stays reproducible from its seed.
 
 **Deviations from the approved spec**: the spec ruled out stat levers; the user allowed HP, reach, posture, damage and speed levers on 2026-10-21 after Round 1 (tells, the `!` and the fairness audit stay). The chain is a 280 px lunge with depth 2 instead of "one follow-up per string, `slash` or `cleave`". The field uses 3 tokens (allowed from Round 3 by the spec). Guard cooldown 1.5 s (spec 2.0, the spec's floor) and slash tell 0.45 s (the spec's floor).
+
+*Superseded on 2026-10-31: the arms-race tables below were measured before the stat decision (halved skeleton, 5.3× health for the others); see the table in the user-decisions note at the end.*
 
 **Arms race** (`node tools/bot-run.mjs --duel N`, expert bot, 200 seeds per cell, win %, Greatsword / Twin Blades / Spear; fairness audit 0 unanswerable hits in every step):
 
@@ -469,6 +471,8 @@ Spacing is a fixed band, so a hero that walks in is met by `thrust` first, `swee
 
 **Harness**: `node tools/bot-run.mjs --duel N --type shield|spear|skeleton|mix:a,b [--floor F] [--tier T] [--brain off]` (default skeleton, so the old cells replay; `mix:` lists the foes from the hero outward; `--floor` is the floor the brains read, pairs need 4+ and cower 5+; the duel also prints the enemy moves per fight). `--run --brain off` switches the shield and spear brains off for a full run.
 
+*Superseded on 2026-10-31: the arms-race tables below were measured before the stat decision (halved skeleton, 5.3× health for the others); see the table in the user-decisions note at the end.*
+
 **Arms race** (expert bot, 200 seeds per cell, floor 5, tier 2, win % Greatsword / Twin Blades / Spear; every audit 0 unanswerable):
 
 | Step | 1v1 shield | 1v1 spear | 1v2 shield | 1v2 spear | frenzy 1v1 shield / spear | mix shield+spear | average 1v1 shield / spear | average mix | Full run expert | Full run average |
@@ -516,6 +520,8 @@ Same framework and rules as PR 1 (snapshot decisions, fixed boxes, tell floors, 
 **Carried over from the PR 1 review**: `allies()` is now `findAlly`/`allyState` (no per-frame arrays); forced heavies read the snapshot for the Impaler skewer and the rite gate (`startHeavy` uses `snap()` when a brain forces it).
 
 **New events and fields** (art, audio): `parry` {x, y, dir}; `brainStep` kinds `parry` and `flutter`; `enemyTell` kinds `riposte`, `upcut`, `swoop` with `follow: true`; `enemyHeavy` variants `landing` (dive, greatswing) and `herd` with `area` set to the fixed box or line; `squadCall` tactics `herd` and `pincer`. Pose fields: `parryT` > 0 (parry pose), `upT` > 0 (flutter, flying high), `bmKind` `flutter`. The bat's orbit reuses `enemyCross`.
+
+*Superseded on 2026-10-31: the arms-race tables below were measured before the stat decision (halved skeleton, 5.3× health for the others); see the table in the user-decisions note at the end.*
 
 **Arms race** (expert bot, 200 seeds, floor 8, tier 3; win % Greatsword / Twin / Spear; audit 0 in every cell):
 
@@ -575,6 +581,8 @@ Same framework and rules (snapshot decisions, fixed boxes, tell floors, castle o
 
 **New events and fields** (art, audio): `enemyRecoil` and `enemyBlink` now come from the brains; `enemyHeavy` kind `rite` variants `landing` and `cover`, kind `ray` variants `high` and `crossfire`, kind `skewer` variant `impaler`; `squadCall` tactics `cover` and `crossfire`. The caster's fixed bolt aim is `e.aim` (radians); the targeted bless target is `e.blessTarget`; a rite's circle is `warn.circles`, a ray's line `warn.line`; the recoil is `bmKind: 'recoil'`.
 
+*Superseded on 2026-10-31: the arms-race tables below were measured before the stat decision (halved skeleton, 5.3× health for the others); see the table in the user-decisions note at the end.*
+
 **Arms race** (expert bot, 200 seeds, floor 9, tier 3; win % Greatsword / Twin / Spear; audit 0 in every cell):
 
 | Step | 1v1 priest, mage | 1v2 priest, mage | frenzy 1v1 | mixes (priest+mage, knight+priest, spear+mage, shield+mage) | each elite 1v1 | average 1v1 priest, mage | average mixes | Full run expert | Full run average |
@@ -588,6 +596,21 @@ Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites,
 **User decisions** (2026-10-21): castle elites give no relic pick (keep); the shield bearer's late reads from floor 5 (keep).
 
 **User decisions** (2026-10-30, #62 PR 1): new trait-based attack and defense moves are allowed (so the shield's Eclipse brace and the spearman's haft guard, vault, spin and pin stay); HP, damage and posture are not raised blindly; the residual 2% mash clear of the five-spearmen room (Greatsword and Spear) is accepted for this PR.
+
+**User decisions** (2026-10-31, after a playtest): the skeleton is too strong next to the others, so its stat multipliers are halved from floor 1 (the old ones live on as the enraged profile above floor 100), and every other castle regular has 5.3× its own castle base health (this overrides the earlier "no blanket HP raises" rule for these values only). Re-measured (expert bot, 200 seeds unless noted, floor 8-9 tier 3 for the typed cells; a duel is capped at 60 s):
+
+| Cell | Result |
+| --- | --- |
+| skeleton 1v1 (Greatsword / Twin / Spear) | 100 / 100 / 100%, 5.9-8.3 s, audit 0 |
+| skeleton 1v3 expert | 99.5 / 94 / 100% (was 34 / 9.5 / 23% with the old numbers); average bot 51.5 / 32.5 / 58.5% |
+| 1v1 shield, spear, bat, knight, priest, mage, each elite | 100% with every weapon, no deaths, no timeouts, 3.9-13.9 s per win; seed 1 wins each; audit 0 |
+| 1v2 and frenzy 1v1 for those types | 99.5-100%, except **1v2 mage, Twin Blades: 0% (all 60 s timeouts)**: two 482 HP mages out-range a short-reach hero that keeps dodging |
+| mixes | 82-100%; weak spots: mage+spear Greatsword 34% (132 deaths), priest+mage Spear 32% (136 timeouts), shield+mage 78-85% (about 30 timeouts each) |
+| average bot 1v1 | skeleton 99.5-100%, shield 100%, spear 89.5-91.5%, bat 100%, knight 79.5 / 92 / 81%, priest and mage 100%, elites spear 85.5-89.5%, knight 87.5-92% |
+| mash bot | 0% in every caster, bat/knight, shield/spear and mixed room, and on castle floors 1-9 |
+| full runs expert (100 seeds, floors 1-10) | clear 47 / 41 / 55%, timeouts 0 / 3 / 1; average 0 / 0 / 0% (deaths on floors 1-3, mostly light hits) |
+
+The mash and full-run numbers above replace the earlier tables; the audit stays 0.
 
 ## Playtest verdicts
 

@@ -115,7 +115,11 @@ const DUEL_GAP = .45, BOUNCE_TELL = .6, SKEWER = { kind: 'skewer', tell: .9, rec
 // Apex skeleton (#66): every castle skeleton decides from a snapshot of the hero taken APEX_REACT s ago (never the live frame, input or future rolls). Playtest starting points.
 export const APEX_REACT = .12;
 const APEX = { stepTime: .22, stepDist: 80, stepCd: .9, guardTime: .6, guardCd: 1.5, guardMul: .25, guardPoise: .5, crushRecover: .6, counterTell: .45, counterRecover: .45, risingTell: .45, risingRecover: .5, chainTell: .45, lightTell: .45, lightCd: .6,
-  hp: 9.6, dmg: 8, poise: 12, speed: 2.5, cutReach: 280, tokens: 3, chainMax: 2, cutRecover: .5, mix: .8 }; // stat levers (rounds 2-3): hp x9.6 (x12 cut 20% after the user's playtest), light damage x8, posture x12, speed x2.5; the stepcut reaches 280 px; 3 attack tokens
+  cutReach: 280, tokens: 3, chainMax: 2, cutRecover: .5, mix: .8 }; // the stepcut reaches 280 px; 3 attack tokens. The stat levers live in APEX_PROFILES below.
+// Apex skeleton stat profiles (user decision 2026-10-31): the skeleton is too strong next to the others, so from floor 1 it uses the normal profile (the old multipliers halved); the old numbers are kept as the enraged profile for castle floors above ENRAGED_FLOOR (nothing reaches it yet).
+export const ENRAGED_FLOOR = 100, APEX_PROFILES = { normal: { hp: 4.8, dmg: 4, poise: 6, speed: 1.25 }, enraged: { hp: 9.6, dmg: 8, poise: 12, speed: 2.5 } };
+export const apexProfile = floor => floor > ENRAGED_FLOOR ? APEX_PROFILES.enraged : APEX_PROFILES.normal;
+export const CASTLE_HP_MUL = 5.3; // user decision 2026-10-31: every other castle regular (shield, spear, bat, knight, priest, mage) has 5.3x its castle base health; elites keep their x1.5 on top; bosses are unchanged
 // Brains (#62 PR 1): a castle type with a BRAINS entry decides from snap() (the hero 0.12 s ago) and answers the hero's visible state. Playtest starting points.
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
 const JOINS = { shield: 3, spear: 4, bat: 5, priest: 6, knight: 8, mage: 7 };
@@ -468,8 +472,9 @@ export class Game {
     const e = this.enemies.at(-1);
     if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, vaultCd: 0, spinCd: 0, jabCd: 0, parryT: 0, parryCd: 0, chargeCd: 0, parried: false, aim: null, blessTarget: null, upT: 0, fluttCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
     if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
-      e.hp = e.maxHp = Math.round(e.hp * APEX.hp); e.damage *= APEX.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * APEX.poise); e.speed *= APEX.speed;
-    }
+      const prof = apexProfile(this.floor);
+      e.hp = e.maxHp = Math.round(e.hp * prof.hp); e.damage *= prof.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * prof.poise); e.speed *= prof.speed;
+    } else if (this.mode === 'castle' && type !== 'boss' && type !== 'skeleton' && this.apex) e.hp = e.maxHp = Math.round(e.hp * CASTLE_HP_MUL);
     return e;
   }
   update(dt, input = {}) {

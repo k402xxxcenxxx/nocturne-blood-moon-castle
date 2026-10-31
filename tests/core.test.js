@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT } from '../core.js';
+import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -4916,8 +4916,8 @@ function skeletonHash() { // the refactor guard: a skeleton-only castle floor, s
   return h.digest('hex').slice(0, 16);
 }
 
-test('brains: moving apexThink into BRAINS leaves a skeleton-only castle floor bit-for-bit unchanged', () => {
-  assert.equal(skeletonHash(), '0edbaf3fe1ff4c49', 'hash taken before the refactor');
+test('brains: a skeleton-only castle floor replays bit-for-bit (hash updated for the halved stat profile)', () => {
+  assert.equal(skeletonHash(), 'c3aaaae865e8d907', 'hash of the scripted skeleton floor with the halved stat profile (user decision 2026-10-31; the PR 1 refactor hash 0edbaf3fe1ff4c49 was taken with the old x9.6 profile)');
 });
 
 test('brains: every castle regular type has one (the bosses do not); brainOff switches a type back to the #50 rules', () => {
@@ -5446,4 +5446,19 @@ test('a cover rite is a ground circle and a crossfire ray aims at the landing he
   const pr = mk('priest'); assert.ok(pr.game.pair, 'cover opened'); assert.equal(pr.e.warn.circles[0].y, FLOOR, 'the circle sits on the floor, not in the air');
   const mg = mk('mage'); assert.ok(mg.game.pair, 'crossfire opened'); assert.ok(Math.abs(mg.e.warn.line.y1 - (FLOOR - 30)) < 1, 'the ray aims at the landing height');
   assert.ok(pr.game.pair || mg.game.pair, 'at least one of the pairs opened for the airborne hero');
+});
+
+test('skeleton stat profiles: the normal profile (halved) from floor 1, the old numbers as the enraged profile above floor 100; every other castle regular has 5.3x health; Normal and Endless are untouched', () => {
+  const stats = (type, floor) => { const g = new Game(() => {}, 5, 'castle'); g.apex = true; g.floor = floor; g.enemies = []; const e = g.spawnEnemy(type, 900, 0); return { hp: e.hp, dmg: e.damage, poise: e.maxPoise, speed: e.speed }; };
+  const n = stats('skeleton', 1), r = stats('skeleton', 101), edge = stats('skeleton', 100);
+  assert.deepEqual(edge, n, 'floor 100 is still the normal profile'); assert.equal(apexProfile(100), APEX_PROFILES.normal); assert.equal(apexProfile(101), APEX_PROFILES.enraged);
+  assert.deepEqual(r, { hp: 528, dmg: 80, poise: 720, speed: 180 }, 'the enraged profile reproduces the old x9.6 / x8 / x12 / x2.5 numbers');
+  assert.deepEqual(n, { hp: Math.round(55 * 4.8), dmg: 40, poise: 360, speed: 90 }, 'normal: hp x4.8, light damage x4, posture x6, speed x1.25');
+  const base = { shield: 60, spear: 53, bat: 27, knight: 65, priest: 54, mage: 55 };
+  for (const [type, hp] of Object.entries(base)) { const got = stats(type, 1).hp; assert.ok(Math.abs(got - hp * CASTLE_HP_MUL) <= 1.5, `${type}: ${got} vs ${hp * CASTLE_HP_MUL}`); }
+  assert.ok(stats('bat', 1).hp < stats('priest', 1).hp && stats('priest', 1).hp < stats('knight', 1).hp, 'identity kept: bat most fragile, knight toughest');
+  const off = new Game(() => {}, 5, 'castle'); off.apex = false; off.enemies = []; assert.equal(off.spawnEnemy('knight', 900, 0).hp, 65, 'apex off: the #50 numbers');
+  for (const mode of ['normal', 'endless']) { const g = new Game(() => {}, 5, mode); g.enemies = []; assert.equal(g.spawnEnemy('knight', 900, 0).hp, Math.round(65 * (mode === 'endless' ? floorScale(g.floor).hp : 1)), `${mode}: unchanged`); }
+  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, 520, 'the Warden is unchanged');
+  const k = new Game(() => {}, 5, 'castle'); k.apex = true; k.enemies = []; const kg = k.spawnKing(1400); assert.equal(kg.hp, KING_HP, 'the King is unchanged');
 });
