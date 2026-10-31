@@ -527,6 +527,62 @@ Same framework and rules as PR 1 (snapshot decisions, fixed boxes, tell floors, 
 
 Notes: a single bat or knight is dodged by the expert (0 hits), as with the PR 1 types, so **G1 holds** (100% 1v1 for both with every weapon; seed 1 wins each: `node tools/bot-run.mjs --duel 1 --type bat --floor 8 --tier 3 --weapon heavy --seeds 1`). **Mash bot (floor 8, tier 3, Greatsword / Twin / Spear)**: rooms of five bats 0 / 0 / 0%, five knights 0 / 0 / 0%, 3 knight + 3 bat 2 / 0 / 0%, 2 knight + 2 spear + 2 bat 1 / 0 / 0% (was 100% for the first three with the #50 types). Diagnosis of the big room: the heavies were being killed inside their own tells (a Greatsword mash kills a 101 HP knight in about 1.1 s, a bat in 0.8 s, against 0.9-1.0 s tells) and only one heavy runs at a time; the knight `charge` fixes that by starting from outside the hero's reach, the bats no longer dive at the hero that is hitting them. The last round added a rule for cooperation between different types: a light does not start if its hit would land in the 0.8 s of i-frames just before another enemy's heavy contact, and a heavy (of a different type than a pending light) waits out a light's i-frames (`canStrike`; the heavy has priority). The traced failures were a knight charge wasted inside the i-frames of a spearman's thrust. With the bats' finisher swoop, five bats fall to 0%. The remaining 2% is the Greatsword in 3 knight + 3 bat, and 1% in the large mixed room (a dive leaves a few blood and the kills refill it); the PR 1 rooms stay at 0-2%, castle floors 1-5 at 0%. These move in cliffs with the seed, so G2's 0% is not yet met in the large mixed room. G3 full runs (round 4): expert 3 / 6 / 11%, average 0 / 0 / 0%, no timeouts; average 1v1 knight 92%, average mix knight+spear 88-89%, average mix bat+knight 100%. Round 3 (knight charge, bat targeting): average 1v1 knight 92%, average mix knight+spear 88-89%.
 
+### Brains: the priest, the mage and the seven elite rows (#62 PR 3)
+
+Same framework and rules (snapshot decisions, fixed boxes, tell floors, castle only, no HP, damage or posture change). `JOINS` now has priest 6 and mage 7; every regular castle type has a brain. Constants `PRIEST`, `MAGE`, `BOLT_TELL`, `RAY`, `RITE_R`.
+
+**Casters' bolt**: the bolt is aimed once, at tell start (`e.aim`), at where the hero will stand when it leaves (snapshot position plus velocity); it no longer tracks the hero to the release frame. A brain's bolt flies 460 px (the Prism fan's range) instead of 4 s across the room, which also ended a dodge-forever stall in the harness.
+
+**Blood priest: the support** (`priestThink`):
+
+| Row | Read | Move | Non-dash answer |
+| --- | --- | --- | --- |
+| recoil + bolt | a hero closing in (> 100 px/s or dashing) within 160 px (was 120), not in a frenzy | `enemyRecoil` backstep 100 px in 0.3 s (cooldown 4 s), then a bolt (`!` 0.7 s) aimed at the landing | Jump or step out of the bolt, or corner it |
+| bless, targeted | the ally the hero just hit, or one holding a token (Hierophant elite: the ally with the lowest posture ratio) | the #50 bless on that ally only (`blessTarget`): no token, any hit cancels it | Interrupt it, or kill the priest first |
+| cover (pair) | an ally of another type holds a light tell with 0.2-0.5 s left, floor 6+ | `squadCall` cover and a rite (variant `cover`, tell 1.0 s, glint) on the spot the hero will stand, contact 0.5-0.8 s after the ally's, within `pairOk` | Walk out of the circle, or jump |
+| rite at the landing (heavy) | a spent dash or a walking hero, 120-400 px out, hero not hitting this priest (it would end the tell), once per 3 s | `enemyHeavy` {kind: rite, variant: landing}: tell 1.0 s, glint, the circle fixed at tell start on the predicted spot | Walk out after landing, or jump |
+| bolt | in range, cooldown | the casters' bolt | |
+| scatter | frenzy | keeps to the far band 300-460 px (no recoil) | |
+
+**Mage: the artillery** (`mageThink`):
+
+| Row | Read | Move | Non-dash answer |
+| --- | --- | --- | --- |
+| blink + bolt | the hero within 160 px (was 120), not in a frenzy | `enemyBlink` 220 px away (0.4 s shimmer, cooldown 6 s), then a bolt aimed at the hero's predicted landing | Jump or walk out of the bolt |
+| crossfire (pair) | as cover, floor 7+ | `squadCall` crossfire and a ray (variant `crossfire`, tell 1.0 s) 0.5-0.8 s after the ally's contact; at the height the hero will be (high if it jumps by habit) | Mind the ray's height: stay low or jump |
+| `highray` (new heavy variant) | the hero jumped 2 of its last 3 rays | `enemyHeavy` {kind: ray, variant: high}: tell 1.0 s, glint, a line 80-96 px above the floor: a standing hero (58 tall) is under it | Stay on the ground |
+| ray | a spent dash, a frenzy, or Eclipse ready close by, hero not hitting this mage, once per 3 s | the #50 ray at the hero's snapshot chest height | Jump (16 px line) |
+| Eclipse read | Eclipse ready within 230 px | no bolts (Eclipse would clear them): a ray, or it backs off at x0.9 | |
+| bolt | else | the casters' bolt; Prism: three lines centred on the predicted position, gaps kept at least the hero's width (28 px) | |
+
+**The seven elite rows**:
+
+| Elite | Brain row |
+| --- | --- |
+| Duelist | already apex (`slash2` stays) |
+| Shrieker | the bounce dive is aimed at the snapshot landing of the dodge (not the hero's live position) |
+| Phalanx | `interpose` covers the nearest ally even when it is not in recovery (never a stunned one) |
+| Impaler | at a sweep's contact with the hero in the air it throws the skewer (heavy, variant `impaler`, glint, token kept as a heavy) instead of the lift |
+| Oathsworn | its third hit (greatswing) is delayed only when the hero's dash was already spent at the branch (snapshot); otherwise it comes undelayed |
+| Hierophant | blesses the ally closest to a posture break |
+| Prism | the fan is centred on the predicted position, gaps at least the hero's width |
+
+**Carried over from #62's review**: the `canStrike` shadow now also covers the 0.8 s before a heavy that is already in its strike (rush / dive in flight), and a bolt in flight waits no strike into its hit's i-frames; **knight string (P3-3)**: a slash that hurt the hero ends the string for a brain knight (the overhead, 0.5 s later, would land inside the 0.8 s of i-frames), and the overhead and upcut only follow a missed slash; **pincer (P3-1)** stays a floor 8+ pair with a spearman on the far side of the hero, so it is rare by design (it needs an idle spearman behind the hero and a knight facing it within 60 px); the bat's dive ring position is art.
+
+**Harness**: `--type elite:<type>` spawns that type's elite (its twist, health x1.5). The audit no longer attributes a bolt or ray orb that reaches the hero to the newest tell of the nearest caster: its age is its own tell (0.65 s or more).
+
+**New events and fields** (art, audio): `enemyRecoil` and `enemyBlink` now come from the brains; `enemyHeavy` kind `rite` variants `landing` and `cover`, kind `ray` variants `high` and `crossfire`, kind `skewer` variant `impaler`; `squadCall` tactics `cover` and `crossfire`. The caster's fixed bolt aim is `e.aim` (radians); the targeted bless target is `e.blessTarget`; a rite's circle is `warn.circles`, a ray's line `warn.line`; the recoil is `bmKind: 'recoil'`.
+
+**Arms race** (expert bot, 200 seeds, floor 9, tier 3; win % Greatsword / Twin / Spear; audit 0 in every cell):
+
+| Step | 1v1 priest, mage | 1v2 priest, mage | frenzy 1v1 | mixes (priest+mage, knight+priest, spear+mage, shield+mage) | each elite 1v1 | average 1v1 priest, mage | average mixes | Full run expert | Full run average |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Round 0, brains off (#50) | 100 | 100 | 100 | 100 (spear+mage 98.5-100) | 99-100 | 100 | 98-100 | 1 / 4 / 15 (shield, spear, bat, knight off; priest and mage on) | 0 / 0 / 0 |
+| Round 1 (brains) | 100 | 100 (hits 0.6-1.0 per fight) | 100 | priest+mage Twin 28% (bolts flew 4 s, the bot dodged forever) | 100 | 100 | 84-97 / 91-92 | | |
+| Round 2 (bolt range, targeted heavies, shadow rules) | 100 | 100 | 100 | 100 | 100 (average 92% vs spear and knight elites) | 100 | 89-100 / 90-91 | 1 / 8 / 12 | 0 / 0 / 0 |
+
+Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites, with every weapon; seed 1 wins each: `node tools/bot-run.mjs --duel 1 --type priest|mage|elite:<type> --floor 9 --tier 3 --weapon heavy|twin|spear --seeds 1`; the elite bar is 30%). **Mash bot (floor 9, tier 3, Greatsword / Twin / Spear)**: five priests 13 / 0 / 0% (was 100 / 100 / 100%), five mages 13 / 0 / 0% (was 96 / 95 / 97%), 3 priest + 3 mage 13 / 0 / 0%, knight+spear+shield+priest+mage+bat 11 / 0 / 0%, 2 priest + 2 mage + 2 knight 1 / 0 / 0%; the PR 1 and PR 2 rooms and castle floors 1-5 stay at 0-2%. The 13% cells are the Greatsword alone (the rite or ray lands and leaves a few blood that kills refill). G3 full runs: expert 1 / 8 / 12%, average 0 / 0 / 0%, no timeouts.
+
 **User decisions** (2026-10-21): castle elites give no relic pick (keep); the shield bearer's late reads from floor 5 (keep).
 
 **User decisions** (2026-10-30, #62 PR 1): new trait-based attack and defense moves are allowed (so the shield's Eclipse brace and the spearman's haft guard, vault, spin and pin stay); HP, damage and posture are not raised blindly; the residual 2% mash clear of the five-spearmen room (Greatsword and Spear) is accepted for this PR.
