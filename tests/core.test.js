@@ -5443,6 +5443,24 @@ test('blood curse: a hero hurt by a priest rite or bolt or a mage ray earns no b
   const n = new Game(() => {}, 4, 'normal'); n.hex('priest'); assert.equal(n.curseT, 0, 'never in Normal');
 });
 
+// QA #62 PR 3 (after 04538f7): the curse gate reads lastHurt === time, which an earlier landed hit in the same frame also satisfies
+test('blood curse ends when the hero dies (the death screen shows no curse)', { todo: 'heroDown freezes curseT instead of clearing it, so a cursed death screen keeps the greyed bar and the countdown' }, () => {
+  const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
+  c.game.hex('priest'); assert.ok(c.game.curseT > 2.5, 'cursed');
+  c.player.invulnerable = 0; c.player.blood = 1; c.game.hurt(50, 1);
+  assert.equal(c.game.state, 'dead', 'the hit killed the hero');
+  assert.equal(c.game.curseT, 0, 'the curse ends with the hero');
+});
+
+test('blood curse: a rite blocked by i-frames in the same frame as an earlier landed hit starts no curse', { todo: 'hex gate checks lastHurt === time, which a hit that landed earlier in the frame also satisfies; a blocked rite then cursed' }, () => {
+  const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
+  c.game.hurt(10, 1); // a landed hit this frame: the i-frames now cover the rite
+  assert.equal(c.game.curseT, 0, 'the plain hit itself does not curse');
+  Object.assign(c.e, { heavy: true, heavyKind: 'rite', tell: 0, token: 'heavy', dmg: 100, warn: { kind: 'rite', circles: [{ x: c.player.x, y: c.player.y, r: 56 }] } });
+  c.game.heavyStrike(c.e);
+  assert.equal(c.game.curseT, 0, 'a rite the i-frames block curses nothing');
+});
+
 test('a cover rite is a ground circle and a crossfire ray aims at the landing height, even for an airborne snapshot', () => {
   const mk = type => { const c = brainFoe(type, 300, { floor: 8 }); c.game.escapes = () => true; const sp = enemy(c.game, c.player.x + 140, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.e.mixT = 99; c.e.blinkCd = 99;
     Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); for (let i = 0; i < 20; i++) { Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); c.game.update(1 / 120, {}); }

@@ -966,6 +966,18 @@ function drawBossWarn(ctx, e, time) {
   if (w.circles && !w.landing) warnCircles(ctx, w.circles, rgb, edge, p, time);
   ctx.restore();
 }
+// High ray: the beam is overhead, so the answer is "stay on the ground". A bright green safe strip with ground chevrons at the feet line, and a crossed-out up arrow ("no jump") above the beam.
+function highRaySafe(ctx, b, time) {
+  const x0 = Math.round(b.x), w = Math.round(b.w), pulse = PS.calm ? .85 : .75 + .25 * Math.sin(time * 8);
+  ctx.fillStyle = `rgba(150,255,190,${.28 * pulse})`; ctx.fillRect(x0, FLOOR - 26, w, 26); // safe band: from the floor up to head height
+  ctx.fillStyle = '#b8ffd0'; ctx.fillRect(x0, FLOOR - 5, w, 5); ctx.fillStyle = '#13111b'; ctx.fillRect(x0, FLOOR - 6, w, 1);
+  ctx.strokeStyle = '#d8ffe4'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  for (let i = 0; i < 3; i++) { const cx = Math.round(x0 + w * (i + .5) / 3), cy = FLOOR - 16; ctx.beginPath(); ctx.moveTo(cx - 9, cy - 6); ctx.lineTo(cx, cy + 3); ctx.lineTo(cx + 9, cy - 6); ctx.stroke(); } // chevrons pointing down at the ground
+  const ax = Math.round(x0 + w / 2), ay = Math.round(b.y - 24); // no-jump mark: up arrow in a red ring with a slash
+  ctx.fillStyle = 'rgba(19,17,27,.8)'; ctx.beginPath(); ctx.arc(ax, ay, 17, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 10); ctx.lineTo(ax + 9, ay + 1); ctx.lineTo(ax - 9, ay + 1); ctx.fill(); ctx.fillRect(ax - 3, ay + 1, 6, 8);
+  ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(ax, ay, 16, 0, 7); ctx.moveTo(ax - 11, ay - 11); ctx.lineTo(ax + 11, ay + 11); ctx.stroke();
+}
 // Castle heavy (#47): non-boss e.warn area. Outline = full hit area, inner fill grows from the enemy outward as the tell runs out; path stays lit through rush / dive travel.
 function drawHeavyWarn(ctx, e, time) {
   const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0 || e.cutT > 0 || e.plantT > 0; if (!w || !(tl || strike)) return; // plantT: the planted tip box stays up while it is live
@@ -990,9 +1002,8 @@ function drawHeavyWarn(ctx, e, time) {
       ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 3; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, my); ctx.lineTo(b.x + b.w, my); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.lineWidth = 2;
       for (let i = 0; i + 8 < b.w; i += 40) { const cx = Math.round(x0 + g * Math.min(b.w - 8, i + off)); ctx.beginPath(); ctx.moveTo(cx - g * 7, my - 6); ctx.lineTo(cx, my); ctx.lineTo(cx - g * 7, my + 6); ctx.stroke(); }
       const hi = w.variant === 'high' || (w.variant === 'crossfire' && e.y - my >= 70); // high ray: a standing hero is under it, so the cue is "stay down", not "jump"
-      for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(hi ? b.y + 30 + (PS.calm ? 0 : Math.sin(time * 9) * 3) : b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath();
-        if (hi) { ctx.moveTo(ax, ay + 9); ctx.lineTo(ax + 8, ay - 3); ctx.lineTo(ax - 8, ay - 3); ctx.fill(); ctx.fillRect(ax - 2, ay - 10, 4, 7); } else { ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); } }
-      if (hi) { ctx.fillStyle = 'rgba(232,246,255,.35)'; ctx.fillRect(b.x, FLOOR - 3, b.w, 3); } // a pale floor strip under the beam: the ground is safe
+      if (hi) highRaySafe(ctx, b, time);
+      else for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); }
     } else if (w.kind === 'riposte') { flowChevrons(ctx, b, g, time); // quick counter-cut straight ahead: walk back or hop it
     } else if (w.kind === 'rising' || w.kind === 'upcut') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up; the upcut 50) is hit; the band below it is safe ground
       const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, w.kind === 'upcut' ? 50 : 40);
