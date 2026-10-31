@@ -2,6 +2,7 @@
 // Usage: node tools/bot-run.mjs [--seeds 20] [--floors 1-3] [--cap 240] [--first 1] [--weapon spear] [--skill expert|average] [--run]
 // --duel N [--blood 100] [--relics dash,reach] [--tier 0] [--weapon w] [--cap 60]: apex arms-race harness. The bot fights N castle skeletons in an empty floor-1 room (no traps, obstacles or chests);
 // a win is every enemy dead. --type skeleton|shield|spear|bat|knight|priest|mage|elite:<type> or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
+// --type warden: the real floor-10 arena with its guards and 100 blood; a win is the Gate Warden's death (--brain off gives the #50 Warden).
 // --run [--brain off]: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
 import { Game, WEAPONS, RELICS, WARDEN_FLOOR } from '../core.js';
 import { createBot, resolveModal, chooseWeapon, REACTION_DELAY } from '../bot.js';

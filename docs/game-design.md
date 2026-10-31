@@ -614,6 +614,41 @@ Notes: G1 holds (100% 1v1 for priest and mage, and for each of the seven elites,
 
 The mash and full-run numbers above replace the earlier tables; the audit stays 0.
 
+### Brains: the Gate Warden (#62 PR 4)
+
+The Warden (floor 10, `type: 'boss'`, `warden: true`) keeps its #50 body, 520 HP, super armor gauge, two phases, Gate Toll (`seize`), pools and strings. With `game.apex` on (and `'warden'` not in `game.brainOff`) it also reads the hero from `snap()` (the hero 0.12 s ago) and has the arena and ultimate moves below. Castle only; Normal and Endless hashes are unchanged. Constants `GATE`, `GUARDS`, `BELL`, `GREAT`, `SPAM`, `WARDEN_FIXED` in `core.js`.
+
+**Reads on the shared brain.** `wardenPick(e, distance, s)` reads blood, frenzy and velocity from the snapshot `s`; `wardenFollow(e, move, s)` picks the follow-up from `landing(s, 0.5)`, so a dash that crosses the Warden is answered for where it lands. The habit memory is the shared one (`game.habits.warden` is the Warden's `habit` array, written by `noteAnswer`) and gained a fifth answer, `dashed` (the hero is dashing or dashed within 0.35 s at contact). Reads: blood above 150 or frenzy -> the Toll; `retreated` twice of three -> `gate` (else `charge`); `jumped` -> slam; `crossed` -> backhand string; `dashed` twice, or two dashes within 2.5 s (`dashLog`), -> the next opening heavy is a delayed one (hold 0.4 s longer, glint unchanged, never a follow-up; the log is spent). Any pick has a 15% chance of `gate` when a spot fits (cooldown 6 s).
+
+| Move | Tell / recovery | What it does | Non-dash answer |
+| --- | --- | --- | --- |
+| `gate` (heavy, glint) | 1.0 s / 1.0 s (phase 2 keeps 1.0) | A 44 px column falls 240 px behind the hero (the side away from the Warden), fixed at tell start (`warn.x`, `warn.box`, `warn.column`), at least 140 px from the hero, 100 px from the Warden and 300 px from another gate. 100 to a hero under it. Then a 150 px wall for 5 s: it blocks walking and dashing for the hero and every ground enemy (it is an `obstacles` entry with `gate: true`; it cannot be broken); the Warden cannot pass it and a charge path drawn toward it ends at it. At most 2 stand; the older lifts first. After the door shuts, the charge follows a hero in front of the Warden within 330 px. | Walk forward out of the column; double jump the wall (apex 194 px). |
+| `bell` (heavy, glint) | 1.6 s / 1.5 s | Phase 1, at 75% health once, then every 30 s. Two rings leave the Warden both ways at 420 px/s for 900 px: ring 1 low (0-60 px above the floor) at contact, ring 2 high (70-200 px) 1.0 s later. 100 each. | Jump or dash ring 1; stay on the ground for ring 2 (a standing hero, 58 px tall, is under it). |
+| `call` | 0.8 s horn / 1.0 s punishable | Not an attack. At 25% health, once, if fewer than 2 guards live, it calls the missing ones. | - |
+| `greatToll` (heavy, glint) | 1.8 s / 1.6 s | Phase 2, at 25% health once (after the call; a gate is shut first when the hero is not penned), then every 30 s. Chains pull the hero toward the Warden at 80 px/s during the tell (not during a dash). Box 10-330 px in front, 90 px tall. A hero inside pays all blood above 100 plus 40 (40 at 100 or less), the gauge gains the amount, frenzy ends at 100 or less, the hero is thrown 160 px back with 0.8 s of i-frames; Greatsword frenzy turns it into debt. Death `cause: 'greatToll'`. | Get behind it, walk out beyond 330 px (works from 100 px away; a gate behind the hero caps it), or be above 90 px (a jump) at contact. |
+
+**Gate guards.** The phase 2 roar calls a skeleton and a shield bearer (castle kits at this floor's tier, `add: true`, normal blood and kill rules) from the two ends of the arena, at least 420 px from the hero. At most 2 live. Adds share one token (`addHeld`), never start a tell during a Warden heavy tell, contact or recovery, keep their contact 0.5 s from a Warden light contact (`canStrike`), and in the hero's frenzy they hold still and back off to 180 px (`guardKeep`). The Warden finishes a guard's tell before it starts a move. Not built: an add's `bait` with a Warden light as the lead (the skeleton brain's existing dash trap would be the place for it).
+
+**Presence.** `wardenWake` {x, w, h, duration 1.2} when floor 10 loads (a portcullis slams shut behind the hero: visual only, the arena wall is already there); `wardenStep` {x, y, dir} every 0.6 s while it walks (screen shake, footfall).
+
+**Events** (new): `gateDrop` {x, w, h, life}, `gateLift` {x}, `ring` {x, y, dir, kind: 'low' or 'high', speed, range, top, bottom}, `wardenCall` {x, y, count, horn}, `wardenWake`, `wardenStep`; `enemyHeavy`/`enemyGlint`/`enemySwing` with `kind: 'gate' | 'bell' | 'greatToll'` (the warn carries `column`, `rings`, `box`), `enemyTell` with `kind: 'call'`; `toll` gains `great`; `death` gains `cause: 'greatToll'`. `game.rings` holds the live rings (`kind`, `x`, `dir`, `top`, `bottom`, `wait`).
+
+**Bot** (`bot.js`; human limits unchanged): `decide` runs the Warden policy and, when guards live, the field policy for the guards, except while the Warden has an announced attack (its own outranks a guard's). It plans the low ring from the bell tell (`bellPlan`: when and where the rings leave) and dashes it, else jumps; it walks out of the Great Toll at the net speed (245 - 80 px/s); it double jumps a portcullis that stands in the way of a non-urgent walk. Harness: `node tools/bot-run.mjs --duel 1 --type warden [--skill average] [--brain off]` (the real floor-10 arena, 100 blood, a win is the Warden's death).
+
+
+**Arms race (3 rounds, scratchpad `62pr4`)**, `node tools/bot-run.mjs --duel 1 --type warden`, floor 10, 100 blood, 200 seeds, heavy / twin / spear:
+
+| Step | Expert | Average | Notes |
+| --- | --- | --- | --- |
+| Round 0: #50 Warden (`--brain off`) | 100 / 99.5 / 100 | 42 / 46 / 27.5 | mash at 200 blood 58 / 13 / 37%, at 100 blood 0% |
+| Round 1: enemy step (brain, gates, guards, bell, toll) with the old bot | 33 / 7 / 27 (30 seeds) | - | the bot walked into rings and lost to guards (it ignored them) |
+| Round 2: bot step (bell plan, ring dash or jump, guards through the field policy, the Warden's own tell outranks a guard's) | 100 / 99.5 / 99.5 | 24 / 15 / 25 | audit 0 of 50 / 29 / 37 (expert), 0 of 406 / 438 / 432 (average); mash at 100 blood 0%, at 200 blood 63 / 0 / 35% |
+| Round 3: enemy levers tried on the expert, none kept | | | follow-up tells 0.45 s: 91 / 100 / 93; up to 3 / 5 follow-ups: 98 / 95 / 93; gate pick 50%: 100; guards from the start: 100; Warden HP 800 / 1100: 90 / 100 / 83 and 91 / 100 / 87 |
+
+Full runs (floors 1-10, one life, 100 seeds): expert clear 48 / 48 / 51% (heavy / twin / spear; no expert death on floor 10, so every expert that reached the Warden beat it), average 0 / 0 / 0%.
+
+**Where this leaves D2 (decision for the user).** The brain makes the Warden a real wall for the average bot (24 / 15 / 25% against 42 / 46 / 27.5% for the #50 Warden) but not for the expert, which still wins 99.5-100%, so the Warden is **not** the expert's lowest-winning cell (the lowest is `mix shield,mage` Twin at 88%). G1 holds with a wide margin (at least 20%, seed 1 wins every weapon). Why the expert does not drop: it reads every tell with a perfect clock, the only attacks it fails are the 0.5 s follow-ups (a dash down plus a mid-swing lock, 1-2% of fights), and anything shorter than 0.5 s would break the tell floor and the "one non-dash answer" rule for human reaction. Stat levers do not move the expert either (Warden HP 800 / 1100 changes nothing for it), but HP is the one lever that moves the **mash bot at 200 blood**: 63 / 0 / 35% at 520 HP, 7 / 0 / 0% at 800, 0 / 0 / 0% at 1100. A stat change on a boss needs a trait reason and the user's word, so it is not applied (`hp: 520` in `spawnWarden`).
+
 ## Playtest verdicts
 
 After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.
