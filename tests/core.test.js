@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
+import { Game, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3229,7 +3229,7 @@ test('warden: floor 10 is the Warden alone in the boss arena, with its base stat
   assert.equal(game.enemies.length, 1);
   const b = game.enemies[0];
   assert.ok(b.warden && b.required);
-  assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [520, 75, ARMOR_MAX, 100]);
+  assert.deepEqual([b.maxHp, b.speed, b.superArmor, b.superArmorMax], [WARDEN_HP, 75, ARMOR_MAX, 100]);
   assert.equal(game.worldWidth, STAGES[4].width); assert.equal(game.platforms.length, 2);
   assert.deepEqual(game.fightStats, { gained: 0, taken: 0, time: 0, breaks: 0, frenzies: 0 });
   assert.equal(new Game(() => {}, 1).loadFloor(KING_FLOOR), false, 'only Castle Descent has the castle King floor');
@@ -3309,7 +3309,7 @@ test('warden: a hit never flinches, staggers or interrupts a tell, and gives no 
   b.dir = 1; game.wardenStart(b, 'sweep');
   const tell = b.tell; player.x = 960; player.dir = 1; player.blood = 100; player.attackCd = 0;
   game.attack(); // swing costs 2 and the hit pays nothing
-  assert.ok(b.hp < 520); assert.equal(b.stun, 0); assert.ok(b.tell > 0 && b.tell <= tell); assert.equal(b.poise, 1);
+  assert.ok(b.hp < WARDEN_HP); assert.equal(b.stun, 0); assert.ok(b.tell > 0 && b.tell <= tell); assert.equal(b.poise, 1);
   assert.equal(player.blood, 98);
 });
 
@@ -3431,7 +3431,7 @@ test('warden habit memory records how the hero answered each heavy, and a crosse
 
 test('warden phase 2 at 50% health: 1.1 s pause, an event, and pools move out to +-260', () => {
   const { game, events, b } = warden(1000, 940);
-  hit(game, b, 259); assert.equal(b.bossPhase, 1);
+  hit(game, b, WARDEN_HP / 2 - 1); assert.equal(b.bossPhase, 1);
   hit(game, b, 2);
   assert.equal(b.bossPhase, 2); assert.ok(Math.abs(b.pause - 1.1) < 1e-9);
   assert.equal(events.filter(e => e.type === 'wardenPhase').length, 1);
@@ -3512,7 +3512,7 @@ test('warden phase change: the roar ends a break stun and restores the gauge, lo
   const { game, player, b } = warden(1000, 940);
   player.frenzy = true; player.blood = 190; hit(game, b); // phase 1: the frenzy hit breaks
   assert.ok(b.stun > 0 && b.superArmor === 0);
-  hit(game, b, 250);
+  hit(game, b, WARDEN_HP / 2);
   assert.equal(b.bossPhase, 2); assert.equal(b.stun, 0); assert.equal(b.breakStun, 0);
   assert.equal(b.superArmor, ARMOR_MAX); assert.ok(Math.abs(b.armorLock - 1.1) < 1e-9);
   hit(game, b); assert.equal(b.superArmor, ARMOR_MAX, 'no chip during the roar');
@@ -5482,7 +5482,7 @@ test('skeleton stat profiles: the normal profile (halved) from floor 1, the old 
   assert.ok(stats('bat', 1).hp < stats('priest', 1).hp && stats('priest', 1).hp < stats('knight', 1).hp, 'identity kept: bat most fragile, knight toughest');
   const off = new Game(() => {}, 5, 'castle'); off.apex = false; off.enemies = []; assert.equal(off.spawnEnemy('knight', 900, 0).hp, 65, 'apex off: the #50 numbers');
   for (const mode of ['normal', 'endless']) { const g = new Game(() => {}, 5, mode); g.enemies = []; assert.equal(g.spawnEnemy('knight', 900, 0).hp, Math.round(65 * (mode === 'endless' ? floorScale(g.floor).hp : 1)), `${mode}: unchanged`); }
-  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, 520, 'the Warden is unchanged');
+  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, WARDEN_HP, 'the Warden has WARDEN_HP (1100, user decision 2026-10-31)'); assert.equal(WARDEN_HP, 1100);
   const k = new Game(() => {}, 5, 'castle'); k.apex = true; k.enemies = []; const kg = k.spawnKing(1400); assert.equal(kg.hp, KING_HP, 'the King is unchanged');
 });
 

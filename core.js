@@ -65,6 +65,7 @@ const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this c
 export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
 export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon frenzies (#61)
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
+export const WARDEN_HP = 1100; // user decision 2026-10-31: the boss is the gate the 5.3x regulars guard, so it carries more than the regulars it commands (was 520)
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 // The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
 const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
@@ -2060,7 +2061,7 @@ export class Game {
   // --- The Gate Warden (#50 section 5): a boss with a super armor gauge, a Gate Toll and blood pools. It reuses the boss body (type 'boss', warden: true) but none of the King's moves. ---
   spawnWarden(x) {
     const e = this.spawnEnemy('boss', x, 0);
-    Object.assign(e, { warden: true, armored: true, required: true, hp: 520, maxHp: 520, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false, bellAt: 0, tollAt: 0, gateAt: 0, called: false, stepT: 0 });
+    Object.assign(e, { warden: true, armored: true, required: true, hp: WARDEN_HP, maxHp: WARDEN_HP, w: 72, h: 112, damage: 16, speed: 75, maxPoise: 0, poise: 1, superArmor: ARMOR_MAX, superArmorMax: ARMOR_MAX, armorLock: 0, breakStun: 0, habit: [], read: '', chain: '', engaged: false, noted: false, struck: false, bellAt: 0, tollAt: 0, gateAt: 0, called: false, stepT: 0 });
     this.habits.warden = e.habit; // one memory: the shared noteHabit writes into it
     return e;
   }
