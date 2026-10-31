@@ -353,7 +353,7 @@ function handleEvent(e) {
 let startBestFloor = 0;
 function startRun(mode = 'normal') {
   closeModal(false); clearInput(); audio.setHeartbeat(false); audio.unlock(); audio.resume();
-  game = new Game(handleEvent, undefined, mode); resetHud(); bannerQueue.length = 0; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
+  game = new Game(handleEvent, undefined, mode); resetHud(); bannerQueue.length = 0; pendingToast = ''; lastRoomText = ''; particles = []; effects = []; numbers = []; trails = [];
   shakeTime = 0; phaseTime = 0; damageFlash = 0; whiteFlash = 0; startBestFloor = records.bestFloor; if (mode === 'normal') records.runs++; // an endless trial never touches normal-run progress
   save('nocturne-records', records);
   game.start();
