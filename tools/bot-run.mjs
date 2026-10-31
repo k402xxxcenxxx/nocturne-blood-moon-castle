@@ -3,7 +3,7 @@
 // --duel N [--blood 100] [--relics dash,reach] [--tier 0] [--weapon w] [--cap 60]: apex arms-race harness. The bot fights N castle skeletons in an empty floor-1 room (no traps, obstacles or chests);
 // a win is every enemy dead. --type skeleton|shield|spear|bat|knight|priest|mage|elite:<type> or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
 // --run [--brain off]: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
-import { Game, WEAPONS, RELICS } from '../core.js';
+import { Game, WEAPONS, RELICS, WARDEN_FLOOR } from '../core.js';
 import { createBot, resolveModal, chooseWeapon, REACTION_DELAY } from '../bot.js';
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : fallback; };
@@ -18,10 +18,11 @@ const foeTypes = (type, n) => type.startsWith('mix:') ? type.slice(4).split(',')
 export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics = [], tier = 0, cap: capSeconds = 60, skill: botSkill = 'expert', type = 'skeleton', floor = 1, brainOff = false } = {}) {
   const r = { win: false, dead: false, timeout: false, time: 0, move: '', kills: 0, whiffs: 0, swings: 0, dashes: 0, eclipses: 0, breaks: 0, gained: 0, lost: 0, hits: 0, unanswerable: 0, moves: {} };
   let ctx = null, pending = null;
+  const boss = type === 'warden'; // the real floor-10 arena with its guards; a win is the Warden's death
   const game = new Game(e => {
     if (e.type === 'hurt') { r.lost += e.amount; if (ctx) { r.hits++; r.move = ctx.move; if (ctx.move !== 'trap' && ctx.age < REACTION_DELAY + .12) r.unanswerable++; } else r.move = 'burn'; ctx = null; } // no ctx: blood paid by the Spear assault dash, not an enemy hit
     else if (e.type === 'enemyTell' || e.type === 'enemyHeavy' || e.type === 'brainStep' || e.type === 'squadCall' || e.type === 'cower') { const k = `${e.enemy || e.lead || ''}:${e.variant || e.kind || e.tactic || e.type}`; r.moves[k] = (r.moves[k] || 0) + 1; }
-    else if (e.type === 'kill') r.kills++;
+    else if (e.type === 'kill') { if (!boss || e.warden) r.kills++; }
     else if (e.type === 'dash') r.dashes++;
     else if (e.type === 'magic') r.eclipses++;
     else if (e.type === 'stagger' && !e.boss) r.breaks++;
@@ -40,11 +41,11 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   };
   game.start(); game.setWeapon(w); game.descend();
   for (const id of relics) { RELICS.find(x => x.id === id).apply(game.player); game.relics.push(id); }
-  game.enemies = []; game.traps = []; game.obstacles = []; game.chests = []; game.pickups = [];
+  if (boss) game.loadFloor(WARDEN_FLOOR); else { game.enemies = []; game.traps = []; game.obstacles = []; game.chests = []; game.pickups = []; }
   game.setWeapon(w); // setWeapon rebuilds stats on top of the relics and resets the hero's x, so the hero is placed after it
-  const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8; game.portalX = 1e9; // the duel room has no Moon Gate: a hero chasing a caster would otherwise walk into it and end the fight with a reward pick
-  const kinds = foeTypes(type, n); n = kinds.length; game.floor = floor; if (brainOff) game.brainOff = new Set(kinds.map(k => k.replace('elite:', '')));
-  kinds.forEach((k, i) => { const elite = k.startsWith('elite:'), e = game.spawnEnemy(elite ? k.slice(6) : k, p.x + [300, 420, -250][i], tier); if (elite) game.makeElite(e, tier); e.required = true; }); // required, like the foes of a real room: the bot hunts a straggler instead of walking to the Moon Gate // elite:<type> spawns that type's elite (its twist, health x1.5)
+  const p = game.player; p.blood = blood; if (!boss) p.x = 700; p.invulnerable = .8; game.portalX = 1e9; // the duel room has no Moon Gate: a hero chasing a caster would otherwise walk into it and end the fight with a reward pick
+  const kinds = boss ? ['warden'] : foeTypes(type, n); n = kinds.length; if (!boss) game.floor = floor; if (brainOff) game.brainOff = new Set(kinds.map(k => k.replace('elite:', '')));
+  if (!boss) kinds.forEach((k, i) => { const elite = k.startsWith('elite:'), e = game.spawnEnemy(elite ? k.slice(6) : k, p.x + [300, 420, -250][i], tier); if (elite) game.makeElite(e, tier); e.required = true; }); // required, like the foes of a real room: the bot hunts a straggler instead of walking to the Moon Gate // elite:<type> spawns that type's elite (its twist, health x1.5)
   const bot = createBot({ skill: botSkill, seed });
   let last = p.blood, t0 = game.elapsed; const room0 = game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w);
   while (game.state === 'playing') {
@@ -83,7 +84,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
     realHurt(amount, dir, hazard, heavy);
   };
   const bot = createBot({ skill: botSkill, seed });
-  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear', 'bat', 'knight', 'priest', 'mage']); // the #50 shield bearer, spearman, bat and knight (the apex skeleton stays)
+  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear', 'bat', 'knight', 'priest', 'mage', 'warden']); // the #50 shield bearer, spearman, bat and knight (the apex skeleton stays)
   game.start();
   if (weapon in WEAPONS) { game.setWeapon(weapon); game.descend(); }
   else if (startFloor > 1) { game.setWeapon(chooseWeapon(game)); game.descend(); }

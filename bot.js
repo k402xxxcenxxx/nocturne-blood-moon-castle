@@ -100,6 +100,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
   const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
+  let bellPlan = null; // where and when the Gate Bell's rings leave the Warden, from its tell
   let fightN = 0, clipSince = -1, greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
   const greedyOn = now => now < greedyUntil;
   const rollGreedy = now => { if (skill.greedy && rng() < skill.greedy) greedyUntil = now + 1.5; };
@@ -148,7 +149,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
     }
-    for (const b of game.projectiles) if (!info.has(b)) { const r = { sig: 'p', since: now, seen: now }; roll(r); info.set(b, r); }
+    for (const b of game.projectiles.concat(game.rings || [])) if (!info.has(b)) { const r = { sig: 'p', since: now, seen: now }; roll(r); info.set(b, r); }
   }
   // The Gate Warden: answer its tell (jump the seize and the slam wave, walk out of boxes, dash through a charge), take pools,
   // hit it in its heavy recoveries and break stun, and break the armor with the first hit of a frenzy.
@@ -177,7 +178,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         }
         else if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) for (const sd of kind === 'volley' || kind === 'ritual' ? [away, toward] : [away]) { // lines and circles have gaps on both sides
           const x = p.x + sd * d;
-          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / speed < t - .05 && wardenHit(w, x, p.y) === Infinity) { best = { dir: sd }; break; }
+          if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / (kind === 'greatToll' ? speed - 80 : speed) < t - .05 && wardenHit(w, x, p.y) === Infinity) { best = { dir: sd }; break; }
         }
         if (best) { o.dir = flip(w, best.dir); o.urgent = true; }
         else if (kind === 'charge' && fw !== 'heavy' && (!w.follow || !dashReady || (p.dashCd > 0 && p.dashCd > t - .1))) {
@@ -208,6 +209,17 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       for (let d = 10; d <= 200 && !go; d += 10) for (const sd of [away, toward]) { const x = p.x + sd * d; if (x > 40 && x < W - 40 && d / speed < orbNow - .05 && orbs.every(b => orbT(b, x) === Infinity)) { go = sd; break; } }
       if (go) { o.dir = go; o.urgent = true; } else if (orbNow <= .12 + lock + jit(orbs[0]) && dashReady) { o.dash = true; o.urgent = true; o.dir = toward; }
     }
+    // The Gate Bell: ring 1 is low (jump or dash it), ring 2 is high (a grounded hero is under it). Rings leave the Warden both ways at 420 px/s, so their arrival is known from the tell.
+    let lowT = Infinity;
+    const ringT = (ahead, wait) => wait + Math.max(0, ahead - 21) / 420;
+    if (w.warn?.kind === 'bell' && w.tell > 0 && api.reacts(w, now)) bellPlan = { at: now + w.tell, x: w.x }; // the tell shows when the rings leave: the plan outlives it
+    if (bellPlan && now < bellPlan.at + 1.4) lowT = Math.max(0, bellPlan.at + Math.max(0, Math.abs(p.x - bellPlan.x) - 21) / 420 - now);
+    for (const r of game.rings || []) if (r.kind === 'low' && (p.x - r.x) * r.dir > 0 && now - (info.get(r)?.since ?? now) >= skill.reaction) lowT = Math.min(lowT, ringT((p.x - r.x) * r.dir, Math.max(0, r.wait)));
+    if (lowT < Infinity) {
+      danger = Math.min(danger, lowT);
+      if (dashReady && lowT <= .1 + lock + jit(w)) { o.dash = true; o.urgent = true; o.dir = toward; }
+      else if (p.grounded && !dashReady && lowT <= .45 + jit(w) && lowT >= .15) { o.jump = true; o.urgent = true; }
+    }
     if (danger > .45) {
       const dx = w.x - p.x, face = Math.sign(dx) || p.dir, gap = Math.abs(dx);
       const open = w.superArmor <= 0 || (w.heavy && w.recover > 0); // blood-paying windows: break stun, heavy recovery
@@ -226,11 +238,22 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       else if (gap > WARDEN_STANDOFF + 40 || held === toward && gap > WARDEN_STANDOFF + 20) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; } // hysteresis: a step that started keeps going to the edge of the band, so the standoff never flips direction every frame
       if (goal !== null && Math.abs(goal - p.x) > tol) o.dir = Math.sign(goal - p.x);
     }
+    const gate = o.dir && game.obstacles.find(g => g.gate && (g.x - p.x) * o.dir > 0 && Math.abs(g.x - p.x) < 60); // a portcullis in the way: double jump it
+    if (gate && !o.urgent && danger > .6 && p.y > gate.y - gate.h - 20 && (p.grounded || (p.jumps === 1 && p.vy > -150))) o.jump = true;
     return o;
   }
   function decide(game, now) {
     const warden = game.enemies.find(e => e.armored && e.hp > 0);
-    if (warden) return decideWarden(game, now, warden);
+    if (warden) {
+      const ow = decideWarden(game, now, warden);
+      const px = game.player, busy = (api.reacts(warden, now) && (wardenHit(warden, px.x, px.y) < Infinity || (warden.warn?.kind === 'bell' && warden.tell > 0))) || game.rings.length > 0; // the Warden's own announced attack outranks a guard's
+      if (ow.urgent || busy || !game.enemies.some(e => e.add && e.hp > 0)) return ow;
+      const og = decideField(game, now); // the gate guards: a skeleton and a shield bearer are answered like any field enemy
+      return og.urgent || (og.attack && !ow.attack) ? og : ow;
+    }
+    return decideField(game, now);
+  }
+  function decideField(game, now) {
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const fw = castle && p.frenzy ? p.weapon : ''; // see decideWarden
