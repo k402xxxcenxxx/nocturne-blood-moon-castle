@@ -143,7 +143,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player;
     for (const e of game.enemies) {
       let r = info.get(e); if (!r) info.set(e, r = { sig: '', since: 0, seen: null });
-      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.cutT > 0 || e.plantT > 0 ? 's' : '') : '';
+      const sig = e.hp > 0 ? (e.tell > 0 ? 't' + (e.move || '') + (e.follows || 0) : e.strikeT > 0 || e.travel > 0 || e.cutT > 0 || e.plantT > 0 ? 's' : e.parryT > 0 ? 'q' : '') : ''; // 'q': a knight's parry pose, noticed after the reaction delay like any cue
       if (sig && sig !== r.sig && !(r.sig[0] === 't' && sig === 's')) { r.since = now; roll(r); } // a tell continuing into its strike keeps its clock; a strike straight into a new tell restarts it
       r.sig = sig;
       if (r.seen === null && Math.abs(e.x - p.x) < 700) r.seen = now;
@@ -295,7 +295,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const pool = punish.length ? punish : known;
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
-      const swing = known.find(e => canHit(e) && !blockedBy(e) && !(e.parryT > 0) && hitTime(e, p.x, p.y) === Infinity); // a knight's raised parry pose is baited, not hit
+      const swing = known.find(e => canHit(e) && !blockedBy(e) && !(e.parryT > 0 && api.reacts(e, now)) && hitTime(e, p.x, p.y) === Infinity); // a knight's raised parry pose is baited, not hit
       const planted = foes.some(e => e.plantT > 0 || e.move === 'plant'); // a planted spear stops an assault dash: no chain dashes while one is down
       const lane = fw === 'spear' && !planted && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
       if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)

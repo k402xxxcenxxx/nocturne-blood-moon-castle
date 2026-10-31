@@ -693,7 +693,7 @@ export class Game {
       p.whiff = 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       this.cover = null;
-      p.mp = Math.min(p.maxMp, p.mp + 2);
+      if (!this.deflected) p.mp = Math.min(p.maxMp, p.mp + 2);
       if (this.bloodOk(e)) this.gainBlood((blocked || this.guardedHit ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
     }
@@ -713,7 +713,7 @@ export class Game {
       p.whiff = 0;
       this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, true, blocked, POISE_DAMAGE.thrust);
       this.cover = null;
-      p.mp = Math.min(p.maxMp, p.mp + 2);
+      if (!this.deflected) p.mp = Math.min(p.maxMp, p.mp + 2);
       if (this.bloodOk(e)) this.gainBlood(blocked || this.guardedHit ? 1 : 3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
       if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
       this.emit('assaultHit', { x: e.x, y: e.y - e.h * .55, dir: p.dir, blocked });
@@ -736,12 +736,12 @@ export class Game {
     this.hitSet.add(e);
     const amount = Math.round(p.damage * p.swordMul * mul * (crit ? 2 : 1) * (rip ? RIPOSTE_MUL : 1)), braced = this.mode === 'castle' && e.type === 'shield' && e.braceT > 0 && e.guardBreak <= 0 && (p.x - e.x) * e.dir >= 0;
     if (braced) { // brace: the raised shield covers its top: x0.25, +1 blood, and the falling hero bounces up
-      this.damageEnemy(e, Math.max(1, Math.round(amount * .25)), Math.sign(e.x - p.x) || p.dir, crit, true, true, poise, false, knock);
+      this.inPlunge = true; this.damageEnemy(e, Math.max(1, Math.round(amount * .25)), Math.sign(e.x - p.x) || p.dir, crit, true, true, poise, false, knock); this.inPlunge = false;
       if (this.bloodOk(e)) this.gainBlood(1);
       if (p.plunge === 2) Object.assign(p, { vy: -450, grounded: false, plunge: 0, move: '' });
       return;
     }
-    this.damageEnemy(e, amount, Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock);
+    this.inPlunge = true; this.damageEnemy(e, amount, Math.sign(e.x - p.x) || p.dir, crit, true, false, poise, false, knock); this.inPlunge = false; // a plunge is never deflected: the flag says so, not the posture number
     p.mp = Math.min(p.maxMp, p.mp + 2);
     if (this.bloodOk(e)) this.gainBlood(3 + (punish ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));
     if (rip) this.emit('riposte', { x: e.x, y: e.y - e.h * .55 });
@@ -795,7 +795,7 @@ export class Game {
   }
   damageEnemy(e, amount, dir, crit, heavy, blocked = false, poiseDamage = 0, eclipse = false, knock = 1, shot = false) {
     this.deflected = false;
-    if (e.parryT > 0 && e.type === 'knight' && this.mode === 'castle' && !eclipse && !shot && poiseDamage !== POISE_DAMAGE.plunge && dir * e.dir < 0 && e.hp > 0) { // parry: the first frontal sword hit in the window is deflected (no damage, no blood, no posture), the hero is pushed back and the riposte follows
+    if (e.parryT > 0 && e.type === 'knight' && this.mode === 'castle' && !eclipse && !shot && !this.inPlunge && dir * e.dir < 0 && e.hp > 0) { // parry: the first frontal sword hit in the window is deflected (no damage, no blood, no posture), the hero is pushed back and the riposte follows
       const p = this.player, from = p.x;
       this.deflected = true; e.parryT = 0; e.parried = true;
       p.x = clamp(p.x + e.dir * KNIGHT.push, 25, this.worldWidth - 30); this.keepBeside(p, from); this.freeze = Math.max(this.freeze, .05);
@@ -1623,7 +1623,7 @@ export class Game {
     if (((s.dashCd > 0 || !s.grounded) && e.mixT <= 0 || (s.attack > 0 || s.attackCd > 0) && !targeted) && d <= diveReach && e.heavyCd <= 0) {
       e.mixT = BAT.moment;
       const lx = this.landing(s, BAT.diveTell);
-      if (this.brainHeavy(e, s, d, { noDelay: true, sure: true, variant: 'landing', aim: { x: lx, y: (s.grounded ? FLOOR : s.y) - 29 } })) { e.vx = 0; return true; }
+      if (this.brainHeavy(e, s, d, { noDelay: true, sure: true, variant: 'landing', aim: { x: lx, y: (s.grounded ? s.y : FLOOR) - 29 } })) { e.vx = 0; return true; }
     }
     // orbit (no hitbox, no token): a hero who turns to face it is crossed over to its back
     if (facing && d >= BAT.orbitMin && d <= BAT.orbitMax && e.crossCd <= 0 && Math.abs(e.y - (s.y - 25)) <= 70 && e.y >= s.y - 50 && !s.frenzy) {
@@ -1660,8 +1660,9 @@ export class Game {
   }
   // A herd pair for a bat partner: a ground ally holding a light tell with 0.15-0.35 s left, so the dive (tell 0.9 s) lands 0.55-0.75 s after it. Returns true if the dive started.
   startHerd(e, s) {
+    if (this.pair) return false; // never over a running pair
     const lead = this.findAlly(e, 320, a => a.state === 'tell' && a.o.type !== 'bat' && !a.o.heavy && a.o.tell > BAT.herdLo && a.o.tell < BAT.herdHi && (a.o.warn?.box || a.o.thrustBox) && this.brainOn(a.o))?.o;
-    if (!lead || !this.pairOk(lead, e)) return false;
+    if (this.pair || !lead || !this.pairOk(lead, e)) return false;
     const lx = this.landing(s, BAT.diveTell), aim = { x: lx, y: FLOOR - 29 }, ab = lead.warn?.box || lead.thrustBox, dive = { x: lx - 40, y: FLOOR - 70, w: 80, h: 70 };
     const sh = PAIR.react, plan = { areas: [{ t: lead.tell + sh, box: ab }, { t: BAT.diveTell + sh, box: dive }], tell2: BAT.diveTell }; // the lead's tell has been visible for about the hero's reaction time already, so both contacts are shifted by it
     if (!this.pairOk(lead, e, plan) || !this.brainHeavy(e, s, Math.abs(s.x - e.x), { noDelay: true, sure: true, variant: 'herd', aim })) return false;
@@ -1676,7 +1677,7 @@ export class Game {
     const walk = v => { e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
     if (e.parried) { // the deflect landed: the hero was pushed back, the riposte follows (a light with its own tell)
       e.parried = false; e.parryCd = KNIGHT.parryCd; e.vx = 0;
-      const f = Math.sign(this.player.x - e.x) || e.dir;
+      const f = Math.sign(this.snap().x - e.x) || e.dir; // faces where the snapshot saw the hero
       if (this.canStrike(e, KNIGHT.ripTell)) {
         e.dir = f;
         Object.assign(e, { tell: KNIGHT.ripTell, move: 'riposte', cd: Math.max(e.cd, .6), warn: { kind: 'riposte', box: { x: Math.min(e.x + f * 10, e.x + f * 100), y: e.y - 100, w: 90, h: 100 } } });
@@ -1726,10 +1727,10 @@ export class Game {
     const sb = { x: Math.min(e.x + f * 10, e.x + f * 90), y: e.y - 100, w: 80, h: 100 }, pf = -f, tb = this.spearBox(partner, pf, this.landing(s, .6 + KNIGHT.pincerGap), SPEAR.chainLen);
     const plan = { areas: [{ t: .6, box: sb }, { t: .6 + KNIGHT.pincerGap, box: tb }], tell2: SPEAR.aimTell };
     if (!this.pairOk(e, partner, plan) || !this.canStrike(e, .6) || !this.canStrike(partner, SPEAR.aimTell)) return false;
-    const f2 = f; Object.assign(e, { tell: .6, cd: this.lightCd(e), vx: 0, warn: { kind: 'slash', box: sb } });
+    Object.assign(e, { tell: .6, cd: this.lightCd(e), vx: 0, warn: { kind: 'slash', box: sb } });
     this.pair = { tactic: 'pincer', lead: e, partner, t: 0, armed: true, fired: false, leadAt: this.time + .6, gap: KNIGHT.pincerGap, dir: pf };
     this.emit('squadCall', { tactic: 'pincer', lead: 'knight', partner: 'spear', x: e.x, y: e.y - e.h * .5, px: partner.x, py: partner.y - partner.h * .5 });
-    return f2 !== undefined;
+    return true;
   }
   // --- Spearman: the zoner. Owns 80-194 px, weak inside its tip. ---
   spearThink(e, dt) {
@@ -2539,7 +2540,7 @@ export class Game {
       this.heavyEnd(e);
       return;
     }
-    if (e.heavyKind === 'rush' && this.brainOn(e)) this.noteHabit('shield', e, this.heavyHits(e, w.box));
+    if (e.heavyKind === 'rush' && e.type === 'shield' && this.brainOn(e)) this.noteHabit('shield', e, this.heavyHits(e, w.box));
     if (e.heavyKind === 'greatswing' && this.brainOn(e)) this.noteHabit('knight', e, this.heavyHits(e, w.box));
     if (e.heavyKind === 'rush' || e.heavyKind === 'dive') {
       Object.assign(e, { strikeT: e.heavyKind === 'rush' ? .35 : .3, strikeMax: e.heavyKind === 'rush' ? .35 : .3, struck: false, dealt: false, from: { x: e.x, y: e.y }, dmg });
