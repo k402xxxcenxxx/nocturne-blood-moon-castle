@@ -181,7 +181,7 @@ test('the expert bot fights a three-skeleton apex group inside its room and wins
   assert.ok(wins >= 1, `won ${wins} of 6`);
 });
 
-test('replayable apex wins: the expert bot beats the apex skeletons (HP x9.6) on known seeds (1v1 and 1v3)', async () => {
+test('replayable apex wins: the expert bot beats the apex skeletons (normal profile, HP x4.8) on known seeds (1v1 and 1v3)', async () => {
   const { playDuel } = await import('../tools/bot-run.mjs');
   for (const [n, weapon, seed] of [[1, 'heavy', 1], [1, 'twin', 2], [1, 'spear', 1], [3, 'heavy', 3], [3, 'twin', 1], [3, 'spear', 10]]) {
     const r = playDuel(seed, { n, weapon });
@@ -211,4 +211,12 @@ test('the bot treats a planted spear as a standing box: it neither walks nor ass
   Object.assign(e, { move: 'plant', plantT: 1.2, tell: 0, warn: { kind: 'plant', box: { x: e.x - 194, y: e.y - 54, w: 184, h: 54 } }, token: 'light' });
   const hurts = runBot(game, 1.1, createBot(), () => { game.player.blood = Math.max(150, Math.min(190, game.player.blood)); });
   assert.equal(hurts.length, 0, 'no hit from the planted tip'); assert.ok(p.x < e.x - 194, 'it waits outside the tip box');
+});
+
+test('the bot closes on a caster that is its only threat instead of backing away along the bolt (a human runs at a mage)', () => {
+  const { game, p, e } = brainGame('mage', 380, 9); e.blinkCd = 99;
+  game.projectiles.push({ x: e.x - 20, y: p.y - 30, vx: -250, vy: 0, r: 7, life: 2, damage: 16 });
+  const bot = createBot(), x0 = p.x; let dashed = false;
+  for (let i = 0; i < 90 && game.state === 'playing'; i++) { const input = bot.input(game); if (input.dash) dashed = true; game.update(DT, input); }
+  assert.ok(p.x > x0 + 40, `it advanced toward the mage (${p.x - x0} px)`); assert.ok(game.player.blood >= 150 - 20, 'and the bolt did not land');
 });

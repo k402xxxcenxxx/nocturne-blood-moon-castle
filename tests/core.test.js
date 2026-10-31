@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT } from '../core.js';
+import { Game, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -4916,14 +4916,14 @@ function skeletonHash() { // the refactor guard: a skeleton-only castle floor, s
   return h.digest('hex').slice(0, 16);
 }
 
-test('brains: moving apexThink into BRAINS leaves a skeleton-only castle floor bit-for-bit unchanged', () => {
-  assert.equal(skeletonHash(), '0edbaf3fe1ff4c49', 'hash taken before the refactor');
+test('brains: a skeleton-only castle floor replays bit-for-bit (hash updated for the halved stat profile)', () => {
+  assert.equal(skeletonHash(), 'c3aaaae865e8d907', 'hash of the scripted skeleton floor with the halved stat profile (user decision 2026-10-31; the PR 1 refactor hash 0edbaf3fe1ff4c49 was taken with the old x9.6 profile)');
 });
 
-test('brains: only castle skeletons, shield bearers, spearmen, bats and knights have one; brainOff switches a type back to the #50 rules', () => {
+test('brains: every castle regular type has one (the bosses do not); brainOff switches a type back to the #50 rules', () => {
   const { game, player } = castle(42, 1, true);
   const types = ['skeleton', 'shield', 'spear', 'bat', 'knight', 'priest', 'mage'], foes = types.map((type, i) => enemy(game, player.x + 100 + i * 40, { type }));
-  assert.deepEqual(foes.map(e => game.brainOn(e)), [true, true, true, true, true, false, false]);
+  assert.deepEqual(foes.map(e => game.brainOn(e)), [true, true, true, true, true, true, true]);
   game.brainOff = new Set(['shield']);
   assert.equal(game.brainOn(foes[1]), false); assert.equal(game.brainOn(foes[2]), true);
   assert.equal(game.apexOn(foes[0]), true);
@@ -5285,8 +5285,8 @@ test('knight string: a hero in the air in front within 150 at the slash draws th
   const k = brainFoe('knight', 55, { floor: 7 }); k.e.speed = 0; k.e.heavyCd = 99; lull(k.game); k.e.cd = 0;
   for (let i = 0; i < 300 && k.e.move !== 'slash' && !(k.e.tell > 0); i++) k.game.update(1 / 120, {});
   assert.ok(k.e.tell > 0, 'slash tell'); while (k.e.tell > .3) k.game.update(1 / 120, {});
-  Object.assign(k.player, { y: FLOOR - 90, vy: -50, grounded: false }); advance(k.game, .15); k.player.y = FLOOR - 90; k.player.vy = 0;
-  while (k.e.tell > 0 && k.e.move !== 'upcut') { Object.assign(k.player, { y: FLOOR - 90, vy: 0, grounded: false }); k.game.update(1 / 120, {}); }
+  Object.assign(k.player, { y: FLOOR - 120, vy: -50, grounded: false }); advance(k.game, .15); k.player.y = FLOOR - 120; k.player.vy = 0; // over the slash: it misses, so the string goes on (a hit would end it: the overhead would land in the i-frames)
+  while (k.e.tell > 0 && k.e.move !== 'upcut') { Object.assign(k.player, { y: FLOOR - 120, vy: 0, grounded: false }); k.game.update(1 / 120, {}); }
   const up = k.e.move === 'upcut'; assert.ok(up || evs(k.events, 'enemyTell').some(ev => ev.kind === 'upcut'), 'upcut branch'); 
   const g = brainFoe('knight', 120, { floor: 7 }); g.e.speed = 0; g.e.cd = 99; lull(g.game); g.player.dashCd = .8; g.e.mixT = 0; g.e.heavyCd = 0; advance(g.game, APEX_REACT + .05);
   const h = evs(g.events, 'enemyHeavy').find(ev => ev.kind === 'greatswing'); assert.ok(h && h.variant === 'landing' && h.delayed === false, 'greatswing at the landing, not delayed without a habit');
@@ -5375,4 +5375,112 @@ test('PR 2 review fixes: a herd never overwrites a pincer, a knight charge is no
   assert.ok(!(sn.e.tell > 0), 'a hero that teleported next to the knight this frame is not yet seen'); advance(sn.game, APEX_REACT + .1); assert.ok(sn.e.tell > 0, 'seen 0.12 s later');
   const bt = brainFoe('bat', 100, { floor: 6 }); bt.e.speed = 0; bt.e.cd = 99; bt.e.crossCd = 99; lull(bt.game); bt.e.y = bt.player.y - 34; bt.e.cd = 0; bt.e.mixT = 99; bt.player.dir = 1; bt.game.update(1 / 120, {}); bt.player.dir = -1; bt.game.update(1 / 120, {});
   assert.ok(!(bt.e.tell > 0), 'the hero turning its back this frame is not yet seen'); advance(bt.game, APEX_REACT + .1); assert.ok(bt.e.tell > 0 || evs(bt.events, 'enemyTell').some(ev => ev.kind === 'swoop'), 'seen 0.12 s later');
+});
+
+// ---- Brains (#62 PR 3): priest, mage and the seven elite rows ----
+test('priest: recoil + bolt at a hero closing within 160 px, the bolt aim fixed at tell start; bless goes to the ally being hit (Hierophant: the lowest posture); rite at the landing', () => {
+  const r = brainFoe('priest', 140, { floor: 6 }); r.e.speed = 0; r.e.cd = 99; r.e.recoilCd = 0; lull(r.game, .3); r.e.cd = 99; r.e.recoilCd = 0; r.e.mixT = 99;
+  const x0 = r.e.x; advance(r.game, .3, { right: true });
+  assert.ok(evs(r.events, 'enemyRecoil').length >= 1, 'a backstep (no hitbox)'); advance(r.game, .5, { right: true });
+  assert.ok(r.e.x - x0 >= 60, 'it moved away');
+  const b = brainFoe('priest', 300, { floor: 6 }); b.e.speed = 0; b.e.cd = 99; lull(b.game); b.e.cd = 0; advance(b.game, APEX_REACT + .05);
+  assert.ok(b.e.tell >= .5 && typeof b.e.aim === 'number', 'a bolt with a fixed aim'); const aim = b.e.aim; b.player.x -= 150; advance(b.game, .3); assert.equal(b.e.aim, aim, 'the aim does not follow the hero');
+  const bl = brainFoe('priest', 200, { floor: 6 }); const ally = enemy(bl.game, bl.e.x + 60, { type: 'skeleton', hp: 1e5 }), other = enemy(bl.game, bl.e.x - 60, { type: 'skeleton', hp: 1e5 }); bl.game.brainOff = new Set(['skeleton']);
+  Object.assign(ally, { cd: 99, action: 1, poiseHit: 1.5 }); Object.assign(other, { cd: 99, action: 1 }); bl.e.speed = 0; bl.e.cd = 99; bl.e.blessCd = 0; lull(bl.game); ally.poiseHit = 1.5; bl.e.blessCd = 0; advance(bl.game, APEX_REACT + .05);
+  assert.ok(bl.e.blessRadius > 0 && bl.e.blessTarget === ally, 'the ally being hit is the target');
+  const hi = brainFoe('priest', 200, { floor: 6 }); hi.e.twist = 'hierophant'; const a2 = enemy(hi.game, hi.e.x + 60, { type: 'skeleton', hp: 1e5 }), a3 = enemy(hi.game, hi.e.x - 60, { type: 'skeleton', hp: 1e5 }); hi.game.brainOff = new Set(['skeleton']);
+  Object.assign(a2, { cd: 99, action: 1, maxPoise: 100, poise: 90 }); Object.assign(a3, { cd: 99, action: 1, maxPoise: 100, poise: 20 }); hi.e.speed = 0; hi.e.cd = 99; hi.e.blessCd = 0; lull(hi.game); a2.poise = 90; a3.poise = 20; hi.e.blessCd = 0; hi.game.update(1 / 120, {});
+  assert.equal(hi.e.blessTarget, a3, 'the Hierophant blesses the ally closest to a posture break');
+  const rt = brainFoe('priest', 300, { floor: 6 }); rt.e.speed = 0; rt.e.cd = 99; rt.e.heavyCd = 0; rt.e.mixT = 0; rt.player.dashCd = .8; lull(rt.game, .2); rt.player.dashCd = .8; rt.e.cd = 99; advance(rt.game, APEX_REACT + .05);
+  const rh = evs(rt.events, 'enemyHeavy').find(ev => ev.kind === 'rite'); assert.ok(rh && rh.variant === 'landing' && rt.e.tell >= .8, 'rite at the landing'); const c = { ...rt.e.warn.circles[0] }; advance(rt.game, .3); assert.deepEqual(rt.e.warn.circles[0], c, 'fixed at tell start');
+});
+
+test('mage: highray after a jump habit (80-96 px line), blink + bolt, no bolt while Eclipse is ready within 230 px, crossfire pair obeys the pair limits', () => {
+  const hr = brainFoe('mage', 300, { floor: 7 }); hr.e.speed = 0; hr.e.cd = 99; hr.e.heavyCd = 99; lull(hr.game); hr.game.habits.mage = ['jumped', 'jumped']; hr.e.heavyCd = 0; advance(hr.game, APEX_REACT + .05);
+  const hv = evs(hr.events, 'enemyHeavy').find(ev => ev.kind === 'ray'); assert.ok(hv && hv.variant === 'high', 'high ray'); const y = hr.e.warn.line.y1; assert.ok(FLOOR - y >= 80 && FLOOR - y <= 96, `line ${FLOOR - y} px above the floor`); assert.ok(hr.e.tell >= .8);
+  const hp = hr.player.blood; hr.player.invulnerable = 0; advance(hr.game, 1.4); assert.equal(hr.player.blood, hp, 'a standing hero (58 tall) is under it');
+  const bk = brainFoe('mage', 100, { floor: 7 }); bk.e.speed = 0; bk.e.cd = 99; bk.e.blinkCd = 99; bk.player.blood = 10; lull(bk.game, .2); bk.e.cd = 99; bk.e.blinkCd = 0; const bx = bk.e.x; advance(bk.game, APEX_REACT + .6);
+  assert.ok(evs(bk.events, 'enemyBlink').length >= 1 && Math.abs(bk.e.x - bx) > 100, 'blinked away'); assert.ok(evs(bk.events, 'enemyBlinked').length >= 1 && (bk.e.tell > 0 || bk.e.cd > 0), 'the blink ends in a bolt (its cooldown is running)');
+  const ec = brainFoe('mage', 200, { floor: 7 }); ec.e.speed = 0; ec.e.cd = 0; ec.e.heavyCd = 99; ec.e.blinkCd = 99; ec.player.blood = 150; lull(ec.game, .2); ec.e.cd = 0; advance(ec.game, APEX_REACT + .1);
+  assert.ok(!(ec.e.tell > 0), 'Eclipse ready within 230: no bolt');
+  const cf = brainFoe('mage', 300, { floor: 8 }); const sp = enemy(cf.game, cf.player.x + 140, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); cf.e.speed = 0; cf.e.cd = 99; lull(cf.game);
+  Object.assign(sp, { tell: .35, token: 'light', warn: { kind: 'thrust', box: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 } } }); cf.e.heavyCd = 0; cf.game.pairCd = 0; cf.e.mixT = 99; cf.e.blinkCd = 99; cf.game.update(1 / 120, {});
+  assert.ok(cf.game.pair?.tactic === 'crossfire' && cf.e.heavy, 'crossfire'); const gap = cf.e.tell - sp.tell; assert.ok(gap >= .5 && gap <= .8, `gap ${gap}`);
+  const no = brainFoe('mage', 300, { floor: 8 }); const sp2 = enemy(no.game, no.player.x + 140, { type: 'spear', hp: 1e5 }); Object.assign(sp2, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); no.e.speed = 0; no.e.cd = 99; lull(no.game);
+  Object.assign(sp2, { tell: .35, token: 'light', warn: { kind: 'thrust', box: { x: sp2.x - 194, y: sp2.y - 54, w: 184, h: 54 } } }); no.e.heavyCd = 0; no.e.mixT = 99; no.e.blinkCd = 99; no.game.lastHurt = no.game.time - .2; no.game.update(1 / 120, {});
+  assert.ok(!no.game.pair, 'none within 1 s of a hurt');
+});
+
+test('prism fan keeps its gaps at least the hero width; shrieker bounce, phalanx, impaler, oathsworn and the i-frame shadow of a flying heavy', () => {
+  const pr = brainFoe('mage', 60, { floor: 9 }); pr.e.twist = 'prism'; pr.e.speed = 0; pr.e.cd = 99; pr.e.blinkCd = 99; lull(pr.game, .2); pr.e.cd = 0; pr.player.blood = 10; advance(pr.game, APEX_REACT + .1);
+  const ln = pr.e.warn?.lines; assert.ok(ln && ln.length === 3, 'a fan'); const hx = pr.player.x, dist = Math.hypot(hx - ln[0].x1, 0), gap = Math.abs(Math.sin(ln[1].angle - ln[0].angle)) * Math.max(dist, 1);
+  assert.ok(gap - 14 >= 28, `adjacent bolts ${(gap - 14).toFixed(0)} px apart edge to edge (bolt radius 7)`);
+  const ph = brainFoe('shield', 90, { floor: 7 }); ph.e.twist = 'phalanx'; ph.e.braceCd = 99; const al = enemy(ph.game, ph.e.x + 60, { type: 'skeleton', hp: 1e5 }); ph.game.brainOff = new Set(['skeleton']); Object.assign(al, { cd: 99, action: 1 });
+  noSwing(ph.e); lull(ph.game); ph.player.dir = 1; for (let i = 0; i < 40; i++) { ph.player.attackCd = .5; advance(ph.game, .01); }
+  assert.equal(ph.e.interposing, true, 'the Phalanx steps in front of the nearest ally even when it is not in recovery');
+  const ov = brainFoe('knight', 55, { floor: 7 }); ov.e.speed = 0; ov.e.heavyCd = 99; lull(ov.game); ov.e.cd = 0; ov.player.blood = 150;
+  for (let i = 0; i < 400 && !(ov.e.tell > 0); i++) ov.game.update(1 / 120, {}); while (ov.e.tell > .02) ov.game.update(1 / 120, {}); advance(ov.game, .03);
+  assert.ok(!(ov.e.tell > 0 && ov.e.move === 'overhead'), 'a slash that hurt the hero ends the string (the overhead would land in the i-frames)');
+  const fl = brainFoe('spear', 200, { floor: 5 }); const kn = enemy(fl.game, fl.player.x + 260, { type: 'knight', hp: 1e5 }); Object.assign(kn, { heavy: true, heavyKind: 'rush', tell: 0, strikeT: .2 });
+  assert.equal(fl.game.canStrike(fl.e, .1), false, 'a light landing in the 0.8 s before a flying heavy\'s hit waits');
+  const bs = brainFoe('spear', 200, { floor: 5 }); lull(bs.game); bs.game.projectiles.push({ x: bs.player.x - 250, y: bs.player.y - 30, vx: 250, vy: 0, r: 7, life: 3, damage: 16 });
+  assert.equal(bs.game.canStrike(bs.e, 1.3), false, 'a strike landing in the i-frames of a bolt already flying at the hero waits'); assert.equal(bs.game.canStrike(bs.e, 2.5), true, 'one landing after them does not');
+});
+
+test('blood curse: a hero hurt by a priest rite or bolt or a mage ray earns no blood for 3 s; a dodged hit curses nothing; it wears off', () => {
+  const rite = () => { const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150; Object.assign(c.e, { heavy: true, heavyKind: 'rite', tell: .001, token: 'heavy', warn: { kind: 'rite', circles: [{ x: c.player.x, y: c.player.y, r: 56 }] } }); return c; };
+  const a = rite(); advance(a.game, .05); assert.ok(a.game.curseT > 2.5, 'cursed'); assert.ok(evs(a.events, 'curse').length === 1 && evs(a.events, 'curse')[0].enemy === 'priest');
+  const b0 = a.player.blood; a.game.gainBlood(10); assert.equal(a.player.blood, b0, 'hits and kills pay nothing while cursed'); advance(a.game, 3.2); a.game.gainBlood(3); assert.ok(a.player.blood > b0 && a.game.curseT === 0, 'and it wears off: blood is paid again');
+  const pd = rite(); pd.player.perfect = 1; pd.game.hex('priest'); const pb = pd.player.blood; pd.player.invulnerable = 1; pd.game.perfectDodge(); assert.ok(pd.player.blood > pb && pd.game.curseT > 0, 'a perfect dodge pays its blood through the curse');
+  const nm = rite(); nm.player.frenzy = 5; nm.player.weapon = 'heavy'; const d0 = nm.player.debt || 0; advance(nm.game, .05); assert.ok(nm.player.debt > d0 && nm.game.curseT > 0, 'a numb hero (damage goes to debt) is cursed too');
+  const d = rite(); d.player.invulnerable = 5; advance(d.game, .05); assert.equal(d.game.curseT, 0, 'a dodged rite curses nothing');
+  const bolt = brainFoe('priest', 300, { floor: 6 }); bolt.e.speed = 0; bolt.e.cd = 99; lull(bolt.game); bolt.player.blood = 150; bolt.game.projectiles.push({ x: bolt.player.x - 5, y: bolt.player.y - 30, vx: 250, vy: 0, r: 7, life: 1, damage: 16, hex: true }); advance(bolt.game, .05);
+  assert.ok(bolt.game.curseT > 0, 'a priest bolt curses');
+  const plain = brainFoe('mage', 300, { floor: 7 }); plain.e.speed = 0; plain.e.cd = 99; lull(plain.game); plain.player.blood = 150; plain.game.projectiles.push({ x: plain.player.x - 5, y: plain.player.y - 30, vx: 250, vy: 0, r: 7, life: 1, damage: 16 }); advance(plain.game, .05); assert.equal(plain.game.curseT, 0, 'a mage bolt does not');
+  const ray = brainFoe('mage', 300, { floor: 7 }); ray.e.speed = 0; ray.e.cd = 99; lull(ray.game); ray.player.blood = 150; ray.player.x = ray.e.x - 200; ray.player.y = FLOOR;
+  Object.assign(ray.e, { heavy: true, heavyKind: 'ray', strikeT: .1, strikeMax: .15, struck: false, dmg: 100, token: 'heavy', warn: { kind: 'ray', box: { x: ray.e.x - 460, y: FLOOR - 40, w: 440, h: 16 } } }); advance(ray.game, .05);
+  assert.ok(ray.game.curseT > 0, 'a mage ray curses');
+  const n = new Game(() => {}, 4, 'normal'); n.hex('priest'); assert.equal(n.curseT, 0, 'never in Normal');
+});
+
+// QA #62 PR 3 (after 04538f7): the curse gate reads lastHurt === time, which an earlier landed hit in the same frame also satisfies
+test('blood curse ends when the hero dies (the death screen shows no curse)', () => {
+  const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
+  c.game.hex('priest'); assert.ok(c.game.curseT > 2.5, 'cursed');
+  c.player.invulnerable = 0; c.player.blood = 1; c.game.hurt(50, 1);
+  assert.equal(c.game.state, 'dead', 'the hit killed the hero');
+  assert.equal(c.game.curseT, 0, 'the curse ends with the hero');
+});
+
+test('blood curse: a rite blocked by i-frames in the same frame as an earlier landed hit starts no curse', () => {
+  const c = brainFoe('priest', 200, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.player.blood = 150;
+  c.game.hurt(10, 1); // a landed hit this frame: the i-frames now cover the rite
+  assert.equal(c.game.curseT, 0, 'the plain hit itself does not curse');
+  Object.assign(c.e, { heavy: true, heavyKind: 'rite', tell: 0, token: 'heavy', dmg: 100, warn: { kind: 'rite', circles: [{ x: c.player.x, y: c.player.y, r: 56 }] } });
+  c.game.heavyStrike(c.e);
+  assert.equal(c.game.curseT, 0, 'a rite the i-frames block curses nothing');
+});
+
+test('a cover rite is a ground circle and a crossfire ray aims at the landing height, even for an airborne snapshot', () => {
+  const mk = type => { const c = brainFoe(type, 300, { floor: 8 }); c.game.escapes = () => true; const sp = enemy(c.game, c.player.x + 140, { type: 'spear', hp: 1e5 }); Object.assign(sp, { dir: -1, action: 1, cd: 99, speed: 0, jabCd: 99 }); c.e.speed = 0; c.e.cd = 99; lull(c.game); c.e.mixT = 99; c.e.blinkCd = 99;
+    Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); for (let i = 0; i < 20; i++) { Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); c.game.update(1 / 120, {}); }
+    Object.assign(sp, { tell: .35, token: '', warn: { kind: 'thrust', box: { x: sp.x - 194, y: sp.y - 54, w: 184, h: 54 } } }); c.e.heavyCd = 0; c.game.pairCd = 0; Object.assign(c.player, { y: FLOOR - 120, vy: 0, grounded: false }); c.game.update(1 / 120, {}); return c; };
+  const pr = mk('priest'); assert.ok(pr.game.pair, 'cover opened'); assert.equal(pr.e.warn.circles[0].y, FLOOR, 'the circle sits on the floor, not in the air');
+  const mg = mk('mage'); assert.ok(mg.game.pair, 'crossfire opened'); assert.ok(Math.abs(mg.e.warn.line.y1 - (FLOOR - 30)) < 1, 'the ray aims at the landing height');
+  assert.ok(pr.game.pair || mg.game.pair, 'at least one of the pairs opened for the airborne hero');
+});
+
+test('skeleton stat profiles: the normal profile (halved) from floor 1, the old numbers as the enraged profile above floor 100; every other castle regular has 5.3x health; Normal and Endless are untouched', () => {
+  const stats = (type, floor) => { const g = new Game(() => {}, 5, 'castle'); g.apex = true; g.floor = floor; g.enemies = []; const e = g.spawnEnemy(type, 900, 0); return { hp: e.hp, dmg: e.damage, poise: e.maxPoise, speed: e.speed }; };
+  const n = stats('skeleton', 1), r = stats('skeleton', 101), edge = stats('skeleton', 100);
+  assert.deepEqual(edge, n, 'floor 100 is still the normal profile'); assert.equal(apexProfile(100), APEX_PROFILES.normal); assert.equal(apexProfile(101), APEX_PROFILES.enraged);
+  assert.deepEqual(r, { hp: 528, dmg: 80, poise: 720, speed: 180 }, 'the enraged profile reproduces the old x9.6 / x8 / x12 / x2.5 numbers');
+  assert.deepEqual(n, { hp: Math.round(55 * 4.8), dmg: 40, poise: 360, speed: 90 }, 'normal: hp x4.8, light damage x4, posture x6, speed x1.25');
+  const base = { shield: 60, spear: 53, bat: 27, knight: 65, priest: 54, mage: 55 };
+  for (const [type, hp] of Object.entries(base)) { const got = stats(type, 1).hp; assert.ok(Math.abs(got - hp * CASTLE_HP_MUL) <= 1.5, `${type}: ${got} vs ${hp * CASTLE_HP_MUL}`); }
+  assert.ok(stats('bat', 1).hp < stats('priest', 1).hp && stats('priest', 1).hp < stats('knight', 1).hp, 'identity kept: bat most fragile, knight toughest');
+  const off = new Game(() => {}, 5, 'castle'); off.apex = false; off.enemies = []; assert.equal(off.spawnEnemy('knight', 900, 0).hp, 65, 'apex off: the #50 numbers');
+  for (const mode of ['normal', 'endless']) { const g = new Game(() => {}, 5, mode); g.enemies = []; assert.equal(g.spawnEnemy('knight', 900, 0).hp, Math.round(65 * (mode === 'endless' ? floorScale(g.floor).hp : 1)), `${mode}: unchanged`); }
+  const w = new Game(() => {}, 5, 'castle'); w.apex = true; w.enemies = []; const wd = w.spawnWarden(1400); assert.equal(wd.hp, 520, 'the Warden is unchanged');
+  const k = new Game(() => {}, 5, 'castle'); k.apex = true; k.enemies = []; const kg = k.spawnKing(1400); assert.equal(kg.hp, KING_HP, 'the King is unchanged');
 });

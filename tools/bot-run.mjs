@@ -1,7 +1,7 @@
 // Headless bot runner (#52): plays castle runs from the Vigil for N seeds and reports per-floor results.
 // Usage: node tools/bot-run.mjs [--seeds 20] [--floors 1-3] [--cap 240] [--first 1] [--weapon spear] [--skill expert|average] [--run]
 // --duel N [--blood 100] [--relics dash,reach] [--tier 0] [--weapon w] [--cap 60]: apex arms-race harness. The bot fights N castle skeletons in an empty floor-1 room (no traps, obstacles or chests);
-// a win is every enemy dead. --type skeleton|shield|spear or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
+// a win is every enemy dead. --type skeleton|shield|spear|bat|knight|priest|mage|elite:<type> or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
 // --run [--brain off]: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
 import { Game, WEAPONS, RELICS } from '../core.js';
 import { createBot, resolveModal, chooseWeapon, REACTION_DELAY } from '../bot.js';
@@ -34,20 +34,21 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
     // the attacker: the enemy whose tell ends this frame, else one mid-lunge, else the one whose tell ended last (several skeletons can be attacking at once)
     const live = [...game.enemies].filter(e => e.hp > 0), st = e => start.get(e);
     const near = live.find(e => st(e)?.sig[0] === 't' && !(e.tell > 0)) || live.find(e => e.cutT > 0 || e.strikeT > 0 || e.plantT > 0) || live.sort((a, b) => (st(b)?.end ?? -9) - (st(a)?.end ?? -9))[0];
-    ctx = { move: hazard ? 'trap' : heavy ? `heavy:${near?.heavyKind ?? '?'}` : near?.move || 'light', age: near && start.has(near) ? game.time - start.get(near).t : -1 };
+    const bolt = game.projectiles.some(b => Math.abs(b.x - game.player.x) < 30 + b.r && b.y > game.player.y - 70 && b.y < game.player.y + 10); // a bolt or ray orb that reaches the hero was released after its own tell (0.65 s or more): its age is that tell, not the newest tell of the nearest caster
+    ctx = { move: hazard ? 'trap' : heavy ? `heavy:${near?.heavyKind ?? '?'}` : near?.move || 'light', age: bolt ? 9 : near && start.has(near) ? game.time - start.get(near).t : -1 };
     realHurt(amount, dir, hazard, heavy);
   };
   game.start(); game.setWeapon(w); game.descend();
   for (const id of relics) { RELICS.find(x => x.id === id).apply(game.player); game.relics.push(id); }
   game.enemies = []; game.traps = []; game.obstacles = []; game.chests = []; game.pickups = [];
   game.setWeapon(w); // setWeapon rebuilds stats on top of the relics and resets the hero's x, so the hero is placed after it
-  const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8;
-  const kinds = foeTypes(type, n); n = kinds.length; game.floor = floor; if (brainOff) game.brainOff = new Set(kinds);
-  kinds.forEach((k, i) => game.spawnEnemy(k, p.x + [300, 420, -250][i], tier));
+  const p = game.player; p.blood = blood; p.x = 700; p.invulnerable = .8; game.portalX = 1e9; // the duel room has no Moon Gate: a hero chasing a caster would otherwise walk into it and end the fight with a reward pick
+  const kinds = foeTypes(type, n); n = kinds.length; game.floor = floor; if (brainOff) game.brainOff = new Set(kinds.map(k => k.replace('elite:', '')));
+  kinds.forEach((k, i) => { const elite = k.startsWith('elite:'), e = game.spawnEnemy(elite ? k.slice(6) : k, p.x + [300, 420, -250][i], tier); if (elite) game.makeElite(e, tier); e.required = true; }); // required, like the foes of a real room: the bot hunts a straggler instead of walking to the Moon Gate // elite:<type> spawns that type's elite (its twist, health x1.5)
   const bot = createBot({ skill: botSkill, seed });
   let last = p.blood, t0 = game.elapsed; const room0 = game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w);
   while (game.state === 'playing') {
-    if (type === 'skeleton' && game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room (kiting foes may lead it out: only skeleton cells stop there)
+    if (type === 'skeleton' && process.env.DUEL_ROOM && game.rooms.findIndex(rm => p.x >= rm.x && p.x < rm.x + rm.w) !== room0) { r.left = true; break; } // the hero left the duel room: only checked with DUEL_ROOM=1 (the old skeleton cells; foes slower than the hero no longer lead it out of a room)
     if (game.elapsed - t0 > capSeconds) { r.timeout = true; break; }
     if (r.kills >= n) { r.win = true; break; }
     game.update(DT, bot.input(game));
@@ -57,7 +58,7 @@ export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics
   }
   if (game.state === 'dead') r.dead = true;
   if (r.kills >= n) r.win = true;
-  r.time = game.elapsed - t0;
+  r.time = game.elapsed - t0; r.state = game.state;
   return r;
 }
 
@@ -82,7 +83,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
     realHurt(amount, dir, hazard, heavy);
   };
   const bot = createBot({ skill: botSkill, seed });
-  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear', 'bat', 'knight']); // the #50 shield bearer, spearman, bat and knight (the apex skeleton stays)
+  if (arg('brain', 'on') === 'off') game.brainOff = new Set(['shield', 'spear', 'bat', 'knight', 'priest', 'mage']); // the #50 shield bearer, spearman, bat and knight (the apex skeleton stays)
   game.start();
   if (weapon in WEAPONS) { game.setWeapon(weapon); game.descend(); }
   else if (startFloor > 1) { game.setWeapon(chooseWeapon(game)); game.descend(); }
