@@ -5350,3 +5350,14 @@ test('knight upcut (QA #62 PR 2): the drawn band under the dashed line (50 px ab
     assert.equal(player.blood < 100, hit, `feet ${feetUp} px up: ${hit ? 'hit' : 'safe'}`);
   }
 });
+
+test('finisher and i-frame shadow: a bat swoops at a hero left on little blood whatever the moment; a light does not land in the i-frames just before another enemy\'s heavy, nor a heavy just after a light', () => {
+  const mk = blood => { const c = brainFoe('bat', 100, { floor: 6 }); c.e.speed = 0; c.e.cd = 99; c.e.crossCd = 99; lull(c.game); c.e.y = c.player.y - 34; c.e.cd = 0; c.e.mixT = 99; c.player.dir = 1; c.player.blood = blood; return c; };
+  const low = mk(30); advance(low.game, APEX_REACT + .1); assert.ok(low.e.tell > 0 || evs(low.events, 'enemyTell').some(ev => ev.kind === 'swoop'), 'a wounded hero is swooped at though it faces the bat');
+  const high = mk(120); advance(high.game, APEX_REACT + .1); assert.ok(!(high.e.tell > 0), 'a healthy hero facing the bat is not');
+  const c = brainFoe('spear', 200, { floor: 4 }); const kn = enemy(c.game, c.player.x + 260, { type: 'knight', hp: 1e5 }); Object.assign(kn, { heavy: true, heavyKind: 'greatswing', tell: .5 });
+  assert.equal(c.game.canStrike(c.e, .6), false, 'a light landing in the 0.8 s before the heavy\'s contact waits');
+  assert.equal(c.game.canStrike(c.e, 1.5), true, 'a light that lands well after the heavy is fine');
+  const h = brainFoe('knight', 200, { floor: 8 }); const sp = enemy(h.game, h.player.x + 260, { type: 'spear', hp: 1e5 }); Object.assign(sp, { tell: .3, warn: { kind: 'thrust', box: { x: 0, y: 0, w: 1, h: 1 } } });
+  assert.equal(h.game.canStrike(h.e, .85, 'heavy'), false, 'a heavy whose contact falls within 0.8 s after a light\'s contact waits');
+});

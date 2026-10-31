@@ -121,7 +121,8 @@ const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; /
 const JOINS = { shield: 3, spear: 4, bat: 5, knight: 8 }; // a type joins pairs from the floor after its intro
 const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
 const SPEAR = { hold: 50, back: 1.2, aimTell: .64, aimSpeed: 100, aimReach: 250, liftTell: .45, liftRecover: .6, liftReach: 120, liftHigh: 170, liftLow: 60, pullDist: 70, pullTime: .2, pullCd: 1.6, plantTell: .5, plantLive: 1.2, plantRecover: .7, plantCd: 4, plantRange: 260, lungeEvery: 3, jabTell: .5, jabCd: .9, chainTell: .45, chainMax: 2, chainLen: 300, shoveTell: .45, shoveRecover: .5, shovePush: 80, speedMul: 2.2, cd: 1, vaultDist: 160, vaultTime: .3, vaultCd: 2.5, spinReach: 130, spinCd: 4, guardTime: .6, guardCd: 1.5 }; // speedMul: a trait lever (the zoner out-spaces, as the apex skeleton's x2.5 speed), brain movement only
-const BAT = { moment: 2.5, orbitMin: 40, orbitMax: 170, flutterUp: 60, flutterAway: 60, flutterT: .25, flutterCd: 1.5, diveFrom: 380, scatter: 300, herdLo: .15, herdHi: .35, diveTell: .9 }; // bat: swoop when the hero's back is turned or busy; orbit round a hero who faces it; dive onto the landing; flutter away from a plunge
+const HURT_SHADOW = .8; // the hero's i-frames after a hit
+const BAT = { moment: 2.5, orbitMin: 40, orbitMax: 170, flutterUp: 60, flutterAway: 60, flutterT: .25, flutterCd: 1.5, diveFrom: 380, scatter: 300, finish: 45, finishReach: 280, herdLo: .15, herdHi: .35, diveTell: .9 }; // bat: swoop when the hero's back is turned or busy; orbit round a hero who faces it; dive onto the landing; flutter away from a plunge
 const KNIGHT = { parryT: .35, parryCd: 3, parryRecover: .5, parryPoise: 70, parryReach: 110, push: 40, ripTell: .45, ripRecover: .5, upTell: .5, upRecover: .8, landReach: 180, swingEvery: 3, chargeCd: 1.5, pincerGap: .6 }; // knight: patient anchor with a mini-duel
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
 const BRAINS = { bat: (g, e, dt) => g.batThink(e, dt), knight: (g, e, dt) => g.knightThink(e, dt), skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
@@ -1466,6 +1467,8 @@ export class Game {
   // May e start an attack whose contact falls contactIn s from now: it holds a token (canWindUp: token, on screen), and the contact is not inside the hero's remaining invulnerability.
   canStrike(e, contactIn, kind = 'light') {
     const s = this.snap(), left = Math.max(s.invulnerable - (this.time - s.t), this.player.invulnerable); // the live timer too: fairness outranks the 0.12 s lag when a hit lands just now
+    if (kind !== 'heavy') for (const o of this.enemies) if (o !== e && o.hp > 0 && o.heavy && o.tell > 0 && contactIn < o.tell + (o.heavyKind === 'rush' || o.heavyKind === 'dive' ? .35 : .15) && contactIn > o.tell + (o.heavyKind === 'rush' || o.heavyKind === 'dive' ? .35 : .15) - HURT_SHADOW) return false; // a light whose hit would land in the 0.8 s of i-frames just before another enemy's heavy would waste that heavy: it waits (the heavy has priority)
+    if (kind === 'heavy') for (const o of this.enemies) if (o !== e && o.type !== e.type && o.hp > 0 && !o.heavy && o.tell > 0 && o.warn && contactIn + .2 > o.tell && contactIn + .2 < o.tell + HURT_SHADOW) return false; // and a heavy waits out the i-frames of a light that lands just before it
     return this.state === 'playing' && left < contactIn && this.canWindUp(e, kind);
   }
   // Can the hero, reacting after PAIR.react s, step clear of every area by walking or jumping (never a dash)? areas: [{ t, box }], t seconds from now.
@@ -1632,7 +1635,8 @@ export class Game {
     // swoop, picking its moment: the hero's back is turned, it is swinging, or an ally holds its attention; otherwise one every BAT.moment s
     const busy = s.attack > 0 || s.attackCd > 0 || this.findAlly(e, 260, a => a.state === 'tell' && a.o.type !== 'bat');
     const dart = d > BAT_DART_FROM, tell = SWOOP_TELL + (dart ? BAT_DART : 0);
-    if (d < TRIGGER.bat && Math.abs(e.y - (s.y - 25)) < 40 && e.cd <= 0 && (!facing || busy || e.mixT <= 0) && !s.frenzy && this.canStrike(e, tell)) {
+    const wounded = s.blood <= BAT.finish; // finisher: a hero left on little blood (a landed dive) draws a swoop from every bat in range, whatever the moment
+    if (d < (wounded ? BAT.finishReach : TRIGGER.bat) && Math.abs(e.y - (s.y - 25)) < (wounded ? 80 : 40) && e.cd <= 0 && (!facing || busy || e.mixT <= 0 || wounded) && !(wounded && targeted) && !s.frenzy && this.canStrike(e, tell)) {
       const side = Math.sign(e.x - s.x) || 1;
       e.dir = toward; e.mixT = BAT.moment;
       Object.assign(e, { tell, cd: 1.3, vx: 0, dartT: dart ? BAT_DART : 0, dartFrom: e.x, dartTo: clamp(s.x + side * BAT_DART_STOP, 30, W - 40) });
@@ -2444,7 +2448,7 @@ export class Game {
   knightStrike(e, dmg) {
     const w = e.warn, d = e.dir, turn = e.move === 'turnswipe', end = turn || e.move === 'riposte' || e.move === 'upcut'; // the riposte and the upcut end the string
     this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: d, boss: false, kind: e.move === 'riposte' || e.move === 'upcut' ? e.move : turn ? 'turnswipe' : 'slash', area: w });
-    if (w && this.heavyHits(e, w.box) && (e.move !== 'upcut' || this.player.y < e.y - 20)) this.hurt(dmg, turn ? -d : d); // the upcut only meets a hero whose feet are off the ground
+    if (w && this.heavyHits(e, w.box) && (e.move !== 'upcut' || this.player.y < e.y - 50)) this.hurt(dmg, turn ? -d : d); // the upcut only meets a hero whose feet are off the ground
     const next = !end && this.state === 'playing' ? this.knightBranch(e) : '';
     if (next) {
       const to = clamp(e.x + d * OVERHEAD_STEP, 30, this.worldWidth - 40), at = (from, far, h) => ({ x: Math.min(to + d * from, to + d * far), y: e.y - h, w: Math.abs(far - from), h });

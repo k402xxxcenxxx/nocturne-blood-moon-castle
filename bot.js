@@ -85,7 +85,7 @@ function hitTime(e, px, py) {
   if (!(e.tell > 0) || e.heavy) return Infinity;
   const dx = Math.abs(px - e.x), dy = Math.abs(py - e.y);
   if (e.type === 'boss') return w && (w.box && rectHit(px, py, w.box) || w.circles?.some(c => Math.abs(px - c.x) < c.r + 14 && py > e.y - c.r)) ? e.tell : Infinity;
-  if (e.type === 'knight' && w?.box) return rectHit(px, py, w.box) && (e.move !== 'upcut' || py < e.y - 20) ? e.tell : Infinity; // the upcut only meets feet off the ground // castle knight slash and turnswipe: the drawn box
+  if (e.type === 'knight' && w?.box) return rectHit(px, py, w.box) && (e.move !== 'upcut' || py < e.y - 50) ? e.tell : Infinity; // the upcut only meets feet off the ground // castle knight slash and turnswipe: the drawn box
   if (e.type === 'bat') return dx < 55 && dy < 58 ? e.tell : Infinity;
   if (e.type === 'spear') return e.thrustBox && rectHit(px, py, e.thrustBox) ? e.tell : Infinity;
   if (e.type === 'shield') return dx < 70 && (px - e.x) * e.dir >= 0 && dy < 77 ? e.tell : Infinity;
