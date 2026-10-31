@@ -210,7 +210,7 @@ export class AudioSystem {
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
-      tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70],
+      tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70], gateDrop: [50, 25, 90], tellGreatToll: [30, 40, 30, 40, 60], wardenWake: [40, 30, 80],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
       hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, parryClang: [18, 12, 28], curse: [20, 40, 30] };
     if (patterns[name]) this.vibrate(patterns[name]);
@@ -976,6 +976,73 @@ export class AudioSystem {
         tone('noise', 700 * d, 0.1, 0.12, 150);
         break;
       }
+      case 'gateDrop': { // iron portcullis slam: a falling rush, a huge iron clang with ringing bars, a stone-deep thud
+        const d = 0.96 + Math.random() * 0.08;
+        tone('noise', 900, 0.14, 0.14, 2400);
+        tone('sine', 48 * d, 0.7, 0.5, 20, 0.12);
+        tone('noise', 5000, 0.08, 0.3, 700, 0.12);
+        [310, 465, 780, 1240].forEach((f, i) => tone('square', f * d, 0.5 - i * 0.08, 0.04, f * 0.985 * d, 0.12));
+        tone('noise', 1600, 0.35, 0.16, 200, 0.14);
+        break;
+      }
+      case 'gateLift': // portcullis rising: a ratchet of chain links over a low grind, climbing
+        [0, 0.06, 0.12, 0.19, 0.27, 0.36, 0.46].forEach((dl, i) => tone('noise', 3200 + i * 250, 0.03, 0.08, 1500, dl));
+        tone('sawtooth', 60, 0.5, 0.06, 110);
+        tone('noise', 500, 0.5, 0.09, 1800);
+        break;
+      case 'tellGate': // gate tell: a chain release creak, a slipping rattle then a long dry groan
+        tone('sawtooth', 190, 0.5, 0.05, 120);
+        [0, 0.07, 0.15, 0.22].forEach((dl, i) => tone('noise', 4600 - i * 500, 0.03, 0.09, 1600, dl));
+        tone('square', 740, 0.4, 0.025, 520, 0.05);
+        break;
+      case 'tellBell': // bell tell: a muffled low pull and a small clapper tick (the rings carry the pitch)
+        tone('sine', 98, 0.5, 0.18, 130);
+        tone('noise', 1800, 0.05, 0.08, 600, 0.3);
+        tone('triangle', 392, 0.4, 0.04, 380, 0.3);
+        break;
+      case 'ringLow': { // low bell ring: deep and dark, a ~110 Hz hum with a slow tail (answer: jump or dash)
+        if (ctx.currentTime - (this._lastRingLow ?? -1) < 0.05) return;
+        this._lastRingLow = ctx.currentTime;
+        tone('sine', 110, 1.1, 0.4, 106);
+        tone('sine', 165, 0.8, 0.14, 160);
+        tone('triangle', 277, 0.5, 0.06, 270);
+        tone('noise', 900, 0.08, 0.14, 250);
+        break;
+      }
+      case 'ringHigh': { // high bell ring: bright and glassy, ~1 kHz with inharmonic overtones (answer: stay low)
+        if (ctx.currentTime - (this._lastRingHigh ?? -1) < 0.05) return;
+        this._lastRingHigh = ctx.currentTime;
+        tone('sine', 988, 0.8, 0.14, 984);
+        tone('sine', 1480, 0.55, 0.08, 1470);
+        tone('sine', 2490, 0.4, 0.05);
+        tone('noise', 7000, 0.03, 0.1, 3000);
+        break;
+      }
+      case 'tellGreatToll': // Great Toll tell: a huge drain, chains dragging in over a falling sub
+        tone('noise', 600, 1.2, 0.18, 3200);
+        [0, 0.09, 0.18, 0.3, 0.42, 0.56, 0.72].forEach((dl, i) => { tone('noise', 4800 - i * 400, 0.04, 0.09, 1400, dl); tone('square', 880 - i * 70, 0.05, 0.025, 700, dl); });
+        tone('sine', 140, 1.5, 0.3, 34);
+        tone('sawtooth', 70, 1.3, 0.07, 36);
+        break;
+      case 'wardenHorn': // the call (horn): a low brass blast with a fifth, held and swelling
+        tone('sawtooth', 110, 0.9, 0.14, 118);
+        tone('sawtooth', 165, 0.9, 0.08, 174);
+        tone('square', 55, 0.9, 0.08, 59);
+        tone('noise', 1200, 0.3, 0.05, 600);
+        break;
+      case 'wardenBellow': { // the call without a horn: a short chesty roar
+        const d = 0.97 + Math.random() * 0.06;
+        tone('sawtooth', 95 * d, 0.7, 0.16, 55);
+        tone('sawtooth', 100 * d, 0.7, 0.1, 58);
+        tone('noise', 1500, 0.4, 0.1, 300);
+        break;
+      }
+      case 'wardenWake': // arena entrance: a boom, a portcullis clang and a rumble that fades
+        tone('sine', 44, 1.4, 0.5, 24);
+        tone('noise', 5000, 0.08, 0.28, 800, 0.05);
+        [330, 520, 870].forEach((f, i) => tone('square', f, 0.5 - i * 0.1, 0.035, f * 0.98, 0.05));
+        tone('noise', 400, 1.2, 0.14, 120, 0.1);
+        break;
       case 'wardenSkid': // charge ends: stone dragged and ground to a halt
         tone('noise', 2400, 0.4, 0.2, 250);
         tone('sawtooth', 110, 0.35, 0.07, 45);
