@@ -989,7 +989,10 @@ function drawHeavyWarn(ctx, e, time) {
       const my = Math.round(b.y + b.h / 2), x0 = g === 1 ? b.x : b.x + b.w, off = PS.calm ? 0 : (time * 160) % 40;
       ctx.strokeStyle = '#ffe0d0'; ctx.lineWidth = 3; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(b.x, my); ctx.lineTo(b.x + b.w, my); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.lineWidth = 2;
       for (let i = 0; i + 8 < b.w; i += 40) { const cx = Math.round(x0 + g * Math.min(b.w - 8, i + off)); ctx.beginPath(); ctx.moveTo(cx - g * 7, my - 6); ctx.lineTo(cx, my); ctx.lineTo(cx - g * 7, my + 6); ctx.stroke(); }
-      for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); }
+      const hi = w.variant === 'high' || (w.variant === 'crossfire' && e.y - my >= 70); // high ray: a standing hero is under it, so the cue is "stay down", not "jump"
+      for (const f of [.3, .65]) { const ax = Math.round(b.x + b.w * f), ay = Math.round(hi ? b.y + 30 + (PS.calm ? 0 : Math.sin(time * 9) * 3) : b.y - 18 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath();
+        if (hi) { ctx.moveTo(ax, ay + 9); ctx.lineTo(ax + 8, ay - 3); ctx.lineTo(ax - 8, ay - 3); ctx.fill(); ctx.fillRect(ax - 2, ay - 10, 4, 7); } else { ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 2, ay + 3, 4, 7); } }
+      if (hi) { ctx.fillStyle = 'rgba(232,246,255,.35)'; ctx.fillRect(b.x, FLOOR - 3, b.w, 3); } // a pale floor strip under the beam: the ground is safe
     } else if (w.kind === 'riposte') { flowChevrons(ctx, b, g, time); // quick counter-cut straight ahead: walk back or hop it
     } else if (w.kind === 'rising' || w.kind === 'upcut') { // anti-air: only a hero whose feet are above the dashed line (the box bottom, 40 px up; the upcut 50) is hit; the band below it is safe ground
       const ly = Math.round(b.y + b.h), off = PS.calm ? 0 : (time * 70) % 24; ctx.fillStyle = 'rgba(19,17,27,.55)'; ctx.fillRect(b.x, ly, b.w, w.kind === 'upcut' ? 50 : 40);
@@ -1101,6 +1104,12 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
       ctx.strokeStyle = `rgba(255,224,208,${.6 + .4 * pp})`; ctx.lineWidth = 2; ctx.setLineDash([9, 6]); ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); ctx.fillStyle = '#ff4a3c'; ctx.fillRect(Math.round(l.x2) - 3, Math.round(l.y2) - 3, 6, 6); }
     ctx.restore();
   }
+  if (!boss && e.tell > 0 && e.aim != null && !e.heavy && !e.blessRadius && !e.warn?.lines && (e.type === 'mage' || e.type === 'priest')) { // caster bolt: the fixed aim, a short dashed stub from the hand that brightens through the tell
+    const tm2 = e.type === 'mage' ? .65 : .7, q = Math.min(1, Math.max(0, 1 - e.tell / tm2)), ox = x, oy = Math.round(y - e.h * .6), ca = Math.cos(e.aim), sa = Math.sin(e.aim);
+    ctx.save(); ctx.strokeStyle = `rgba(255,224,208,${.35 + .55 * q})`; ctx.lineWidth = 2; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(Math.round(ox + ca * 20), Math.round(oy + sa * 20)); ctx.lineTo(Math.round(ox + ca * 90), Math.round(oy + sa * 90)); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
+    ctx.fillStyle = '#ff4a3c'; ctx.beginPath(); ctx.moveTo(ox + ca * 100, oy + sa * 100); ctx.lineTo(ox + ca * 86 - sa * 6, oy + sa * 86 + ca * 6); ctx.lineTo(ox + ca * 86 + sa * 6, oy + sa * 86 - ca * 6); ctx.fill(); ctx.restore();
+  }
+  if (e.bmT > 0 && e.bmKind === 'recoil') { ctx.save(); ctx.strokeStyle = '#b3a68f'; ctx.globalAlpha = .55; ctx.lineWidth = 2; for (const dy of [-6, -18, -30]) { ctx.beginPath(); ctx.moveTo(x, Math.round(y + dy)); ctx.lineTo(x + (e.dir === -1 ? -26 : 26), Math.round(y + dy)); ctx.stroke(); } ctx.restore(); } // speed lines trailing the backstep, on the side it came from
   if (e.blinkT > 0 && e.blinkTo != null) { // mage blink: a ghost and a rising light column on the spot it will take
     const q = 1 - e.blinkT / .4; ctx.save(); ctx.translate(Math.round(e.blinkTo), FLOOR); ctx.globalAlpha = .15 + .4 * q; ctx.strokeStyle = '#cdb8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, -1, 26, 6, 0, 0, 7); ctx.stroke();
     ctx.fillStyle = '#cdb8ff55'; ctx.fillRect(-12, -84 * q - 6, 24, 84 * q + 6); ctx.scale(e.dir === -1 ? -1 : 1, 1); mage(ctx, e, time, '#cdb8ff'); ctx.restore();
@@ -1125,7 +1134,11 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     } else { const q = Math.min(1, 1 - e.tell / .45); zone(x, .12 + .3 * q); box(x, 3); ctx.fillStyle = '#ff4a3c'; ctx.strokeStyle = '#13111b'; ctx.lineWidth = 2; ctx.fillRect(x - 55, FLOOR - 6, 110, 6); ctx.strokeRect(x - 55, FLOOR - 6, 110, 6); } // hold: the box fills until contact; a floor bar shows its width so a jump over it reads
     ctx.restore();
   }
-  if (e.blessRadius > 0 && e.tell > 0) { const p = Math.min(1, 1 - e.tell / .9); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.12 + .3 * p})`; ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - 2, e.blessRadius, 20, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); } // flat floor reach: fills as the warning ends
+  if (e.blessRadius > 0 && e.tell > 0 && e.blessTarget && e.blessTarget.hp > 0) { // targeted bless: a link to the one ally it will bless, the ring grows with the tell
+    const t = e.blessTarget, p = Math.min(1, 1 - e.tell / .9), tx = Math.round(t.x), ty = Math.round(t.y - t.h * .5), hy = Math.round(y - e.h * .6);
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = `rgba(255,106,92,${.3 + .4 * p})`; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.lineDashOffset = calm ? 0 : -time * 40; ctx.beginPath(); ctx.moveTo(x, hy); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
+    ctx.fillStyle = `rgba(212,66,58,${.12 + .3 * p})`; ctx.strokeStyle = '#ff6a5c'; ctx.beginPath(); ctx.ellipse(tx, ty, 30, t.h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+  } else if (e.blessRadius > 0 && e.tell > 0) { const p = Math.min(1, 1 - e.tell / .9); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.12 + .3 * p})`; ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - 2, e.blessRadius, 20, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); } // flat floor reach: fills as the warning ends
   if (e.blessed > 0) { const pu = Math.sin(time * 6) * .5 + .5, hy = Math.round(y - 88 - pu * 2); ctx.save(); ctx.fillStyle = `rgba(212,66,58,${.2 + pu * .1})`; ctx.strokeStyle = `rgba(255,106,92,${.6 + pu * .4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 29, 26, 40, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#ff6a5c'; ctx.beginPath(); ctx.moveTo(x, hy - 7); ctx.quadraticCurveTo(x + 7, hy + 1, x, hy + 5); ctx.quadraticCurveTo(x - 7, hy + 1, x, hy - 7); ctx.fill(); ctx.restore(); }
   if (e.elite) { // purple aura hugging the body (faint fill so the "!" and bars stay readable); ward ring shrinks and fades as the shield drains
     const pu = Math.sin(time * 4) * .5 + .5; ctx.save(); ctx.fillStyle = `rgba(150,90,220,${.1 + pu * .07})`; ctx.strokeStyle = `rgba(190,140,255,${.45 + pu * .3})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 30, 30 + pu * 3, 44 + pu * 3, 0, 0, 7); ctx.fill(); ctx.stroke();
