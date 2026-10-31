@@ -727,6 +727,15 @@ export class AudioSystem {
         tone('sawtooth', 130, 0.3, 0.07, 260);
         tone('triangle', 480, 0.1, 0.06, 360, 0.2);
         break;
+      case 'tellCharge': // knight armoured charge: three heavy plate footfalls closing up, over a rising rumble
+        [0, 0.17, 0.3].forEach((dl, i) => {
+          tone('sine', 95 - i * 8, 0.12, 0.22, 50, dl);
+          tone('noise', 900 + i * 250, 0.07, 0.12, 300, dl);
+          tone('square', 360 + i * 40, 0.05, 0.04, 300, dl);
+        });
+        tone('sawtooth', 70, 0.5, 0.09, 190);
+        tone('noise', 400, 0.5, 0.08, 1400);
+        break;
       case 'tellSpin': // spear spin: the haft whirling, four whooshes climbing in pitch
         [0, 0.1, 0.19, 0.27].forEach((dl, i) => tone('noise', 1800 + i * 700, 0.09, 0.09, 700 + i * 300, dl));
         break;
