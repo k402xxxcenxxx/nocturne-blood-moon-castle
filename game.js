@@ -141,7 +141,7 @@ function handleEvent(e) {
     case 'eliteKill': lastEliteAffix = eliteLabel(e).split(/[:：]/)[0]; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
-    case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; toast(t('hint.curse')); } break; // hex/ash burst, then the first-time hint
+    case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; pendingToast = t('hint.curse'); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
       audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
@@ -529,6 +529,7 @@ function pumpBanner() {
   if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
+let pendingToast = ''; // hints wait for the stage announcement to clear
 let debtBand = null, debtHinted = false, curseHinted = false;
 function updateDebtBand(p) { // blood debt eats the bar from the right end of the fill; lethal when the end-of-frenzy payment would kill (game.debtLethal())
   const m = $('blood-meter'), on = game.mode === 'castle' && p.debt > 0;
@@ -931,6 +932,7 @@ function tick(now) {
   if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
   if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
   pumpBanner();
+  if (pendingToast && announceTime <= 0) { toast(pendingToast); pendingToast = ''; }
   if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
   render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
