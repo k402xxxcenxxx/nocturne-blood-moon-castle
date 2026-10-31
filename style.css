@@ -2606,3 +2606,14 @@ b[data-i18n] {
 .throne-button { border-color:#9a7b3c; color:#f0d7a0; }
 .modal-buttons .primary-button,.modal-buttons .secondary-button { display:inline-flex; align-items:center; justify-content:center; gap:12px; }
 .modal-buttons .primary-button svg,.modal-buttons .secondary-button svg { flex:none; width:20px; height:20px; margin:0; vertical-align:middle; }
+.health.cursed {
+  box-shadow:0 0 8px #7b6a8f;
+  filter:grayscale(.7) brightness(.85);
+}
+.health.cursed::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:repeating-linear-gradient(135deg,#0000 0 5px,#8d7aa066 5px 7px);
+}

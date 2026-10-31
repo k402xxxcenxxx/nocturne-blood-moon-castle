@@ -141,6 +141,7 @@ function handleEvent(e) {
     case 'eliteKill': lastEliteAffix = eliteLabel(e).split(/[:：]/)[0]; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
+    case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; toast(t('hint.curse')); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
       audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
@@ -528,7 +529,7 @@ function pumpBanner() {
   if (b.room !== undefined) { if (b.text === lastRoomText) return; lastRoomText = b.text; } // same room name twice in a row is noise
   el.textContent = b.text; el.classList.toggle('elite', !!b.elite); el.classList.add('show'); roomTime = b.time;
 }
-let debtBand = null, debtHinted = false;
+let debtBand = null, debtHinted = false, curseHinted = false;
 function updateDebtBand(p) { // blood debt eats the bar from the right end of the fill; lethal when the end-of-frenzy payment would kill (game.debtLethal())
   const m = $('blood-meter'), on = game.mode === 'castle' && p.debt > 0;
   if (!debtBand) { debtBand = document.createElement('i'); debtBand.className = 'debt-band'; debtBand.setAttribute('aria-hidden', 'true'); m.appendChild(debtBand); }
@@ -540,8 +541,8 @@ function updateHud() {
   const p = game.player; updateDebtBand(p);
   const castle = game.mode === 'castle'; // castle mode: the HP bar becomes the blood bar (notch at half, MP row shows the state)
   $('vitals').classList.toggle('castle', castle); $('vitals').classList.toggle('frenzy', castle && p.frenzy); $('vitals').classList.toggle('danger', castle && !p.frenzy && p.blood <= BLOOD_HALF); // danger: one heavy (100) kills
-  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); const lethal = p.debt > 0 && game.debtLethal(), debtText = p.debt > 0 ? t(lethal ? 'hud.debtLethal' : 'hud.debt', { n: Math.round(p.debt) }) : ''; $('mp-text').textContent = debtText; $('mp-text').classList.toggle('lethal', lethal); $('mp-text').classList.add('debt-text'); if (debtText) m.setAttribute('aria-valuetext', `${Math.ceil(p.blood)}, ${debtText}`); else m.removeAttribute('aria-valuetext'); }
-  else { $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; $('mp-text').classList.remove('debt-text', 'lethal'); }
+  if (castle) { const m = $('blood-meter'); m.style.setProperty('--split', `${Math.min(100, BLOOD_HALF / Math.max(1, p.blood) * 100)}%`); m.setAttribute('role', 'meter'); m.setAttribute('aria-label', t('hud.blood')); m.setAttribute('aria-valuemin', 0); m.setAttribute('aria-valuemax', BLOOD_MAX); m.setAttribute('aria-valuenow', Math.ceil(p.blood)); $('mp-name').textContent = t(p.frenzy ? 'hud.frenzy' : 'hud.blood'); const lethal = p.debt > 0 && game.debtLethal(), debtText = p.debt > 0 ? t(lethal ? 'hud.debtLethal' : 'hud.debt', { n: Math.round(p.debt) }) : game.curseT > 0 ? t('hud.curse', { n: game.curseT.toFixed(1) }) : ''; m.classList.toggle('cursed', game.curseT > 0); $('mp-text').textContent = debtText; $('mp-text').classList.toggle('lethal', lethal); $('mp-text').classList.add('debt-text'); if (debtText) m.setAttribute('aria-valuetext', `${Math.ceil(p.blood)}, ${debtText}`); else m.removeAttribute('aria-valuetext'); }
+  else { $('blood-meter').classList.remove('cursed'); $('blood-meter').removeAttribute('role'); $('mp-name').textContent = 'MP'; $('mp-text').classList.remove('debt-text', 'lethal'); }
   const magicLabel = document.querySelector('[data-control="magic"] span'), want = castle ? t('touch.magicCost', { n: SKILL_COST }) : t('touch.magicShort');
   if (magicLabel.textContent !== want) magicLabel.textContent = want;
   $('hp-text').innerHTML = castle ? `${Math.ceil(p.blood)} <em>/ ${BLOOD_MAX}</em>` : `${Math.ceil(p.hp)} <em>/ ${p.maxHp}</em>`;
@@ -579,6 +580,7 @@ function drawHeroTinted(hero, color) {
   b.globalCompositeOperation = 'source-atop'; b.fillStyle = color; b.fillRect(0, 0, 320, 200); b.globalCompositeOperation = 'source-over';
   ctx.drawImage(heroBuf, Math.round(hero.x) - 160, Math.round(hero.y ?? 0) - 150);
 }
+let curseGrad; function curseAura() { if (!curseGrad) { curseGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, 60); curseGrad.addColorStop(0, 'rgba(60,20,100,.7)'); curseGrad.addColorStop(1, 'rgba(60,20,100,0)'); } return curseGrad; }
 function auraGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (!auraCache[w]) { const g = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); g.addColorStop(0, `rgba(${k.aura},.45)`); g.addColorStop(1, `rgba(${k.aura},0)`); auraCache[w] = g; } return auraCache[w]; }
 function vignetteGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (vigW !== viewWidth) { vigW = viewWidth; for (const o in vigCache) delete vigCache[o]; } if (!vigCache[w]) { const g = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); g.addColorStop(0, `rgba(${k.vig},0)`); g.addColorStop(1, `rgba(${k.vig},.55)`); vigCache[w] = g; } return vigCache[w]; }
 function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
@@ -867,6 +869,13 @@ function render(dt) {
       ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
     }
     if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(p.weapon); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
+    if (game.curseT > 0 && game.mode === 'castle') { // blood curse: dark-violet aura and a hex sigil over the head, fading with curseT; still when calm
+      const k = Math.min(1, game.curseT / 1.5), spin = settings.shake ? worldTime * 1.5 : 0, cx = Math.round(p.x), cy = Math.round(p.y - 96);
+      ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = k * .5; ctx.fillStyle = curseAura(); ctx.fillRect(-60, -70, 120, 140); ctx.restore();
+      ctx.save(); ctx.globalAlpha = k * .85; ctx.strokeStyle = '#8a5cc0'; ctx.lineWidth = 2; ctx.beginPath();
+      for (let i = 0; i < 7; i++) { const a = spin + i * Math.PI / 3, x = cx + Math.round(Math.cos(a) * 9), y = cy + Math.round(Math.sin(a) * 9); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.stroke(); ctx.fillStyle = '#c9a8f0'; ctx.fillRect(cx - 1, cy - 1, 3, 3); ctx.restore();
+    }
     const numb = frenzyK > 0 && p.weapon === 'heavy', assault = frenzyK > 0 && p.weapon === 'spear' && p.dash > 0;
     if (assault) { ctx.save(); ctx.fillStyle = WEAPON_TINT.spear; for (let i = 0; i < 5; i++) { ctx.globalAlpha = .5 - i * .09; ctx.fillRect(Math.round(p.x - p.dir * (30 + i * 22)) - (p.dir > 0 ? 26 : 0), Math.round(p.y - 42 + i * 3), 26, 3 + (i & 1)); } ctx.restore(); }
     if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) { if (numb) drawHeroTinted(p, 'rgba(112,118,126,.8)'); else drawHero(ctx, p, worldTime); }
