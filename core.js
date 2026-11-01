@@ -540,7 +540,7 @@ export class Game {
     if (p.vy >= 0) {
       let floor = FLOOR, on = null;
       for (const plat of this.platforms) if (oldY <= plat.y + 1 && p.y >= plat.y && p.x + p.w / 2 > plat.x && p.x - p.w / 2 < plat.x + plat.w && plat.y < floor) { floor = plat.y; on = plat; }
-      for (const o of this.obstacles) if (oldY <= o.y - o.h + 1 && p.y >= o.y - o.h && Math.abs(p.x - o.x) < (p.w + o.w) / 2 && o.y - o.h < floor) { floor = o.y - o.h; on = null; } // stand on top
+      for (const o of this.obstacles) if (!o.gate && oldY <= o.y - o.h + 1 && p.y >= o.y - o.h && Math.abs(p.x - o.x) < (p.w + o.w) / 2 && o.y - o.h < floor) { floor = o.y - o.h; on = null; } // stand on top
       if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.on = on; p.jumps = 0; }
     }
     if (p.plunge === 2) this.plungeHit(oldY);
@@ -2098,7 +2098,7 @@ export class Game {
     if (e.frozen > 0) { e.vx = 0; return; }
     if (e.stun > 0) { // armor break: slides back, takes x1.5 damage, then the gauge refills and locks
       e.stun = Math.max(0, e.stun - dt); e.breakStun = e.stun;
-      e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8);
+      e.x = this.wallClip(e, clamp(e.x + e.vx * dt, 30, this.worldWidth - 40)); e.vx *= Math.exp(-dt * 8);
       if (e.stun <= 0) { Object.assign(e, { superArmor: e.superArmorMax, armorLock: ARMOR_LOCK, cd: .4, vx: 0 }); this.emit('armorRestore', { x: e.x, y: e.y - e.h * .55 }); }
       return;
     }
@@ -2252,7 +2252,7 @@ export class Game {
     const taken = Math.min(p.blood, great ? Math.max(0, p.blood - BLOOD_HALF) + GREAT.extra : p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
     if (numb) p.debt += Math.round(taken); else p.blood -= taken; // debt stays whole so the HUD, lethal cue and payment agree
     e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
-    p.invulnerable = .8; if (!numb) p.x = clamp(p.x + e.dir * (great ? GREAT.back : 120), 25, this.worldWidth - 30); this.freeze = .06;
+    p.invulnerable = .8; if (!numb) { const from = p.x; p.x = clamp(p.x + e.dir * (great ? GREAT.back : 120), 25, this.worldWidth - 30); this.keepBeside(p, from); } this.freeze = .06; // a throw never carries the hero through a portcullis
     if (this.fightOn) this.fightStats.taken += taken;
     this.emit('toll', { x: p.x, y: p.y - 30, amount: taken, debt: numb, great });
     if (p.blood <= 0) this.heroDown(true, great ? 'greatToll' : 'toll'); else this.checkFrenzy();

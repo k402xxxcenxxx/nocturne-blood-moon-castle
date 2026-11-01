@@ -5619,3 +5619,14 @@ test('warden presence and cleanup: a gate slams behind the hero on floor 10, foo
   b.hp = 1; b.superArmor = 0; game.damageEnemy(b, 50, 1, false, false, false, 17);
   assert.equal(game.obstacles.filter(q => q.gate).length, 0, 'gates lift'); assert.ok(game.enemies.filter(q => q.add).every(q => q.hp === 0), 'guards fall'); assert.equal(game.rings.length, 0);
 });
+
+test('warden throws stop at a portcullis: the Great Toll (160 px) and the seize (120 px) leave the hero on the Warden\'s side of a gate, a gate top is not a platform, and the break slide stops at a gate', () => {
+  const great = wardenBrainArena(1150, 1300); great.player.blood = 180; great.b.dir = -1; great.game.dropGate(1010); great.game.wardenToll(great.b, true);
+  assert.ok(great.player.x > 1010 + 36 - 1, `Great Toll throw ends beside the gate, not behind it (x ${great.player.x.toFixed(0)})`);
+  const seize = wardenBrainArena(1210, 1300); seize.player.blood = 180; seize.b.dir = -1; seize.game.dropGate(1100); seize.game.wardenToll(seize.b);
+  assert.ok(seize.player.x > 1100 + 36 - 1, `seize throw ends beside the gate (x ${seize.player.x.toFixed(0)})`);
+  const top = wardenBrainArena(900, 1300); top.game.dropGate(1000); Object.assign(top.player, { x: 1000, y: FLOOR - 200, vy: 0, grounded: false }); advance(top.game, 1);
+  assert.ok(Math.abs(top.player.x - 1000) > 30 && top.player.y >= FLOOR - 1, 'a hero dropped on a gate slides off and reaches the floor');
+  const slide = wardenBrainArena(1100, 1300); slide.game.dropGate(1200); slide.b.x = 1260; Object.assign(slide.b, { stun: 1, breakStun: 1, vx: -1120 }); advance(slide.game, .5);
+  assert.ok(slide.b.x >= 1200 + 58 - 1, 'the break slide stops at the gate');
+});
