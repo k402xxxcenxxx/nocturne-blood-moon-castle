@@ -212,7 +212,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70], gateDrop: [50, 25, 90], tellGreatToll: [30, 40, 30, 40, 60], wardenWake: [40, 30, 80],
       kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, parryClang: [18, 12, 28], curse: [20, 40, 30] };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, ringNearLow: 8, parryClang: [18, 12, 28], curse: [20, 40, 30] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -1018,6 +1018,14 @@ export class AudioSystem {
         tone('noise', 7000, 0.03, 0.1, 3000);
         break;
       }
+      case 'ringNearLow': // timing cue, jump now: a quick rising hop chirp in the low bell's register
+        tone('triangle', 220, 0.12, 0.13, 440);
+        tone('sine', 110, 0.1, 0.1, 220);
+        break;
+      case 'ringNearHigh': // timing cue, stay down: a quick falling duck tick in the high bell's register
+        tone('sine', 1320, 0.09, 0.09, 700);
+        tone('noise', 6000, 0.02, 0.06, 3000);
+        break;
       case 'tellGreatToll': // Great Toll tell: a huge drain, chains dragging in over a falling sub
         tone('noise', 600, 1.2, 0.18, 3200);
         [0, 0.09, 0.18, 0.3, 0.42, 0.56, 0.72].forEach((dl, i) => { tone('noise', 4800 - i * 400, 0.04, 0.09, 1400, dl); tone('square', 880 - i * 70, 0.05, 0.025, 700, dl); });
