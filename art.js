@@ -442,7 +442,7 @@ export function drawHero(ctx, p = {}, time = 0) {
   ctx.restore();
 }
 function skeleton(c, e, time, white) {
-  const bone = white || '#b9b5a1', shade = white || '#777d7b', dark = '#171f2a', step = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 10) * 5 : 0;
+  const hk = !!e.husk, bone = white || (hk ? '#b8625c' : '#b9b5a1'), shade = white || (hk ? '#6e2a38' : '#777d7b'), dark = hk ? '#2a0f1c' : '#171f2a', step = Math.abs(e.vx || 0) > 5 ? Math.sin(time * 10) * 5 : 0;
   line(c, dark, -5, -25, -7 + step, -3, 7); line(c, shade, -5, -25, -7 + step, -3, 4);
   line(c, dark, 5, -25, 6 - step, -3, 7); line(c, bone, 5, -25, 6 - step, -3, 3);
   rect(c, shade, -10 + step, -3, 10, 3); rect(c, bone, 3 - step, -3, 10, 3);
@@ -451,7 +451,7 @@ function skeleton(c, e, time, white) {
   for (let y = -40; y < -27; y += 4) { rect(c, bone, -7, y, 14, 2); rect(c, shade, -8, y, 2, 3); }
   poly(c, shade, [[-8, -26], [-1, -23], [6, -26], [8, -22], [2, -18], [-6, -20]]);
   rect(c, '#161c26', -9, -61, 18, 18); rect(c, shade, -8, -59, 15, 14); rect(c, bone, -6, -60, 13, 11); rect(c, bone, -5, -49, 11, 6);
-  const apex = e.gT !== undefined, eye = white || (apex ? '#ffb04a' : '#de7665'); // apex (castle) skeletons: amber eyes and a gold circlet mark the x12 body
+  const apex = e.gT !== undefined && !hk, eye = white || (hk ? '#ff4a5c' : apex ? '#ffb04a' : '#de7665'); // husks (the King's raised dead): blood-red bones, red eyes, no circlet // apex (castle) skeletons: amber eyes and a gold circlet mark the x12 body
   rect(c, dark, -5, -55, 4, 4); rect(c, dark, 3, -55, 4, 4); rect(c, eye, -3, -54, 2, 2); rect(c, eye, 4, -54, 2, 2); rect(c, '#30313b', 0, -51, 2, 3);
   if (apex && !white) { c.globalAlpha = .35; rect(c, '#ffb04a', -4, -55, 4, 4); rect(c, '#ffb04a', 3, -55, 4, 4); c.globalAlpha = 1; rect(c, '#c9a24a', -8, -62, 17, 2); rect(c, '#c9a24a', -6, -65, 2, 3); rect(c, '#c9a24a', 0, -66, 2, 4); rect(c, '#c9a24a', 5, -65, 2, 3); }
   for (let x = -4; x < 6; x += 3) rect(c, '#394047', x, -46, 1, 3);
@@ -661,7 +661,7 @@ export function drawPairThread(ctx, pr, time, calm) { // #62: the red call threa
   ctx.strokeStyle = '#ff7a68'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.lineDashOffset = calm ? 0 : -time * 40; ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
   ctx.fillStyle = '#ffd0c0'; for (const [px, py] of [[x1, y1], [x2, y2]]) ctx.fillRect(px - 3, py - 3, 6, 6); ctx.restore();
 }
-const tellMax = new WeakMap(); // total warning time per e.warn object, remembered on the first frame it is seen
+const huskT = new WeakMap(), tellMax = new WeakMap(); // total warning time per e.warn object, remembered on the first frame it is seen
 // Boss warnings draw the exact e.warn hit areas from core.js, filling as the warning counts down (gold when punishable).
 // --- The Gate Warden (#50): a code-drawn stone gatekeeper (crenellated helm, portcullis chest, gate-bar maul). Local space: facing +x, feet at 0, about 112 tall. ---
 const WC = { dark: '#171a25', rim: '#262a38', mid: '#585d69', stone: '#868b95', hi: '#b9bdc2', rust: '#7d5b3a', cloth: '#2a3042', ember: '#ff5a44', ice: '#c4e8ff', gold: '#e9c46a' };
@@ -807,9 +807,15 @@ const KPOSE = {
   leap: [-.1, .92, 14, -140, 1.35, 8, -138, 1], // airborne, plunging the blade down
   stun: [.3, .8, 36, -16, -.25, 22, -20, 0], // armor broken: kneeling, blade dropped on the floor
   roar: [-.2, 1.02, 10, -124, -1.1, 0, -128, .8], // phase change: blade and arm raised
+  raise: [.04, 1, 40, -92, 1.5, 28, -134, .4], // blade planted before him, free hand lifted to call the dead
+  crownGuard: [-.03, 1, 26, -72, -1.5, 20, -78, .3], // the guard stance: the blade held upright before the chest, plainly "no"
+  judgement: [-.1, 1.03, 8, -126, -1.57, 0, -128, .8], // blade straight up overhead, the Crown's sentence
+  bloodMoon: [-.22, 1.05, 14, -134, -1.4, -4, -138, 1], // both arms thrown up under the moon
+  longNight: [.12, .97, 28, -56, .8, 12, -62, .5], // head bowed, blade lowered: the night begins
 };
+KPOSE.guardHold = KPOSE.crownGuard; KPOSE.judgementB = KPOSE.judgement;
 KPOSE.turnslash = KPOSE.slash;
-const KREC = { slash: 'rSlash', turnslash: 'rSlash', slam: 'rSlam', charge: 'rCharge', descent: 'rDescent', volley: 'volley', ritual: 'ritual' };
+const KREC = { bloodMoon: 'rSlam', judgementB: 'rSlam', slash: 'rSlash', turnslash: 'rSlash', slam: 'rSlam', charge: 'rCharge', descent: 'rDescent', volley: 'volley', ritual: 'ritual' };
 const KCRACK = [[[-8, -100], [-3, -86], [-10, -72], [-5, -58]], [[12, -98], [7, -84], [15, -70]], [[-22, -84], [-14, -72], [-18, -60]], [[24, -76], [14, -66], [19, -54]]];
 const kp = new Array(8).fill(0), kingTip = [118, -12], kState = new WeakMap();
 // Per-frame render state: the tell the pose started on, whether the string just committed to a branch, the turn-around, and the descent leap arc (the engine moves the King to the ledge in one tick, so the arc is drawn here).
@@ -971,6 +977,95 @@ function wardenTollWarn(ctx, e, w, p, d, time, fillBox) {
   ctx.fillStyle = '#ff7ab8'; ctx.fillRect(Math.round(d === 1 ? b.x + b.w - 3 : b.x), b.y - 10, 3, b.h + 10); // far edge: past it you are out
   const ax = Math.round(b.x + b.w / 2), ay = Math.round(b.y - 16 - (PS.calm ? 0 : Math.sin(time * 9) * 3)); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.moveTo(ax, ay - 9); ctx.lineTo(ax + 8, ay + 3); ctx.lineTo(ax - 8, ay + 3); ctx.fill(); ctx.fillRect(ax - 3, ay + 3, 6, 6);
 }
+// --- The Fallen King's brain (#62 PR 5) warn art. The rule: red is danger, green-white is the answer, gold is "open". ---
+function safeStrip(ctx, x, w, time, strong) { // a safe gap: green column from head height to a bright floor bar, chevrons dropping into it
+  x = Math.round(x); w = Math.round(w); const pulse = PS.calm ? .85 : .75 + .25 * Math.sin(time * 8), top = FLOOR - 150;
+  ctx.fillStyle = `rgba(150,255,190,${(strong ? .22 : .14) * pulse})`; ctx.fillRect(x, top, w, 150);
+  ctx.fillStyle = '#b8ffd0'; ctx.fillRect(x, FLOOR - 5, w, 5); ctx.fillStyle = '#13111b'; ctx.fillRect(x, FLOOR - 6, w, 1);
+  ctx.strokeStyle = '#d8ffe4'; ctx.lineWidth = strong ? 3 : 2; ctx.setLineDash(WARN_DASH); ctx.strokeRect(x + 1, top, w - 2, 150 - 1); ctx.setLineDash(NO_WARN_DASH);
+  const off = PS.calm ? 0 : (time * 40) % 30;
+  for (let k = 0; k < (strong ? 3 : 2); k++) { const cy = Math.round(top + 18 + ((off + k * 30) % 90)), cx = x + (w >> 1); ctx.beginPath(); ctx.moveTo(cx - 9, cy - 6); ctx.lineTo(cx, cy + 3); ctx.lineTo(cx + 9, cy - 6); ctx.stroke(); }
+}
+function bladeColumns(ctx, cols, rgb, edge, p, time) { // light columns hit at any height: a blade falls through each from the top
+  for (const c of cols) {
+    const x = Math.round(c.x), w = Math.round(c.w), fall = Math.round(FLOOR * (.15 + .85 * p));
+    ctx.fillStyle = `rgba(${rgb},${.1 + .08 * p})`; ctx.fillRect(x, 0, w, FLOOR); ctx.fillStyle = `rgba(${rgb},${.25 + .4 * p})`; ctx.fillRect(x, 0, w, fall);
+    ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(x + 1, 1, w - 2, FLOOR - 2);
+    const off = PS.calm ? 0 : (time * 220) % 90; ctx.beginPath(); for (let cy = off - 90; cy < FLOOR - 20; cy += 90) { if (cy < 0) continue; ctx.moveTo(x + 8, cy); ctx.lineTo(x + w / 2, cy + 14); ctx.lineTo(x + w - 8, cy); } ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x + (w >> 1) - 1, 0, 3, fall); // the blade's edge
+  }
+}
+function kingNoSword(ctx, x, y) { // "stop attacking": a sword in a red ring with a slash
+  ctx.fillStyle = 'rgba(19,17,27,.85)'; ctx.beginPath(); ctx.arc(x, y, 17, 0, 7); ctx.fill(); ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 9, y + 9); ctx.lineTo(x + 9, y - 9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 3, y - 7); ctx.lineTo(x + 7, y + 3); ctx.stroke(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, 16, 0, 7); ctx.moveTo(x - 11, y + 11); ctx.lineTo(x + 11, y - 11); ctx.stroke();
+}
+function kingHourglass(ctx, x, y, time) { // a held hit: amber hourglass that drains
+  const q = PS.calm ? .5 : (time * 1.5) % 1; ctx.fillStyle = 'rgba(19,17,27,.85)'; ctx.beginPath(); ctx.arc(x, y, 15, 0, 7); ctx.fill(); ctx.strokeStyle = '#ffd36e'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 14, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 7, y - 9); ctx.lineTo(x + 7, y - 9); ctx.lineTo(x, y); ctx.lineTo(x + 7, y + 9); ctx.lineTo(x - 7, y + 9); ctx.lineTo(x, y); ctx.closePath(); ctx.stroke(); ctx.fillStyle = '#ffd36e'; ctx.fillRect(x - 5 * (1 - q), y - 8 + 8 * q, 10 * (1 - q), 3); ctx.fillRect(x - 5 * q, y + 8 - 6 * q, 10 * q, 2 + 6 * q);
+}
+function kingWarn(ctx, e, w, p, d, time) { // judgement, judgementB, bloodMoon, crownGuard / guardHold, longNight opener
+  if (w.kind === 'judgement') {
+    bladeColumns(ctx, w.setA, '231,92,80', '#ff7a6a', p, time); for (const g of w.gaps) safeStrip(ctx, g.x, g.w, time, false);
+  } else if (w.kind === 'judgementB') {
+    bladeColumns(ctx, w.setB, '214,74,138', '#ff7ab8', p, time); safeStrip(ctx, w.safe.x, w.safe.w, time, true);
+  } else if (w.kind === 'bloodMoon') {
+    const r = w.ring, x0 = Math.round(r.x - r.r), x1 = Math.round(r.x + r.r), L = x0 - 700, R = x1 + 700, a = .12 + .22 * p; ctx.fillStyle = `rgba(231,60,80,${a})`; ctx.fillRect(L, 0, x0 - L, FLOOR); ctx.fillRect(x1, 0, R - x1, FLOOR); // everything outside the ring is hit
+    ctx.save(); ctx.beginPath(); ctx.rect(L, 0, x0 - L, FLOOR); ctx.rect(x1, 0, R - x1, FLOOR); ctx.clip(); ctx.strokeStyle = `rgba(255,122,106,${.25 + .35 * p})`; ctx.lineWidth = 3; ctx.beginPath(); for (let x = L - FLOOR; x < R; x += 36) { ctx.moveTo(x, FLOOR); ctx.lineTo(x + FLOOR, 0); } ctx.stroke(); ctx.restore();
+    const pulse = PS.calm ? .85 : .75 + .25 * Math.sin(time * 8); ctx.fillStyle = `rgba(150,255,190,${.18 * pulse})`; ctx.beginPath(); ctx.arc(Math.round(r.x), FLOOR, r.r, Math.PI, 0); ctx.fill(); // the safe dome
+    ctx.fillStyle = '#b8ffd0'; ctx.fillRect(x0, FLOOR - 5, x1 - x0, 5); ctx.strokeStyle = '#d8ffe4'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(Math.round(r.x), FLOOR, r.r, Math.PI, 0); ctx.stroke();
+    ctx.lineWidth = 3; const off = PS.calm ? 0 : (time * 40) % 24; for (const s of [-1, 1]) for (let k = 0; k < 3; k++) { const cx = Math.round(r.x + s * (r.r + 62 - ((off + k * 24) % 72))), cy = FLOOR - 60; ctx.beginPath(); ctx.moveTo(cx + s * 8, cy - 12); ctx.lineTo(cx, cy); ctx.lineTo(cx + s * 8, cy + 12); ctx.stroke(); } // chevrons run into the ring from both sides
+    const mx = Math.round(r.x), my = Math.round(e.y - e.h - 56); ctx.fillStyle = '#7a1428'; ctx.beginPath(); ctx.arc(mx, my, 20, 0, 7); ctx.fill(); ctx.fillStyle = '#e0566e'; ctx.beginPath(); ctx.arc(mx - 2, my - 2, 15, 0, 7); ctx.fill(); ctx.fillStyle = '#ffb4bf'; ctx.fillRect(mx - 8, my - 8, 5, 3); // the moon over him
+  } else if (w.kind === 'crownGuard' || w.kind === 'guardHold') {
+    const gx = Math.round(e.x + d * 22), gy = Math.round(e.y - 72), k = w.kind === 'guardHold' ? 1 : p, pulse = PS.calm ? 1 : .8 + .2 * Math.sin(time * 14);
+    ctx.fillStyle = `rgba(255,236,170,${.14 * k * pulse})`; ctx.beginPath(); ctx.ellipse(gx, gy, 62, 84, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(gx - d * 20, gy, 92 * k, d === 1 ? -.9 : Math.PI - .9, d === 1 ? .9 : Math.PI + .9, d === -1); ctx.stroke(); // a gold shield arc in front of the blade
+    ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.ellipse(gx, gy, 62, 84, 0, 0, 7); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
+    kingNoSword(ctx, Math.round(e.x + d * 60), Math.round(e.y - e.h - 40 - (PS.calm ? 0 : Math.sin(time * 9) * 3)));
+  } else if (w.kind === 'longNight') {
+    const r = 70 + 40 * p; ctx.strokeStyle = `rgba(176,120,255,${.3 + .5 * p})`; ctx.lineWidth = 3; ctx.setLineDash([4, 8]); ctx.lineDashOffset = PS.calm ? 0 : -time * 30; ctx.beginPath(); ctx.ellipse(Math.round(e.x), FLOOR - 2, r, 10, 0, 0, 7); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); // six hits are coming: the clock face on the floor
+  }
+}
+function kingNightPips(ctx, e, time) { // the Long Night: six pips over him, filled as hits are read; the held hit shows an hourglass instead of a plain pip
+  const k = e.night ? e.night.k : 0, y = Math.round(e.y - e.h - 70), x0 = Math.round(e.x) - 5 * 7;
+  for (let i = 0; i < 6; i++) {
+    const x = x0 + i * 14, cur = i + 1 === k, done = i + 1 < k; ctx.fillStyle = '#13111b'; ctx.fillRect(x - 6, y - 6, 12, 12);
+    ctx.fillStyle = done ? '#7a5ab8' : cur ? '#ffffff' : '#3a2a58'; ctx.fillRect(x - 4, y - 4, 8, 8);
+    if (cur && !PS.calm) { ctx.globalAlpha = .5 + .5 * Math.sin(time * 14); ctx.strokeStyle = '#c58bff'; ctx.lineWidth = 2; ctx.strokeRect(x - 7, y - 7, 14, 14); ctx.globalAlpha = 1; }
+  }
+  if (e.night && e.delayed && !e.glinted && e.tell > 0) kingHourglass(ctx, Math.round(e.x), y - 24, time);
+}
+// A raise warning on the pools that are still on the floor (the caller passes the live ones): red bubbling ring, a husk silhouette climbing out, and a gold ring on the answer: take the pool.
+export function drawRaiseWarn(ctx, e, pools, time, calm) {
+  const w = e.warn; if (!w || !(e.tell > 0) || w.kind !== 'raise') return;
+  if (!tellMax.has(w)) tellMax.set(w, e.tell);
+  const p = Math.max(0, Math.min(1, 1 - e.tell / tellMax.get(w))); ctx.save();
+  for (const q of pools) {
+    const x = Math.round(q.x), y = Math.round(q.y); ctx.strokeStyle = '#ffd36e'; ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.lineDashOffset = calm ? 0 : -time * 30; ctx.beginPath(); ctx.ellipse(x, y - 1, 40, 11, 0, 0, 7); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH);
+    ctx.fillStyle = `rgba(231,92,80,${.2 + .35 * p})`; ctx.beginPath(); ctx.ellipse(x, y - 1, 30, 8, 0, 0, 7); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.rect(x - 20, y - 80, 40, 80); ctx.clip(); ctx.translate(0, Math.round((1 - p) * 62)); ctx.globalAlpha = .75; ctx.fillStyle = '#b8625c'; ctx.fillRect(x - 7, y - 58, 14, 34); ctx.fillRect(x - 8, y - 70, 16, 14); ctx.fillStyle = '#ff4a5c'; ctx.fillRect(x - 4, y - 64, 3, 3); ctx.fillRect(x + 2, y - 64, 3, 3); ctx.restore(); // the husk climbs out
+    if (!calm) for (let i = 0; i < 4; i++) { const t = (time * .9 + i * .25) % 1; ctx.globalAlpha = 1 - t; ctx.fillStyle = '#ffb4bf'; ctx.fillRect(Math.round(x + Math.sin(i * 3 + time * 3) * 22), Math.round(y - 4 - t * 36), 3, 3); } ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+// The flood (rising blood tide). f = {state, t0, tell, depth}. Tell: a hatched band shows the level to come and green arrows over the ledges say climb. Rise: the tide, ledges outlined safe. Drawn over the hero's feet.
+export function drawFlood(ctx, f, platforms, time, calm, x0, x1) {
+  const el = time - f.t0, depth = f.depth || 24, L = Math.round(x0), R = Math.round(x1);
+  const ledges = platforms.filter(pl => pl.kind === 'ledge' && pl.x + pl.w > L && pl.x < R); ctx.save();
+  if (f.state === 'tell') {
+    const q = Math.min(1, el / f.tell), pulse = calm ? 1 : .6 + .4 * Math.sin(time * 14);
+    ctx.fillStyle = `rgba(231,60,80,${(.2 + .25 * q) * pulse})`; ctx.fillRect(L, FLOOR - depth, R - L, depth); ctx.strokeStyle = `rgba(255,122,106,${.4 + .5 * q})`; ctx.lineWidth = 2; ctx.setLineDash(WARN_DASH); ctx.lineDashOffset = calm ? 0 : -time * 40; ctx.beginPath(); ctx.moveTo(L, FLOOR - depth); ctx.lineTo(R, FLOOR - depth); ctx.stroke(); ctx.setLineDash(NO_WARN_DASH); // the level the blood will reach
+    ctx.strokeStyle = `rgba(255,208,214,${.7 * (1 - q)})`; ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const t = (el * 1.3 + i / 3) % 1; ctx.globalAlpha = 1 - t; ctx.beginPath(); ctx.moveTo(L, FLOOR - 3 - t * 12); for (let x = L; x <= R; x += 24) ctx.lineTo(x, FLOOR - 3 - t * 12 + Math.sin(x * .05 + time * 6) * 2); ctx.stroke(); } ctx.globalAlpha = 1; // ripples spreading over the floor
+    ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = 3; for (let x = L - L % 120 + 60, i = 0; x < R; x += 120, i++) { const cy = Math.round(FLOOR - 30 - ((calm ? 0 : el * 50) + i * 17) % 40); ctx.globalAlpha = .85 - (FLOOR - 30 - cy) / 60; ctx.beginPath(); ctx.moveTo(x - 10, cy + 6); ctx.lineTo(x, cy - 6); ctx.lineTo(x + 10, cy + 6); ctx.stroke(); } ctx.globalAlpha = 1; // up chevrons along the floor: get off it
+    for (const pl of ledges) { const cx = Math.round(pl.x + pl.w / 2), cy = Math.round(pl.y - 28 - (calm ? 0 : Math.sin(time * 9) * 4)); ctx.strokeStyle = '#d8ffe4'; ctx.lineWidth = 3; ctx.strokeRect(Math.round(pl.x), Math.round(pl.y) - 2, Math.round(pl.w), 3); ctx.fillStyle = '#b8ffd0'; ctx.strokeStyle = '#13111b'; ctx.beginPath(); ctx.moveTo(cx, cy - 13); ctx.lineTo(cx + 12, cy + 3); ctx.lineTo(cx + 4, cy + 3); ctx.lineTo(cx + 4, cy + 12); ctx.lineTo(cx - 4, cy + 12); ctx.lineTo(cx - 4, cy + 3); ctx.lineTo(cx - 12, cy + 3); ctx.closePath(); ctx.stroke(); ctx.fill(); } // climb now
+  } else {
+    const k = f.state === 'end' ? 1 - Math.min(1, el / .5) : Math.min(1, el / .35), h = depth * (1 - (1 - k) * (1 - k)), top = FLOOR - h;
+    const g = ctx.createLinearGradient(0, top, 0, FLOOR + 10); g.addColorStop(0, 'rgba(176,40,64,.78)'); g.addColorStop(1, 'rgba(70,10,28,.9)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(L, FLOOR + 10);
+    for (let x = L; x <= R; x += 16) ctx.lineTo(x, Math.round(top + (calm ? 0 : Math.sin(x * .04 + time * 4) * 2.5))); ctx.lineTo(R, FLOOR + 10); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#ff9aa8'; ctx.lineWidth = 2; ctx.beginPath(); for (let x = L; x <= R; x += 16) { const y = Math.round(top + (calm ? 0 : Math.sin(x * .04 + time * 4) * 2.5)); x === L ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke(); // bright surface
+    if (!calm) { ctx.fillStyle = '#ffb4bf'; for (let i = 0; i < 14; i++) { const t = (time * .7 + i * .37) % 1; ctx.globalAlpha = (1 - t) * k; ctx.fillRect(L + Math.round(((i * 97) % (R - L))), Math.round(FLOOR - t * 34), 3, 3); } ctx.globalAlpha = 1; }
+    if (f.state === 'rise') for (const pl of ledges) { ctx.fillStyle = 'rgba(184,255,208,.85)'; ctx.fillRect(Math.round(pl.x), Math.round(pl.y) - 3, Math.round(pl.w), 3); } // ledges are dry
+  }
+  ctx.restore();
+}
 function drawBossWarn(ctx, e, time) {
   const w = e.warn; if (!w || !(e.tell > 0)) return;
   if (!tellMax.has(w)) tellMax.set(w, e.tell);
@@ -985,6 +1080,7 @@ function drawBossWarn(ctx, e, time) {
   if (w.kind === 'turnslash') { rgb = '176,120,255'; edge = '#c9a2ff'; } // the King's hit behind him: violet, so it never reads as the red slash in front
   if (w.kind === 'seize') { rgb = '214,74,138'; edge = '#ff7ab8'; } // the Toll: magenta, so it never reads as a plain hit
   if (w.kind === 'slash' || w.kind === 'slam' || w.kind === 'sweep' || w.kind === 'seize' || w.kind === 'backhand' || w.kind === 'turnslash') { fillBox(w.box); wardenWarnArt(ctx, w, p, rgb, edge, d, time); }
+  if (e.king) kingWarn(ctx, e, w, p, d, time);
   if (w.kind === 'gate') wardenGateWarn(ctx, w, p, time);
   else if (w.kind === 'bell') wardenBellWarn(ctx, e, w, p, time);
   else if (w.kind === 'greatToll') wardenTollWarn(ctx, e, w, p, d, time, fillBox);
@@ -1176,6 +1272,8 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   const wd = !!e.warden, kg = !!e.king, wb = wd || kg, wtm = wb ? tellMax.get(e.warn) || e.tell || 1 : 1, wpw = wb && e.tell > 0 ? Math.min(1, (wtm - e.tell) / (e.delayed ? Math.max(.1, wtm - .8) : wtm)) : 0, whold = wb && e.tell > 0 && e.delayed && wpw >= 1 && !e.glinted, wturn = wb && wardenTurn(e), wk = wb && e.tell > 0 ? Math.min(1, (wtm - e.tell) / (wtm * .5)) : 1;
   const ks = kg ? kingState(e, time) : null;
   if (wb && e.hp > 0) wardenAura(ctx, e, x, y, time, calm, wpw, whold);
+  if (kg && e.hp > 0 && (e.night || (e.tell > 0 && e.warn && e.warn.kind === 'longNight'))) kingNightPips(ctx, e, time);
+  if (kg && e.chipT > 0 && e.hp > 0) { ctx.save(); ctx.strokeStyle = '#ffd36e'; ctx.lineWidth = 3; ctx.globalAlpha = calm ? .9 : .6 + .4 * Math.sin(time * 12); ctx.beginPath(); ctx.ellipse(x, y - 64, 56, 78, 0, 0, 7); ctx.stroke(); ctx.fillStyle = '#ffd36e'; for (let i = 0; i < 4; i++) { const a = time * 2 + i * Math.PI / 2, dx = Math.round(x + Math.cos(a) * 56), dy = Math.round(y - 64 + Math.sin(a) * 78); ctx.beginPath(); ctx.moveTo(dx, dy - 6); ctx.lineTo(dx + 5, dy); ctx.lineTo(dx, dy + 6); ctx.lineTo(dx - 5, dy); ctx.fill(); } ctx.restore(); } // the Long Night's opening: every sword hit chips the gauge
   if (kg && ks.branch && e.tell > 0 && time - ks.t0 < .2) { ctx.save(); ctx.globalAlpha = (1 - (time - ks.t0) / .2) * .55; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(x, y - 64, 52 + (time - ks.t0) * 120, 72, 0, 0, 7); ctx.stroke(); ctx.restore(); } // the string commits: a white ring flashes round him at the second glint
   if (e.tell > 0 && e.thrustBox && !lw) { const b = e.thrustBox; ctx.save(); ctx.fillStyle = '#e7746640'; ctx.strokeStyle = '#e7746699'; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
     // dashed path along the box centre with a bright tip at the far end, so the whole reach reads as the weapon's path
@@ -1217,6 +1315,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.tell > 0 && ov) ctx.rotate(-.1); // overhead: leans back under the raised blade
   else if (e.tell > 0 && lk === 'turnswipe') ctx.rotate(-.06); // turnswipe: shoulders already coming round
   const white = e.flash > 0 ? '#fff0d0' : null;
+  if (e.husk) { let t0 = huskT.get(e); if (t0 === undefined) { t0 = time; huskT.set(e, t0); } const hq = Math.min(1, (time - t0) / .6); if (hq < 1) { ctx.beginPath(); ctx.rect(-40, -e.h - 20, 80, e.h + 20); ctx.clip(); ctx.translate(0, Math.round((1 - hq * hq) * e.h)); } } // a husk climbs out of its pool
   if (e.blinkT > 0) { const bq = 1 - e.blinkT / .4; ctx.globalAlpha = calm ? .5 : .25 + .45 * Math.abs(Math.sin(time * 30)); ctx.scale(1 - .35 * bq, 1 + .1 * bq); } // mage blink: flickers and thins out
   if (wd) wardenBody(ctx, e, time, white, wpw, whold, calm, wturn ? -Math.cos(Math.PI * wk) : 1);
   else if (kg) kingBody(ctx, e, time, white, wpw, whold, calm, ks);
