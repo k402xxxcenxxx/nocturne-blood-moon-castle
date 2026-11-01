@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
+import { Game, clamp, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -5629,4 +5629,122 @@ test('warden throws stop at a portcullis: the Great Toll (160 px) and the seize 
   assert.ok(Math.abs(top.player.x - 1000) > 30 && top.player.y >= FLOOR - 1, 'a hero dropped on a gate slides off and reaches the floor');
   const slide = wardenBrainArena(1100, 1300); slide.game.dropGate(1200); slide.b.x = 1260; Object.assign(slide.b, { stun: 1, breakStun: 1, vx: -1120 }); advance(slide.game, .5);
   assert.ok(slide.b.x >= 1200 + 58 - 1, 'the break slide stops at the gate');
+});
+
+// --- The Fallen King's brain (#62 PR 5) ---
+function kingBrainArena(hx = 1300, kx = 1700, blood = 200) { // floor 50 with its ledges: the King alone, idle (cd 99), hero placed
+  const events = [], game = new Game(e => events.push(e), 42, 'castle'); game.start(); game.setWeapon('spear'); game.descend(); game.loadFloor(KING_FLOOR);
+  const k = game.enemies.find(e => e.king); Object.assign(k, { x: kx, engaged: true, cd: 99, dir: -1, pause: 0, opened: true }); Object.assign(game.player, { x: hx, invulnerable: 0, blood }); game.snaps = [];
+  return { game, player: game.player, events, k };
+}
+
+test('king brain: presence, shared habit with a dashed answer, dash spam delays the opening heavy, a spent dash sends the string to the charge for where the dash lands', () => {
+  const { game, k, events } = kingBrainArena(); assert.equal(evs(events, 'kingWake').length, 1); assert.equal(k.pause, 0);
+  const w = new Game(() => {}, 5, 'castle'); w.start(); w.setWeapon('spear'); w.descend(); w.loadFloor(KING_FLOOR); assert.ok(w.enemies.find(e => e.king).pause > 1.4, 'he rises for 1.5 s'); assert.ok(game.habits.king === k.habit);
+  game.player.dash = .1; game.noteAnswer(k, 'stood'); assert.equal(k.habit.at(-1), 'dashed'); game.dashLog.push(game.time - .3, game.time - .1); const pick = game.kingPick(k, 100, game.heroSnap());
+  assert.ok(['slam', 'charge'].includes(pick.move) ? pick.delay === true : true); assert.equal(game.dashLog.length, 0, 'the dash read is spent');
+  const b = kingBrainArena(1500, 1700); b.k.bossPhase = 1; b.game.snaps = [{ ...b.game.heroSnap(), dashCd: .8, t: b.game.time - .12 }];
+  b.k.dir = -1; Object.assign(b.k, { move: 'string', tell: .4, follow: true }); b.game.kingBranch(b.k); assert.equal(b.k.move, 'charge', 'dash down, hero in front within 330: the charge');
+  const c = kingBrainArena(1500, 1700); c.game.snaps = [{ ...c.game.heroSnap(), dashCd: 0, t: c.game.time - .12 }]; Object.assign(c.k, { move: 'string', tell: .4 }); c.game.kingBranch(c.k); assert.equal(c.k.move, 'slash', 'dash ready: the plain branch');
+});
+
+test('king raise: untaken pools rise as at most 2 husks (skeleton kit, 40 HP, add), a pool taken in the tell denies its husk, a 12 s cooldown, the adds wait for him', () => {
+  const { game, player, events, k } = kingBrainArena(900, 1700); k.bossPhase = 2; game.addPool(1500, FLOOR, true); game.addPool(1300, FLOOR, true);
+  const pick = game.kingPick(k, 800, game.snap()); assert.equal(pick.move, 'raise'); game.kingStart(k, 'raise'); assert.ok(k.tell >= 1.2 && !k.heavy, 'a 1.2 s tell, not an attack'); assert.equal(k.warn.pools.length, 2);
+  assert.equal(game.addHeld({ add: true, token: '' }), true, 'no add tell while he kneels');
+  player.x = 1300; advance(game, .05); assert.equal(game.pools.length, 1, 'taking one pool in the tell denies its husk'); advance(game, 1.17);
+  const husks = game.enemies.filter(o => o.husk && o.hp > 0); assert.equal(husks.length, 1); assert.ok(husks[0].add && husks[0].maxHp === 40 && husks[0].type === 'skeleton'); assert.equal(evs(events, 'husk').length, 1); assert.equal(evs(events, 'raise')[0].pools, 1);
+  assert.ok(k.punishable && k.recover > .9, 'then a 1.0 s punishable recovery'); assert.ok(k.raiseAt >= game.time + 11, 'cooldown 12 s');
+  game.addPool(1500, FLOOR, true); game.addPool(1600, FLOOR, true); game.raiseHusks(k);
+  assert.equal(game.enemies.filter(o => o.husk && o.hp > 0).length, 2, 'never more than 2: one more rises, the other pool stays'); assert.equal(game.pools.length, 1);
+});
+
+test('king crown guard: a frenzied hero within 200 px draws it (phase 2-3, once per 8 s); the first sword hit is countered with 40 damage and a 160 px shove, a Greatsword frenzy takes it as debt, then 0.8 s punishable', () => {
+  const { game, player, events, k } = kingBrainArena(1600, 1700); k.bossPhase = 2; player.frenzy = true; player.blood = 190;
+  assert.equal(game.kingPick(k, 100, game.heroSnap()).move, 'crownGuard'); k.bossPhase = 1; assert.notEqual(game.kingPick(k, 100, game.heroSnap()).move, 'crownGuard', 'not in phase 1'); k.bossPhase = 2;
+  game.kingStart(k, 'crownGuard'); assert.ok(k.tell >= .45 && k.tell < .5 && !k.heavy); advance(game, .5); assert.equal(k.move, 'guardHold'); assert.ok(k.guardT > .9); assert.ok(k.guardAt > game.time + 7, 'once per 8 s');
+  const b0 = player.blood, x0 = player.x; player.invulnerable = 0; game.damageEnemy(k, 30, 1, false, false, false, 17); assert.equal(k.hp, k.maxHp, 'the hit is blocked'); assert.equal(player.blood, b0 - 40); assert.ok(Math.abs(player.x - x0) >= 100, 'shoved'); assert.equal(evs(events, 'crownGuard').filter(c => c.state === 'counter').length, 1);
+  advance(game, .1); assert.ok(k.recover > .6 && k.punishable, 'a punishable recovery');
+  const n = kingBrainArena(1600, 1700); n.k.bossPhase = 2; n.player.frenzy = true; n.player.weapon = 'heavy'; n.player.blood = 190; n.game.kingStart(n.k, 'crownGuard'); advance(n.game, .5); const nx = n.player.x; n.player.invulnerable = 0; n.game.damageEnemy(n.k, 30, 1, false, false, false, 17);
+  assert.ok(n.player.debt >= 40 && n.player.x === nx, 'Greatsword frenzy: 40 debt, no shove');
+  const idle = kingBrainArena(1600, 1700); idle.k.bossPhase = 2; idle.game.kingStart(idle.k, 'crownGuard'); advance(idle.game, 1.6); assert.equal(evs(idle.events, 'crownGuard').filter(c => c.state === 'counter').length, 0, 'a hero who waits is never countered'); assert.equal(evs(idle.events, 'crownGuard').filter(c => c.state === 'end').length, 1);
+});
+
+test('king judgement (phase 1, 84%): set A is 5 columns 60 px wide with gaps the hero fits, set B covers the rest but one 140 px gap by the nearest A gap; walking from the A gap to the B gap survives both sets, standing still does not', () => {
+  const run = walk => {
+    const { game, player, events, k } = kingBrainArena(1500, 1900, 300); k.hp = k.maxHp * .8; k.bossPhase = 1; assert.equal(game.kingUlt(k, game.heroSnap()).move, 'judgement'); k.judgeAt = 0; game.kingStart(k, 'judgement');
+    const A = k.warn.setA; assert.equal(A.length, 5); assert.ok(A.every(c => c.w === 60)); assert.ok(k.warn.gaps.every(g => g.w >= 60), 'every gap fits the hero'); assert.ok(k.tell >= 1.6 && k.heavy, 'a 1.6 s heavy tell');
+    const gap = k.warn.gaps.reduce((a, g) => Math.abs(player.x - (g.x + g.w / 2)) < Math.abs(player.x - (a.x + a.w / 2)) ? a : g); player.x = gap.x + gap.w / 2; // stand in the nearest A gap
+    advance(game, 1.65); assert.equal(k.move, 'judgementB'); const B = k.warn.setB, safe = k.warn.safe; assert.ok(safe.w >= 120, 'a new gap of at least 120 px'); assert.ok(Math.min(Math.abs(safe.x - (gap.x + gap.w)), Math.abs(safe.x + safe.w - gap.x)) <= 120, 'its near edge by the A gap');
+    assert.ok(!B.some(c => c.x < safe.x + safe.w && c.x + c.w > safe.x), 'set B leaves the safe gap open'); const hurts0 = evs(events, 'hurt').length;
+    if (walk) { const dir = safe.x > player.x ? 1 : -1, goal = safe.x + safe.w / 2; advance(game, .18); for (let i = 0; i < 60 && Math.abs(player.x - goal) > 4; i++) game.update(1 / 120, dir > 0 ? { right: true } : { left: true }); }
+    advance(game, 1); return evs(events, 'hurt').length - hurts0;
+  };
+  assert.equal(run(true), 0, 'walk gap to gap: no hit'); assert.ok(run(false) >= 1, 'standing in the A gap is hit by set B');
+});
+
+test('king long night (phase 2, 50%): a 1.8 s opener, then six hits branching at their glints (one delayed heavy among hits 3-5, 0.5 s or more apart), a 1.6 s recovery where sword hits chip the gauge 10', () => {
+  const { game, player, events, k } = kingBrainArena(1600, 1700, 400); k.bossPhase = 2; k.hp = k.maxHp * .45; assert.equal(game.kingUlt(k, game.heroSnap()).move, 'longNight'); game.kingStart(k, 'longNight'); assert.ok(k.tell >= 1.8 && !k.heavy);
+  player.invulnerable = 99; const swings = []; let delayed = 0, t0 = game.time;
+  for (let i = 0; i < 120 * 14 && !(k.recover > 1.5 && !k.night); i++) { game.update(1 / 120, {}); player.invulnerable = 99; }
+  for (const ev of events) if (ev.type === 'enemySwing' && ev.enemy === 'king' && ['slash', 'turnslash', 'charge'].includes(ev.kind)) swings.push(ev); for (const ev of events) if ((ev.type === 'enemyTell' || ev.type === 'enemyHeavy') && ev.night && ev.delayed) delayed++;
+  assert.equal(swings.length, 6, 'six hits'); assert.equal(delayed, 1, 'exactly one held hit'); assert.ok(k.recover > 1.4 && k.recover <= 1.6 && k.chipT > 1.4, 'the long recovery');
+  const s0 = k.superArmor; k.superArmor = 100; game.armorHit(k, false); assert.equal(k.superArmor, 90, 'a sword hit chips 10'); const idx = events.indexOf(events.find(e => e.type === 'enemySwing' && e.enemy === 'king')); assert.ok(idx >= 0);
+});
+
+test('king blood moon (phase 3, 15%): a safe ring r 110 around him; everything outside takes 100, the ring is safe; then 3 pools inside it', () => {
+  const mk = hx => { const t = kingBrainArena(hx, 1700, 300); t.k.bossPhase = 3; t.k.hp = t.k.maxHp * .14; return t; };
+  const a = mk(1640); assert.equal(a.game.kingUlt(a.k, a.game.heroSnap()).move, 'bloodMoon'); a.game.kingStart(a.k, 'bloodMoon'); assert.ok(a.k.tell >= 1.8 && a.k.heavy); assert.deepEqual([a.k.warn.ring.x, a.k.warn.ring.r], [1700, 110]);
+  advance(a.game, 1.85); assert.equal(evs(a.events, 'hurt').length, 0, 'inside the ring: safe'); const moon = evs(a.events, 'bloodPool').filter(q => q.moon); assert.equal(moon.length, 3, 'three pools inside the ring'); assert.ok(moon.every(q => Math.abs(q.x - 1700) <= 110)); assert.ok(a.k.recover > 1.3);
+  const b = mk(1350); b.game.kingStart(b.k, 'bloodMoon'); advance(b.game, 1.85); assert.equal(evs(b.events, 'hurt')[0].amount, 100, 'outside: 100');
+  const w = mk(1350); w.game.kingStart(w.k, 'bloodMoon'); advance(w.game, .2); for (let i = 0; i < 120 * 1.3; i++) w.game.update(1 / 120, { right: true }); advance(w.game, .4); assert.equal(evs(w.events, 'hurt').length, 0, 'walking into the ring from 350 px is in time');
+  const far = mk(1300); far.k.x = 1700; assert.equal(far.game.kingUlt(far.k, { ...far.game.heroSnap(), x: 1000 }), null, 'a hero beyond 360 px of the ring is not the target');
+});
+
+test('king flood (phase 3): called only on a hero within 200 px of a ledge; 10 blood/s on the floor for 4 s, none on a ledge; it can kill (cause flood); floor pools are drawn in; the King then picks only descent, volley and ritual; never during an ultimate', () => {
+  const near = kingBrainArena(300, 1700, 200); near.k.bossPhase = 3; const g = near.game; g.platforms = g.platforms.filter(p => p.kind === 'ledge'); assert.ok(g.ledgeNear(300) && !g.ledgeNear(900), '200 px of reach');
+  g.maybeFlood(near.k, { x: 900 }); assert.equal(g.flood, null, 'a hero far from every ledge is never flooded'); g.maybeFlood(near.k, { ...g.heroSnap(), x: 300 }); assert.ok(g.flood && evs(near.events, 'flood')[0].state === 'tell' && evs(near.events, 'flood')[0].tell === 1.5);
+  assert.ok(near.k.floodAt >= g.time + 17, 'every 18 s'); g.maybeFlood(near.k, { x: 300 }); assert.equal(evs(near.events, 'flood').length, 1, 'never twice at once');
+  g.addPool(1500, FLOOR, true); const b0 = near.player.blood; advance(g, 1.4); assert.equal(near.player.blood, b0, 'no drain during the tell'); advance(g, .3); assert.ok(evs(near.events, 'flood').some(f => f.state === 'rise')); assert.ok(g.pools.every(q => q.draining), 'floor pools are drawn in');
+  advance(g, 1); assert.ok(Math.abs((b0 - near.player.blood) - 10 * 1) < 2.5, `about 10 blood a second (${(b0 - near.player.blood).toFixed(1)})`); assert.equal(evs(near.events, 'hurt').length, 0, 'a drain is not a hit');
+  assert.ok(['volley', 'ritual'].includes(g.kingPick(near.k, 300, g.heroSnap()).move), 'only descent, volley and ritual during a flood'); assert.equal(g.kingUlt(near.k, g.heroSnap()), null, 'no ultimate during a flood');
+  advance(g, 4); assert.equal(g.flood, null); assert.equal(evs(near.events, 'flood').at(-1).state, 'end'); const after = near.player.blood; advance(g, 1); assert.equal(near.player.blood, after, 'the drain ends with the flood');
+  const kill = kingBrainArena(300, 1700, 20); kill.k.bossPhase = 3; kill.game.flood = { tell: 0, life: 4, live: true }; advance(kill.game, 3); assert.equal(kill.game.state, 'dead'); assert.equal(evs(kill.events, 'death')[0].cause, 'flood', 'the flood can kill');
+  const led = kingBrainArena(150, 1700, 100); led.k.bossPhase = 3; Object.assign(led.player, { y: FLOOR - 110, grounded: true, on: led.game.platforms.find(p => p.kind === 'ledge') }); led.game.flood = { tell: 0, life: 4, live: true }; const lb = led.player.blood; for (let i = 0; i < 120 * 2; i++) { led.game.update(1 / 120, {}); } assert.equal(led.player.blood, lb, 'a hero on a ledge is not drained');
+});
+
+test('king flood softlock search: from every floor position where the flood can be called, walking to the ledge and double jumping (no dash) leaves the floor before it rises, so no blood is lost; the descent on a ledge is jumped without a dash', () => {
+  const W = 2800, bad = [];
+  for (let x = 40; x < W - 30; x += 20) {
+    const t = kingBrainArena(x, x < W / 2 ? 1700 : 900, 100); t.k.bossPhase = 3; const g = t.game, p = t.player;
+    if (!g.ledgeNear(x)) continue;
+    g.maybeFlood(t.k, { ...g.heroSnap(), x }); if (!g.flood) { bad.push(`${x}: not called`); continue; }
+    const ledge = g.platforms.filter(q => q.kind === 'ledge').sort((a, b) => Math.abs(x - (a.x + a.w / 2)) - Math.abs(x - (b.x + b.w / 2)))[0], blood = p.blood; let reacted = 0;
+    for (let i = 0; i < 120 * 6; i++) { // a human clock: nothing for 0.18 s, then the same simple policy every frame
+      const input = {}; reacted += 1 / 120;
+      if (reacted > .18 && !(p.grounded && p.on)) {
+        const goal = clamp(p.x, ledge.x + 30, ledge.x + ledge.w - 30), d = goal - p.x;
+        if (Math.abs(d) > 4) input[d > 0 ? 'right' : 'left'] = true;
+        if (Math.abs(d) < 110 && ((p.grounded) || (p.jumps === 1 && p.vy > -150)) && p.y > ledge.y - 20) input.jump = true;
+      }
+      g.update(1 / 120, input); t.k.cd = 99;
+    }
+    if (p.blood < blood - 0.001 || g.state !== 'playing') bad.push(`${x}: lost ${(blood - p.blood).toFixed(1)}`);
+  }
+  assert.deepEqual(bad, [], 'every callable flood is escapable on foot');
+  // the combination flood + descent: on the ledge, jump the shockwave (a hero more than 70 px above the surface is safe), land on the ledge again, no drain, no hit
+  const t = kingBrainArena(150, 1700, 100), ledge = t.game.platforms.find(q => q.kind === 'ledge'); t.k.bossPhase = 3; Object.assign(t.player, { x: ledge.x + ledge.w / 2, y: ledge.y, grounded: true, on: ledge }); t.k.ledge = ledge; t.k.ledgeT = 3; t.game.flood = { tell: 0, life: 6, live: true };
+  const b = t.player.blood; t.game.kingStart(t.k, 'descent'); let jumped = false;
+  for (let i = 0; i < 120 * 3; i++) { const go = !jumped && t.k.tell > 0 && t.k.tell <= .45 + .18 - .18; if (go) jumped = true; t.game.update(1 / 120, go ? { jump: true } : {}); }
+  assert.equal(evs(t.events, 'hurt').length, 0, 'the shockwave is jumped without a dash'); assert.equal(t.player.blood, b, 'and a hero on the ledge is never drained'); assert.ok(t.player.grounded && t.player.on === ledge, 'back on the ledge');
+});
+
+test('PR 4 leftovers: ringNear fires only for a ring heading at the hero that can still reach him (one low cue, none for the away side or beyond 900 px), and a Warden follow-up never lands within 0.5 s of a guard\'s tell', () => {
+  const near = wardenBrainArena(1000, 1300); near.game.wardenStart(near.b, 'bell'); advance(near.game, 3);
+  const cues = evs(near.events, 'ringNear'); assert.equal(cues.filter(c => c.kind === 'low').length, 1, 'one low cue (the away side gives none)'); assert.ok(cues.every(c => c.dir === 1 ? 1300 + 1 > 1000 : true));
+  const far = wardenBrainArena(100, 2000); far.game.wardenStart(far.b, 'bell'); advance(far.game, 4); assert.equal(evs(far.events, 'ringNear').length, 0, 'a hero 1900 px away is out of the rings\' range');
+  const cross = wardenBrainArena(1000, 1300); cross.game.wardenStart(cross.b, 'bell'); advance(cross.game, 1.62); cross.player.x = 1650; cross.player.invulnerable = 99; advance(cross.game, .5); assert.equal(evs(cross.events, 'ringNear').filter(c => c.dir === -1).length, 0, 'a hero who crossed over is no longer the target of the ring heading the other way');
+  const { game, b } = wardenBrainArena(1100, 1300); game.wardenPhase(b); const g = game.enemies.find(o => o.add); g.tell = .5; b.follows = 0; b.dir = -1;
+  game.wardenStart(b, 'sweep'); b.tell = 0; b.warn = { kind: 'sweep', box: { x: 0, y: 0, w: 1, h: 1 } }; game.wardenRecover(b, 'sweep'); assert.ok(!b.tell || Math.abs(b.tell - g.tell) >= .5, 'no follow-up inside 0.5 s of the guard\'s contact');
+  assert.equal(game.addClash(.5), true); g.tell = 0; assert.equal(game.addClash(.5), false);
 });
