@@ -233,7 +233,7 @@ function handleEvent(e) {
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; lastFightKing = game.floor === KING_FLOOR; break; // metric for the #44 playtest; the result screen shows a compact line
     case 'enemyHeavy':
       if (e.enemy === 'king') { if (!e.branch) audio.play('heavyWarn'); const c = { slam: 'kingTellSlam', charge: 'kingTellCharge', descent: 'kingTellDescent' }[e.kind]; if (c) audio.play(c, .8); break; } // a string's charge branch already has glint + commit
-      if (e.enemy === 'warden' && (e.kind === 'bell' || e.kind === 'greatToll')) banner(t('boss.warden.' + e.kind));
+      if (e.enemy === 'warden' && e.kind === 'greatToll') banner(t('boss.warden.greatToll')); // no bell banner: it would cover the low-ring lane while the ringNear cue plays (the bell has its own picture and sound)
       audio.play('heavyWarn'); if (e.enemy === 'warden' && e.kind === 'seize') audio.play('wardenRattle', .8);
       { const c = (e.variant === 'high' ? null : { rite: 'tellRite', ray: 'tellRay', skewer: 'tellSkewer' }[e.kind]) || (e.bounce && 'tellBounce') || (e.follow && 'knightCommit'); if (c) audio.play(c, .9); }
       if (e.bounce || e.follow) effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffffff', r: 40 }); break; // Shrieker second dive / Oathsworn third hit: one white ring, the knight string's commit cue
