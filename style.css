@@ -2284,7 +2284,7 @@ b[data-i18n] {
   }
   .toast {
     bottom:auto;
-    top:100px;
+    top:128px; /* below the boss HUD (78-123) */
   }
 }
 @media(prefers-reduced-motion:reduce) {

@@ -73,7 +73,7 @@ export const STRINGS = {
     'boss.warden.bell': 'The Gate Bell tolls',
     'boss.warden.greatToll': 'The Great Toll',
     'boss.warden.call': 'The Warden calls the gate guards',
-    'hint.gate': 'A portcullis falls behind you: walk forward out of the column, or double jump the wall.',
+    'hint.gate': 'A portcullis falls behind you: press on, or double jump the wall.',
     'castle.deadGreatToll': 'The Great Toll took everything. Get behind the Warden or out of reach.',
     'boss.castlePhase2': 'The King takes the high ground',
     'boss.castlePhase3': 'Blood Moon: every blow the King misses bleeds',
