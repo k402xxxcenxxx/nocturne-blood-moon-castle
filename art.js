@@ -1334,6 +1334,16 @@ export function drawRing(ctx, r, time = 0) {
   if (low) { const ay = top - 14 - (PS.calm ? 0 : Math.sin(time * 12) * 2); ctx.moveTo(x, ay - 8); ctx.lineTo(x + 8, ay + 4); ctx.lineTo(x - 8, ay + 4); } else { const ay = r.bottom + 14 + (PS.calm ? 0 : Math.sin(time * 12) * 2); ctx.moveTo(x, ay + 8); ctx.lineTo(x + 8, ay - 4); ctx.lineTo(x - 8, ay - 4); }
   ctx.fill(); ctx.restore();
 }
+// ringNear cue: a flash on the incoming ring front (travelling to the hero over `eta`) plus a pulsing arrow marker at the hero. low = amber up arrow (jump), high = violet down arrow (stay down).
+export function drawRingCue(ctx, fx, hero, progress, calm) {
+  const low = fx.kind === 'low', col = low ? '#ffb048' : '#b79cff', pale = low ? '#ffe2b0' : '#e6dcff', a = 1 - progress, d = fx.dir;
+  const x = Math.round(fx.x + (hero.x - fx.x) * Math.min(1, progress * fx.max / fx.eta)), top = Math.round(fx.top), h = Math.round(fx.bottom - fx.top);
+  const hx = Math.round(hero.x), s = calm ? 1 : 1 + Math.sin(progress * 30) * .12, by = Math.round(hero.y) - 84, up = low ? -1 : 1; // arrow above the head (the feet sit under the touch pad on phones); tip up = jump, down = stay down
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = pale; ctx.fillRect(x - 5, top - 4, 10, h + 8); ctx.globalAlpha = a * .5; ctx.fillStyle = col; ctx.fillRect(d === 1 ? x - 60 : x, top - 4, 60, h + 8);
+  ctx.globalAlpha = Math.min(1, a * 1.6); ctx.strokeStyle = '#13111b'; ctx.lineWidth = 3; ctx.fillStyle = pale;
+  ctx.beginPath(); ctx.moveTo(hx, by + up * 14 * s); ctx.lineTo(hx + 13 * s, by - up * 8); ctx.lineTo(hx - 13 * s, by - up * 8); ctx.closePath(); ctx.stroke(); ctx.fill();
+  ctx.fillStyle = col; ctx.fillRect(hx - 18, low ? Math.round(hero.y) - 2 : Math.round(hero.y) - 74, 36, 3); ctx.restore();
+}
 export function drawObstacle(ctx, o, time = 0, stage = 0, traps = null) {
   if (o.gate) {
     let t0 = gateSeen.get(o); if (t0 === undefined) { t0 = time; gateSeen.set(o, t0); }

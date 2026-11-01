@@ -1,5 +1,5 @@
 import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawChest, drawPool, drawPairThread } from './art.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -227,6 +227,7 @@ function handleEvent(e) {
       rumble(9, .3); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 90, life: .4, max: .4 }); burst(e.x, FLOOR - 4, '#9a8c77', 16, 220, 0, 3); burst(e.x, FLOOR - 6, '#e4dccb', 8, 150); break;
     case 'gateLift': effects.push({ type: 'gateLift', x: e.x, life: .45, max: .45 }); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 40, life: .3, max: .3 }); break; // the bars rise away
     case 'ring': effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: e.kind === 'low' ? '#ffb048' : '#b79cff', r: 50 }); rumble(2, .08); break; // the bell is struck: the front itself is drawn from game.rings
+    case 'ringNear': effects.push({ type: 'ringCue', x: e.x, dir: e.dir, kind: e.kind, top: e.top, bottom: e.bottom, eta: e.eta, life: .3, max: .3 }); break; // the jump cue: the incoming ring front flares and an arrow marks the hero (amber up = jump, violet down = stay down)
     case 'wardenWake': effects.push({ type: 'wardenWake', x: e.x, w: e.w, h: e.h, life: e.duration, max: e.duration }); rumble(5, e.duration); { const w = game.enemies.find(o => o.warden); if (w) { effects.push({ type: 'dust', x: w.x, y: FLOOR, radius: 160, life: .8, max: .8 }); burst(w.x, FLOOR - 4, '#9a8c77', 20, 200, 0, 3); } } break; // presence: the gate slams behind the hero, the Warden rises in dust
     case 'wardenStep': effects.push({ type: 'dust', x: e.x + e.dir * 14, y: FLOOR, radius: 22, life: .22, max: .22 }); rumble(2, .08); break; // one-time portcullis hint
     case 'fightStats': console.info('[nocturne] Warden fight', e); window.__nocturneFight = e; lastFight = e; lastFightKing = game.floor === KING_FLOOR; break; // metric for the #44 playtest; the result screen shows a compact line
@@ -658,6 +659,7 @@ function drawEffects(dt) {
     if (fx.type === 'wardBreak') { // expanding ring: blue for a shattered ward, purple for an elite kill
       ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = fx.color; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.arc(fx.x, fx.y, Math.round(20 + progress * (fx.r || 60)), 0, 7); ctx.stroke(); ctx.restore();
     }
+    if (fx.type === 'ringCue') drawRingCue(ctx, fx, game.player, progress, !settings.shake);
     if (fx.type === 'magic') {
       ctx.save(); ctx.translate(fx.x, fx.y); ctx.globalAlpha = (1 - progress) * .85;
       const radius = 28 + Math.sin(progress * Math.PI / 2) * 185;
