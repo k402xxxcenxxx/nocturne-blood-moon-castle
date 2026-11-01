@@ -107,7 +107,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
 }
 
 if (import.meta.url === `file://${process.argv[1]}` && duelN) {
-  const opt = { n: duelN, blood: +arg('blood', 100), relics: arg('relics', '').split(',').filter(Boolean), tier: +arg('tier', 0), cap: +arg('cap', 60), skill, type: arg('type', 'skeleton'), floor: +arg('floor', 1), brainOff: arg('brain', 'on') === 'off' };
+  const opt = { n: duelN, blood: +arg('blood', 100), relics: arg('relics', '').split(',').filter(Boolean), tier: +arg('tier', 0), cap: +arg('cap', arg('type', 'skeleton') === 'warden' ? 120 : 60), skill, type: arg('type', 'skeleton'), floor: +arg('floor', 1), brainOff: arg('brain', 'on') === 'off' };
   for (const w of weapon in WEAPONS ? [weapon] : Object.keys(WEAPONS)) {
     const t0 = Date.now(), res = [], deaths = {}; let wins = 0, dead = 0, timeouts = 0, lefts = 0, winT = 0, firstWin = '-';
     const sum = k => res.reduce((a, r) => a + r[k], 0), avg = k => (sum(k) / seeds).toFixed(1);

@@ -70,7 +70,7 @@ export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP 
 // The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
 const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
 const GUARDS = { count: 2, keep: 180, from: 420, apart: .5 }; // gate guards: a skeleton and a shield bearer from the arena's ends; in a frenzy they keep 180 px away
-const BELL = { tell: 1.6, recover: 1.5, speed: 420, range: 900, gap: 1, lowTop: 60, highLo: 70, highTop: 200, at: .75, every: 30, thick: 30 }; // Phase 1 ultimate: a low ring, then a high ring 1.0 s behind it
+const BELL = { near: .4, tell: 1.6, recover: 1.5, speed: 420, range: 900, gap: 1, lowTop: 60, highLo: 70, highTop: 200, at: .75, every: 30, thick: 30 }; // Phase 1 ultimate: a low ring, then a high ring 1.0 s behind it
 const GREAT = { tell: 1.8, recover: 1.6, pull: 80, near: 10, far: 330, high: 90, extra: 40, back: 160, at: .25, every: 30 }; // Phase 2 ultimate: the Great Toll
 const SPAM = { n: 2, window: 2.5 }; // two dashes in 2.5 s make the next opening heavy a delayed one
 const WARDEN_FIXED = ['gate', 'bell', 'greatToll', 'call']; // never delayed, never cut by phase 2, never followed
@@ -2330,13 +2330,16 @@ export class Game {
   // The two bell rings, leaving the Warden both ways: ring 1 low (on the floor), ring 2 high (70-200 px up) 1.0 s behind it.
   bellRings() { return [{ kind: 'low', top: FLOOR - BELL.lowTop, bottom: FLOOR, delay: 0 }, { kind: 'high', top: FLOOR - BELL.highTop, bottom: FLOOR - BELL.highLo, delay: BELL.gap }]; }
   ringBell(e, w) {
-    for (const r of w.rings) for (const dir of [-1, 1]) this.rings.push({ x: e.x, dir, kind: r.kind, top: r.top, bottom: r.bottom, wait: r.delay, dist: 0, hit: false });
+    // The cue a ring gives is its own: `ringNear` fires 0.4 s before the ring reaches the hero, timed at release from the ring's fixed speed and the snapshot (`cue`). A hero closer than 168 px would get less, so the rings on his side leave later by the difference.
+    const s = this.snap(), d = Math.max(0, Math.abs(s.x - e.x) - (BELL.thick + this.player.w) / 2), pad = Math.max(0, BELL.near - d / BELL.speed);
+    for (const r of w.rings) for (const dir of [-1, 1]) this.rings.push({ x: e.x, dir, kind: r.kind, top: r.top, bottom: r.bottom, wait: r.delay + ((s.x - e.x) * dir > 0 ? pad : 0), dist: 0, hit: false, cue: (s.x - e.x) * dir > 0 ? r.delay + Math.max(0, d / BELL.speed - BELL.near) : null });
     for (const r of this.rings) if (r.wait <= 0 && r.dist === 0) this.emit('ring', { x: r.x, y: (r.top + r.bottom) / 2, dir: r.dir, kind: r.kind, speed: BELL.speed, range: BELL.range, top: r.top, bottom: r.bottom });
   }
   // Rings travel and gates count down.
   updateWardenField(dt) {
     const p = this.player;
     for (const r of this.rings) {
+      if (r.cue !== null && (r.cue -= dt) <= 0) { r.cue = null; this.emit('ringNear', { x: r.x, y: (r.top + r.bottom) / 2, dir: r.dir, kind: r.kind, eta: BELL.near, top: r.top, bottom: r.bottom }); } // the ring's own glint
       if (r.wait > 0) { r.wait -= dt; if (r.wait <= 0) this.emit('ring', { x: r.x, y: (r.top + r.bottom) / 2, dir: r.dir, kind: r.kind, speed: BELL.speed, range: BELL.range, top: r.top, bottom: r.bottom }); continue; }
       r.x += r.dir * BELL.speed * dt; r.dist += BELL.speed * dt;
       if (!r.hit && this.state === 'playing' && Math.abs(p.x - r.x) < (BELL.thick + p.w) / 2 && p.y > r.top && p.y - p.h < r.bottom) { r.hit = true; this.hurt(HEAVY_DAMAGE, r.dir, false, true); }

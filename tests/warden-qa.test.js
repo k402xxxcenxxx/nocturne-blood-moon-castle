@@ -41,12 +41,23 @@ test('a portcullis is a wall, not a platform: a hero who lands on its top is put
   assert.ok(hero.y > FLOOR - 100, `hero rests at y ${hero.y.toFixed(0)} (gate top is ${FLOOR - 150})`);
 });
 
-// Feel-rule (bell, jump): the glint is the heavy cue, and a jump on the glint (0.4 s before contact) lands before the low ring arrives at any range.
-test('a jump on the bell glint clears the low ring at 300 px', { todo: 'Feel, P2 (readability): the safe low-ring jump window is 0.3 s and moves with range; a jump on the glint is hit at 150, 300 and 600 px (tests in scratchpad qa64/bellpre.mjs)' }, () => {
-  const { game, warden, hero } = arena(4, 600, 900, -1);
-  warden.hp = warden.maxHp * .7; warden.bossPhase = 1; hero.blood = 300;
-  game.wardenStart(warden, 'bell'); // the tell starts here; the glint is 0.4 s before the rings leave (frame 144)
-  const b0 = hero.blood;
-  for (let f = 0; f < 120 * 9; f++) { game.update(1 / 120, f === 144 ? { jump: true } : {}); }
-  assert.equal(hero.blood, b0, `hero lost ${b0 - hero.blood} blood to the bell`);
+// Feel-rule (bell, jump): each ring gives its own cue, `ringNear`, 0.4 s before it reaches the hero, so a jump on the cue clears the low ring at any range (the old cue was the bell's glint, which says nothing about the ring's arrival).
+for (const gap of [60, 150, 300, 600]) {
+  test(`a jump on the low ring's cue clears it at ${gap} px, and the cue comes 0.4 s ahead`, () => {
+    const { game, warden, hero } = arena(4, 900 - gap, 900, -1);
+    warden.hp = warden.maxHp * .7; warden.bossPhase = 1; hero.blood = 300;
+    let near = null, jumped = false; const emit = game.emit.bind(game); game.emit = (type, data) => { if (type === 'ringNear' && data.kind === 'low' && !near) near = { ...data, at: game.time }; return emit(type, data); };
+    game.wardenStart(warden, 'bell');
+    const b0 = hero.blood; let hitAt = -1;
+    for (let f = 0; f < 120 * 9; f++) { game.update(1 / 120, near && !jumped ? (jumped = true, { jump: true }) : {}); if (hitAt < 0 && hero.blood < b0) hitAt = game.time; }
+    assert.ok(near && near.eta === .4, 'the cue fired');
+    assert.equal(hero.blood, b0, `hero lost ${b0 - hero.blood} blood to the bell`);
+    const ring = game.rings.length === 0;
+    assert.ok(ring);
+  });
+}
+test('the bell cue is 0.4 s from the ring\'s arrival for a hero 60 px away too: the rings on his side leave later', () => {
+  const { game, warden, hero } = arena(5, 840, 900, -1); warden.hp = warden.maxHp * .7; hero.blood = 300;
+  game.wardenStart(warden, 'bell'); advance(game, 1.65);
+  const low = game.rings.filter(r => r.kind === 'low' && r.dir === -1)[0]; assert.ok(low.wait > 0 || low.dist === 0, 'the near ring waits'); assert.ok(game.rings.find(r => r.kind === 'low' && r.dir === 1).wait <= 0, 'the far side does not');
 });

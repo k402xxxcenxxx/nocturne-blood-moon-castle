@@ -213,7 +213,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     let lowT = Infinity;
     const ringT = (ahead, wait) => wait + Math.max(0, ahead - 21) / 420;
     if (w.warn?.kind === 'bell' && w.tell > 0 && api.reacts(w, now)) bellPlan = { at: now + w.tell, x: w.x }; // the tell shows when the rings leave: the plan outlives it
-    if (bellPlan && now < bellPlan.at + 1.4) lowT = Math.max(0, bellPlan.at + Math.max(0, Math.abs(p.x - bellPlan.x) - 21) / 420 - now);
+    if (bellPlan && now < bellPlan.at + 1.4) lowT = Math.max(0, bellPlan.at + Math.max(0.4, (Math.abs(p.x - bellPlan.x) - 29) / 420) - now); // a ring that would reach a close hero sooner than 0.4 s leaves later
     for (const r of game.rings || []) if (r.kind === 'low' && (p.x - r.x) * r.dir > 0 && now - (info.get(r)?.since ?? now) >= skill.reaction) lowT = Math.min(lowT, ringT((p.x - r.x) * r.dir, Math.max(0, r.wait)));
     if (lowT < Infinity) {
       danger = Math.min(danger, lowT);
