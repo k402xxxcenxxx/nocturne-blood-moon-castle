@@ -211,7 +211,7 @@ export class AudioSystem {
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70], gateDrop: [50, 25, 90], tellGreatToll: [30, 40, 30, 40, 60], wardenWake: [40, 30, 80],
-      kingLand: [50, 25, 90], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
+      kingLand: [50, 25, 90], crownCounter: [40, 20, 80], floodTell: [40, 30, 60], floodRise: [30, 20, 30, 20, 60], kingBloodMoon: [60, 30, 100], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
       hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, ringNearLow: 8, parryClang: [18, 12, 28], curse: [20, 40, 30] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
@@ -1226,6 +1226,90 @@ export class AudioSystem {
         tone('sine', 98, 0.7, 0.2, 94);
         tone('sine', 146.83, 0.7, 0.1, 140);
         tone('sine', 311, 0.5, 0.04, 300, 0.05);
+        break;
+      // Fallen King brain cues (#62 PR 5, castle only). Tells are fixed pitch; one sound per move, none louder than hit or kill.
+      case 'kingWake': // entrance: a low brass-like rise from silence over a slow bell, once
+        tone('sawtooth', 55, 1.4, 0.1, 110);
+        tone('sawtooth', 57, 1.4, 0.07, 113);
+        tone('sine', 41, 1.5, 0.32, 55);
+        tone('noise', 400, 1.2, 0.08, 1800);
+        tone('sine', 220, 1.2, 0.07, 220, 0.2);
+        tone('sine', 607, 0.9, 0.025, undefined, 0.2);
+        break;
+      case 'tellRaise': // pools bubble: wet pops over a low gurgle, no bright content (not an attack)
+        [0, 0.13, 0.26, 0.4, 0.55].forEach((dl, i) => tone('sine', 190 + i * 25, 0.07, 0.09, 420 + i * 40, dl));
+        tone('noise', 500, 0.9, 0.07, 1200);
+        break;
+      case 'raise': // husks claw up: stone-and-earth crumble under a dull rising groan
+        tone('noise', 1000, 0.45, 0.2, 250);
+        tone('sine', 70, 0.5, 0.3, 45);
+        tone('sawtooth', 90, 0.5, 0.06, 150);
+        break;
+      case 'husk': { // one husk rises: a short wet scrape and bone knock; throttled, detuned
+        if (ctx.currentTime - (this._lastHusk ?? -1) < 0.12) return;
+        this._lastHusk = ctx.currentTime;
+        const d = 0.9 + Math.random() * 0.2;
+        tone('noise', 1600 * d, 0.2, 0.1, 400);
+        tone('triangle', 260 * d, 0.1, 0.08, 150, 0.1);
+        break;
+      }
+      case 'crownGuardStart': // steel raised: a hard ringing "stop", flat and high, with a plate clank
+        tone('noise', 5000, 0.05, 0.14, 1800);
+        tone('sine', 150, 0.15, 0.22, 100);
+        [1046.5, 1568, 2349].forEach((f, i) => tone('triangle', f, 0.5 - i * 0.1, 0.07, f * 0.998));
+        break;
+      case 'crownCounter': { // the riposte: hard clang, heavy shove thud (punishes a swing, so weightier than apexGuard)
+        const d = 0.97 + Math.random() * 0.06;
+        tone('noise', 6500, 0.1, 0.3, 1500);
+        tone('sine', 85 * d, 0.3, 0.45, 32);
+        [1320, 1980, 2970].forEach((f, i) => tone('square', f * d, 0.3 - i * 0.06, 0.04, f * 0.99 * d));
+        tone('triangle', 660 * d, 0.3, 0.1, 640 * d);
+        break;
+      }
+      case 'crownGuardEnd': // steel lowered: a soft falling scrape, the window reopens
+        tone('noise', 2400, 0.2, 0.07, 600);
+        tone('triangle', 700, 0.18, 0.05, 420);
+        break;
+      case 'tellCrownGuard': // guard tell: two quick steel rasps rising to a held ring
+        tone('noise', 4200, 0.06, 0.1, 2200);
+        tone('noise', 5000, 0.06, 0.1, 2600, 0.08);
+        tone('sine', 1568, 0.25, 0.05, 1568, 0.16);
+        break;
+      case 'tellGuardHold': // guard held: a low steady metal hum, flat
+        tone('sine', 392, 0.3, 0.06, 392);
+        tone('triangle', 784, 0.3, 0.03, 784);
+        break;
+      case 'kingJudgement': // judgement A: five blades fall in a quick bright staccato under a low bell
+        [0, 0.05, 0.1, 0.15, 0.2].forEach((dl, i) => { tone('noise', 6000 - i * 300, 0.06, 0.1, 2000, dl); tone('triangle', 1200 + i * 90, 0.08, 0.05, 900, dl); });
+        tone('sine', 98, 0.6, 0.2, 90);
+        break;
+      case 'kingJudgementB': // judgement B: the same blades answered lower and wider, a tighter warning of the second set
+        [0, 0.06, 0.12].forEach((dl, i) => { tone('noise', 4200 - i * 300, 0.1, 0.12, 1200, dl); tone('triangle', 800 - i * 60, 0.12, 0.06, 560, dl); });
+        tone('sine', 73, 0.6, 0.24, 60);
+        break;
+      case 'kingBloodMoon': // vast descending moon: slow deep tone falling an octave+, with a dark dissonant halo
+        tone('sine', 220, 1.8, 0.2, 55);
+        tone('sine', 233, 1.8, 0.1, 58);
+        tone('sawtooth', 110, 1.7, 0.07, 36);
+        tone('noise', 800, 1.6, 0.1, 120);
+        break;
+      case 'kingLongNight': // Long Night: a tolling string, three slow bell strikes with a bowed sinking tone
+        [0, 0.4, 0.8].forEach((dl, i) => { tone('sine', 196 - i * 10, 0.9, 0.12, undefined, dl); tone('sine', 196 * 2.76, 0.4, 0.02, undefined, dl); });
+        tone('sawtooth', 98, 1.4, 0.05, 78);
+        break;
+      case 'floodTell': // climb now: a rising roar that swells upward in pitch and brightness
+        tone('noise', 300, 1.4, 0.24, 3000);
+        tone('sawtooth', 55, 1.4, 0.12, 220);
+        tone('sine', 40, 1.4, 0.3, 90);
+        break;
+      case 'floodRise': // the tide: a long low swell, surging boom over churning noise (one shot, ~2 s)
+        tone('sine', 45, 2, 0.34, 70);
+        tone('noise', 700, 2, 0.16, 350);
+        tone('sawtooth', 62, 1.8, 0.05, 80);
+        break;
+      case 'floodEnd': // the blood drains: noise and pitch falling away
+        tone('noise', 1200, 1.1, 0.12, 120);
+        tone('sine', 90, 1, 0.18, 36);
         break;
       case 'glint': // THE timing cue, 0.4 s before a heavy lands: fixed pitch (no detune), rising bright swish into two high partials
         tone('noise', 3000, 0.16, 0.2, 9000);
