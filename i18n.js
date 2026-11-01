@@ -362,7 +362,7 @@ export const STRINGS = {
     'boss.warden.phase2': '守衛封鎖了城門',
     'boss.warden.greatToll': '大血稅',
     'boss.warden.call': '守衛召來城門衛兵',
-    'hint.gate': '鐵柵門在你身後落下：往前走出陰影，或二段跳越過。',
+    'hint.gate': '鐵柵門在你身後落下：繼續向前，或二段跳越過。',
     'castle.deadGreatToll': '大血稅奪走了一切。繞到守衛身後，或離開攻擊範圍。',
     'boss.castlePhase2': '王佔據了高處',
     'boss.castlePhase3': '血月：王每揮空一擊，便會濺血',
