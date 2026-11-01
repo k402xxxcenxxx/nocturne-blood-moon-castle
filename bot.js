@@ -103,6 +103,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
   const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
+  let floodSeen = -1; // when the bot first saw the flood tell
   let guardSeen = 0; // until when the bot knows the King is holding his guard
   let bellPlan = null; // where and when the Gate Bell's rings leave the Warden, from its tell
   let fightN = 0, clipSince = -1, greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
@@ -224,7 +225,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       if (dashReady && lowT <= .1 + lock + jit(w)) { o.dash = true; o.urgent = true; o.dir = toward; }
       else if (p.grounded && !dashReady && lowT <= .45 + jit(w) && lowT >= .15) { o.jump = true; o.urgent = true; }
     }
-    if (game.flood && danger > .6) { // rising blood: get onto a ledge (walk to it, double jump), stay there and jump the descent
+    if (!game.flood) floodSeen = -1; else if (floodSeen < 0) floodSeen = now;
+    if (game.flood && now - floodSeen >= skill.reaction && danger > .6) { // rising blood: get onto a ledge (walk to it, double jump), stay there and jump the descent
       const ledges = game.platforms.filter(pl => pl.kind === 'ledge'), on = p.grounded && p.on && p.on.kind === 'ledge';
       if (!on) {
         const L = ledges.sort((a, c) => Math.abs(p.x - (a.x + a.w / 2)) - Math.abs(p.x - (c.x + c.w / 2)))[0];
@@ -235,7 +237,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           o.urgent = true;
           return o;
         }
-      } else if (w.warn?.kind === 'descent' && w.tell > 0) { if (w.tell <= .5 && w.tell >= .25 && p.grounded) o.jump = true; o.urgent = true; return o; }
+      } else if (w.warn?.kind === 'descent' && w.tell > 0 && api.reacts(w, now)) { if (w.tell <= .5 && w.tell >= .25 && p.grounded) o.jump = true; o.urgent = true; return o; }
       else if (w.move !== 'descent') { return o; } // hold the ledge
     }
     if (w.move === 'crownGuard' && api.reacts(w, now)) guardSeen = now + CROWN_HOLD;

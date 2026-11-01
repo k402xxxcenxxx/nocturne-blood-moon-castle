@@ -837,8 +837,8 @@ export class Game {
     if (e.king && e.move === 'guardHold' && e.tell > 0 && !eclipse && !shot && e.hp > 0) { // crown guard: the first sword hit is countered with a light riposte and a 160 px shove (a Greatsword frenzy takes it as debt, no shove)
       const p = this.player, from = p.x; this.deflected = true; e.tell = 1e-4; e.guardT = 0;
       this.emit('crownGuard', { state: 'counter', x: e.x, y: e.y - e.h * .55 });
-      this.hurt(CROWN.dmg, Math.sign(p.x - e.x) || 1);
-      if (!this.frenzyOf('heavy') && this.state === 'playing') { p.x = clamp(p.x + (Math.sign(p.x - e.x) || 1) * CROWN.knock, 25, this.worldWidth - 30); this.keepBeside(p, from); }
+      const landed = this.hurt(CROWN.dmg, Math.sign(p.x - e.x) || 1); // i-frames absorb the riposte and the shove with it
+      if (landed && !this.frenzyOf('heavy') && this.state === 'playing') { p.x = clamp(p.x + (Math.sign(p.x - e.x) || 1) * CROWN.knock, 25, this.worldWidth - 30); this.keepBeside(p, from); }
       return;
     }
     const warden = !!e.armored; // super armor instead of posture: full damage, never poise, flinch, knockback or interrupted tells
@@ -2099,7 +2099,7 @@ export class Game {
   }
   armorBreak(e) {
     this.cancelAttack(e);
-    Object.assign(e, { superArmor: 0, stun: BREAK_STUN, breakStun: BREAK_STUN, chain: '', force: '', pause: 0, vx: (Math.sign(e.x - this.player.x) || 1) * BREAK_KNOCK * 8 }); // the stun path slides it vx / 8 = 140 px
+    Object.assign(e, { night: null, chipT: 0, superArmor: 0, stun: BREAK_STUN, breakStun: BREAK_STUN, chain: '', force: '', pause: 0, vx: (Math.sign(e.x - this.player.x) || 1) * BREAK_KNOCK * 8 }); // the stun path slides it vx / 8 = 140 px
     if (this.fightOn) this.fightStats.breaks++;
     this.freeze = Math.max(this.freeze, .08);
     this.emit('armorBreak', { x: e.x, y: e.y - e.h * .55 });
@@ -2417,7 +2417,7 @@ export class Game {
   }
   kingPhase(e, phase) {
     this.cancelAttack(e);
-    Object.assign(e, { bossPhase: phase, chain: '', force: '', pause: 1.1, stun: 0, breakStun: 0, vx: 0, superArmor: e.superArmorMax, armorLock: 1.1 }); // the roar ends a break stun and restores the gauge, locked through the pause
+    Object.assign(e, { night: null, chipT: 0, bossPhase: phase, chain: '', force: '', pause: 1.1, stun: 0, breakStun: 0, vx: 0, superArmor: e.superArmorMax, armorLock: 1.1 }); // the roar ends a break stun and restores the gauge, locked through the pause
     this.emit('kingPhase', { phase, x: e.x, y: e.y - e.h * .5 });
   }
   // Move choice. A first move above 150 blood is the charge; a ledge held for LEDGE_TIME draws the descent; then habit memory (two of the last three heavy answers); a frenzied hero draws the volley; then the band's pool.
@@ -2504,7 +2504,7 @@ export class Game {
     if (move === 'raise') e.raiseAt = this.time + RAISE.cd;
     const next = this.kingFollow(e, move);
     if (e.night && !next && e.night.left <= 0) { e.night = null; e.recover = NIGHT.recover; e.chipT = NIGHT.recover; } // read all six: the recovery is long and every sword hit chips the gauge
-    if (next && !this.addClash(KING_MOVES[next].tell)) { e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.kingStart(e, next, false, true); }
+    if (next && !this.addClash(KING_MOVES[next].tell)) { e.follows = (e.follows || 0) + 1; Object.assign(e, { recover: 0, punishable: false, heavy: false, heavyKind: '' }); this.kingStart(e, next, false, true); } else if (e.night && next) e.night = null; // a blocked follow-up ends the Long Night
   }
   // A slash opens the string's second hit; a crossed read's charge ends in the turnslash when the hero is right behind it. Visible state only; nothing starts once the hero is dead or off screen.
   kingFollow(e, move) {
@@ -2587,7 +2587,7 @@ export class Game {
   }
   // Crown's Judgement geometry: five 60 px columns across the view with gaps (set A, fixed at tell start); set B covers everything else but one new gap, 140 px wide, starting at the edge of the A gap nearest the hero.
   judgementSets() {
-    const W = this.worldWidth, p = this.player, L = Math.max(40, p.x - JUDGE.half), R = Math.min(W - 40, p.x + JUDGE.half), gap = (R - L - JUDGE.cols * JUDGE.colW) / (JUDGE.cols + 1);
+    const W = this.worldWidth, hx = this.snap().x, L = clamp(hx - JUDGE.half, 40, W - 40 - 2 * JUDGE.half), R = L + 2 * JUDGE.half, gap = (R - L - JUDGE.cols * JUDGE.colW) / (JUDGE.cols + 1);
     const setA = []; for (let i = 0; i < JUDGE.cols; i++) setA.push({ x: L + gap * (i + 1) + JUDGE.colW * i, w: JUDGE.colW });
     return { setA, view: [L, R], gaps: Array.from({ length: JUDGE.cols + 1 }, (_, i) => ({ x: i ? setA[i - 1].x + JUDGE.colW : L, w: gap })) };
   }

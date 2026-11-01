@@ -5748,3 +5748,15 @@ test('PR 4 leftovers: ringNear fires only for a ring heading at the hero that ca
   game.wardenStart(b, 'sweep'); b.tell = 0; b.warn = { kind: 'sweep', box: { x: 0, y: 0, w: 1, h: 1 } }; game.wardenRecover(b, 'sweep'); assert.ok(!b.tell || Math.abs(b.tell - g.tell) >= .5, 'no follow-up inside 0.5 s of the guard\'s contact');
   assert.equal(game.addClash(.5), true); g.tell = 0; assert.equal(game.addClash(.5), false);
 });
+
+test('PR 5 review: judgement gaps keep 60 px at the arena walls, the Long Night ends on an armor break, a phase change or a blocked follow-up, and an i-frame-absorbed riposte gives no shove', () => {
+  for (const x of [25, 100, 150, 1400, 2700, 2775]) {
+    const { game, k } = kingBrainArena(x, 1700, 300); const s = game.judgementSets(); k.bossPhase = 1;
+    assert.ok(s.gaps.every(g => g.w >= 60), `x ${x}: gaps ${s.gaps.map(g => g.w.toFixed(0))}`); assert.ok(s.view[0] >= 40 && s.view[1] <= game.worldWidth - 40, 'the view stays inside the arena');
+  }
+  const night = () => { const t = kingBrainArena(1600, 1700, 400); t.k.bossPhase = 2; t.k.night = { k: 2, left: 4, delayedHit: 4 }; t.k.chipT = 1; return t; };
+  const a = night(); a.game.armorBreak(a.k); assert.deepEqual([a.k.night, a.k.chipT], [null, 0], 'an armor break ends the night');
+  const b = night(); b.game.kingPhase(b.k, 3); assert.deepEqual([b.k.night, b.k.chipT], [null, 0], 'and so does a phase change');
+  const c = night(); c.game.wardenPhase = c.game.wardenPhase; const g = c.game.spawnEnemy('skeleton', 1500, 4); Object.assign(g, { add: true, tell: .85 }); c.game.kingFollow = () => 'string'; c.game.kingRecover(c.k, 'slash'); assert.equal(c.k.night, null, 'a follow-up held back by a husk\'s tell ends it');
+  const d = kingBrainArena(1600, 1700, 200); d.k.bossPhase = 2; d.player.frenzy = true; d.game.kingStart(d.k, 'crownGuard'); advance(d.game, .5); d.player.invulnerable = 5; const x0 = d.player.x; d.game.damageEnemy(d.k, 30, 1, false, false, false, 17); assert.equal(d.player.x, x0, 'no shove when the riposte is absorbed');
+});
