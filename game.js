@@ -3,7 +3,7 @@ import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, 
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
-import { createSpectacle, resetFloor, decide as decideSlow, rowOf, ROWS, scaleAt, kAt, SPEC as SLOW } from './spectacle.js';
+import { createSpectacle, resetFloor, decide as decideSlow, rowOf, ROWS, stepSlow } from './spectacle.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
@@ -985,10 +985,10 @@ function watchLethal() { // lethal-debt tone: same rule as the HUD band; no allo
 }
 // --- Situational slow motion ---
 function noteSlow(e) { const row = rowOf(e); if (row && (!pendingSlow || ROWS[row].weight > pendingSlow.w)) pendingSlow = { e, w: ROWS[row].weight }; } // one per frame: the highest weight wins
-function cancelSlow() { if (slow || slowK) { slow = null; slowK = 0; slowTintK = 0; pendingSlow = null; audio.setSlow?.(0); } }
+function cancelSlow() { pendingSlow = null; if (slow || slowK) { slow = null; slowK = 0; slowTintK = 0; audio.setSlow?.(0); } } // a trigger queued before a floor load must not fire after it
 function slowContext(e) {
   const p = game.player, castle = game.mode === 'castle', live = game.enemies.filter(o => o.hp > 0);
-  return { castle, blood: p.blood, hp: p.hp, maxHp: p.maxHp, last: live.length <= 1, others: live.filter(o => Math.abs(o.x - e.x) > 20 && Math.abs(o.x - p.x) < 560).length, frenzyAgo: realTime - lastFrenzyEnd, boss: live.some(o => o.type === 'boss') };
+  return { castle, blood: p.blood, hp: p.hp, maxHp: p.maxHp, last: live.length <= 1 || (game.enemies.some(o => o.required) && live.filter(o => o.required).length <= 1 && live.every(o => !o.required || Math.abs(o.x - e.x) < 80)), others: live.filter(o => Math.abs(o.x - p.x) < 560).length - 1, frenzyAgo: realTime - lastFrenzyEnd, boss: live.some(o => o.type === 'boss') };
 }
 function startSlow(e) {
   if (game.state !== 'playing') return;
@@ -1005,14 +1005,12 @@ function slowScale(dt) {
   if (!slow) return 1;
   if (game.state !== 'playing') { cancelSlow(); return 1; }
   if (slow.reduced) { slow.t += dt; slowTintK = Math.max(0, Math.sin(Math.min(1, slow.t / .6) * Math.PI)); if (slow.t >= .6) { audio.play('slowOut'); slow = null; slowTintK = 0; } return 1; } // reduced motion: the tint only, 0.3 s in and out
-  if (!slow.fast && game.freeze <= 0 && game.threatIn() < gameLeft(slow)) { slow.fast = true; slow.from = scaleAt(slow.c, slow.t); slow.fastT = 0; }
-  let scale;
-  if (slow.fast) { slow.fastT += dt; scale = slow.from + (1 - slow.from) * Math.min(1, slow.fastT / SLOW.fastExit); slowK = (1 - scale) / (1 - slow.c.drop); if (slow.fastT >= SLOW.fastExit) { audio.play('slowOut'); slow = null; slowK = 0; audio.setSlow?.(0); return 1; } }
-  else { if (game.freeze <= 0) slow.t += dt; scale = scaleAt(slow.c, slow.t); slowK = kAt(slow.c, slow.t); if (slow.t >= slow.c.len) { audio.play('slowOut'); slow = null; slowK = 0; audio.setSlow?.(0); return 1; } }
+  const r = stepSlow(slow, dt, game.freeze > 0, game.freeze > 0 ? Infinity : game.threatIn()); // hit-stop plays at normal speed; a slow motion never outlives 0.8 s real
+  if (r.done) { audio.play('slowOut'); slow = null; slowK = 0; audio.setSlow?.(0); return 1; }
+  const scale = r.scale; slowK = r.k;
   audio.setSlow?.(slowK);
   return scale;
 }
-function gameLeft(s) { let g = 0; for (let t = s.t; t < s.c.len; t += .03) g += scaleAt(s.c, t) * .03; return g; } // game seconds the rest of the curve would play
 function tick(now) {
   const rdt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; realTime += rdt;
   if (pendingSlow) { startSlow(pendingSlow.e); pendingSlow = null; }

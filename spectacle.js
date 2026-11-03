@@ -94,3 +94,20 @@ export function decide(state, event, now, random) {
   state.seen.add(row);                                            // the row has been shown (as an accent): its first-of-floor bonus is spent
   return accent('roll');
 }
+
+// Game seconds the rest of a curve would play from real time t (for the threat check).
+export function gameLeft(c, t) { let g = 0; for (let x = t; x < c.len; x += .03) g += scaleAt(c, x) * .03; return g; }
+// One frame of a running full slow motion: `s` is { c, t, real, fast, fastT, from } (real seconds into the curve, since the start, the fast exit). rdt is the real frame time, frozen is core's hit-stop (it plays at 1.0x and pauses the curve), threat is game.threatIn().
+// Returns { scale, k, done }. A slow motion never runs past SPEC.maxLen real seconds from its start, whatever hits land meanwhile.
+export function stepSlow(s, rdt, frozen, threat) {
+  s.real = (s.real || 0) + rdt;
+  if (s.real >= SPEC.maxLen) return { scale: 1, k: 0, done: true };
+  if (frozen) return { scale: 1, k: s.fast ? 0 : kAt(s.c, s.t), done: false };
+  if (!s.fast && threat < gameLeft(s.c, s.t)) { s.fast = true; s.from = scaleAt(s.c, s.t); s.fastT = 0; }
+  if (s.fast) {
+    s.fastT += rdt; const scale = s.from + (1 - s.from) * Math.min(1, s.fastT / SPEC.fastExit);
+    return { scale, k: (1 - scale) / (1 - s.c.drop), done: s.fastT >= SPEC.fastExit };
+  }
+  s.t += rdt;
+  return { scale: scaleAt(s.c, s.t), k: kAt(s.c, s.t), done: s.t >= s.c.len };
+}

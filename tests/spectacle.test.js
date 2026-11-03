@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, createSpectacle, resetFloor, rowOf, crisisOf, curve, scaleAt, kAt, SPEC } from '../spectacle.js';
+import { decide, createSpectacle, resetFloor, rowOf, crisisOf, curve, scaleAt, kAt, stepSlow, SPEC } from '../spectacle.js';
 
 const calm = { castle: true, blood: 160, frenzyAgo: 99, others: 0 };
 const ev = (type, extra = {}, ctx = calm, threat = Infinity) => ({ type, ctx, threat, ...extra });
@@ -73,4 +73,11 @@ test('the curve drops to the floor scale, holds, eases back to 1.0 and k follows
 test('decide uses only the injected random (a deterministic source gives a deterministic answer) and the state it is given', () => {
   const run = () => { const s = createSpectacle(), out = []; let n = 0; const r = () => (n = (n * 7 + 3) % 10) / 10; for (let t = 0; t < 40; t += 1.3) out.push(decide(s, ev('perfectDash', { heavy: t % 2 > 1 }), t, r).kind); return out.join(); };
   assert.equal(run(), run());
+});
+
+test('a slow motion never outlives 0.8 s real, hit-stop plays at normal speed and pauses the curve, and a threat starts the 0.08 s fast exit', () => {
+  const mk = boss => ({ c: curve(boss), t: 0, real: 0, fast: false, fastT: 0, from: 1 });
+  for (const boss of [false, true]) { const s = mk(boss); let real = 0, done = false; for (let i = 0; i < 400 && !done; i++) { const frozen = i % 3 === 0; const r = stepSlow(s, 1 / 60, frozen, Infinity); real += 1 / 60; assert.ok(!frozen || r.scale === 1, 'hit-stop at normal speed'); done = r.done; }
+    assert.ok(done && real <= SPEC.maxLen + 1 / 60 + 1e-9, `${boss ? 'boss' : 'normal'} ended after ${real.toFixed(2)} s real, constant hit-stop included`); }
+  const s = mk(false); stepSlow(s, 1 / 60, false, Infinity); const r1 = stepSlow(s, 1 / 60, false, .05); assert.equal(s.fast, true); let n = 0, r; do { r = stepSlow(s, 1 / 60, false, .05); n++; } while (!r.done && n < 30); assert.ok(n <= Math.ceil(SPEC.fastExit * 60) + 1, 'fast exit in about 0.08 s'); assert.ok(r1.scale > 0 && r1.scale <= 1);
 });

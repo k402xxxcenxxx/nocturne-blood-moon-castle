@@ -1049,7 +1049,7 @@ export class Game {
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
       if (e.tell > 0) t = Math.min(t, e.tell - lead);
-      else if (e.strikeT > 0 || e.travel > 0 || e.cutT > 0 || e.plantT > 0 || e.stepT > 0) t = 0;
+      else if ((e.strikeT > 0 && !e.struck) || e.travel > 0 || e.cutT > 0 || e.plantT > 0 || e.stepT > 0) t = 0; // a single-hit attack whose contact is over (struck: hit or dodged) is no threat; a charge that can still hit is
     }
     for (const b of this.projectiles) {
       const dx = p.x - b.x;

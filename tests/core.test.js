@@ -5801,3 +5801,9 @@ test('threatIn counts the brain heavies, the Warden\'s tell and a husk or guard 
   const k = kingBrainArena(1500, 1700); k.game.kingStart(k.k, 'judgement'); assert.ok(Math.abs(k.game.threatIn() - (k.k.tell - .4)) < 1e-9);
   const { game, player } = castle(42, 8, true); const g = enemy(game, player.x + 90, { type: 'knight' }); Object.assign(g, { heavy: true, heavyKind: 'greatswing', tell: 1, cd: 99 }); assert.ok(Math.abs(game.threatIn() - .6) < 1e-9);
 });
+
+test('threatIn ignores a single-hit attack whose contact is over (struck), but still counts a charge that can hit and an unstruck contact', () => {
+  const { game, player } = castle(42, 1); const e = enemy(game, player.x + 80); e.cd = 99;
+  e.strikeT = .2; e.struck = false; assert.equal(game.threatIn(), 0, 'a live contact'); e.struck = true; assert.equal(game.threatIn(), Infinity, 'a dodged contact is over');
+  e.strikeT = 0; e.travel = .3; assert.equal(game.threatIn(), 0, 'a charge in flight can still hit');
+});
