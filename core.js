@@ -1106,7 +1106,7 @@ export class Game {
     return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && !(o.crossT > 0) && !(o.blinkT > 0) && !(o.recoilT > 0) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
       && Math.abs(o.x - p.x) < (this.provoked(o) ? PROVOKED_REACH : TRIGGER[o.type]) && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
   }
-  // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
+  // Wind-up limiter (its this.stage reads run only outside castle mode). Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
   // one in front of the hero, then the longest waiting. Elsewhere: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once.
   canWindUp(e, kind = 'light') {
     const p = this.player;
