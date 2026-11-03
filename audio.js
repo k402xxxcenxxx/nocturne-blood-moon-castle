@@ -2,7 +2,8 @@
 // Enemy warning cues that do not start with 'tell': they must stay clear and unpitched during slow motion.
 const DRY = new Set(['batWing', 'kingTitheStart', 'heavyWarn', 'trapWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
   'kingTellSlash', 'kingTellString', 'kingTellTurn', 'kingTellSlam', 'kingTellCharge', 'kingTellDescent', 'kingTellVolley', 'kingTellRitual',
-  'kingJudgement', 'kingJudgementB', 'kingBloodMoon', 'kingLongNight', 'kingCommit', 'knightCommit', 'wardenHorn', 'wardenBellow', 'wardenRattle', 'gateDrop']);
+  'kingJudgement', 'kingJudgementB', 'kingBloodMoon', 'kingLongNight', 'kingCommit', 'knightCommit', 'wardenHorn', 'wardenBellow', 'wardenRattle', 'gateDrop',
+  'hourTick', 'hourWarn', 'hourToll', 'hourHum']);
 export class AudioSystem {
   constructor() {
     this.muted = false;
@@ -235,7 +236,7 @@ export class AudioSystem {
       block: 12, guardBreak: [25, 20, 55], stagger: [30, 20, 70], riposte: [15, 10, 25], perfect: [10, 20, 14], plunge: [40, 25, 70], heavyHit: [90, 40, 160],
       tollDrain: [70, 30, 50, 30, 110], plateShatter: [40, 20, 80], wardenRoar: [60, 40, 120], wardenSlam: [40, 25, 70], gateDrop: [50, 25, 90], tellGreatToll: [30, 40, 30, 40, 60], wardenWake: [40, 30, 80],
       kingLand: [50, 25, 90], crownCounter: [40, 20, 80], floodTell: [40, 30, 60], floodRise: [30, 20, 30, 20, 60], kingBloodMoon: [60, 30, 100], kingTitheEnd: [20, 30, 30], kingRoar: [60, 40, 120],
-      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, ringNearLow: 8, parryClang: [18, 12, 28], curse: [20, 40, 30] };
+      hitChop: 14, apexGuard: 10, apexCrush: [30, 20, 60], numbHit: 12, debtPaid: [70, 30, 90], debtLethal: [90, 40, 160], assault: 10, assaultHit: 16, assaultBlock: 12, spearCrush: [30, 20, 60], spearGuard: 10, ringNearLow: 8, parryClang: [18, 12, 28], curse: [20, 40, 30], hourToll: [60, 30, 50], echoHit: [30, 20, 45] };
     if (patterns[name]) this.vibrate(patterns[name]);
     const ctx = this.context;
     if (this.muted || !ctx || ctx.state !== 'running') return;
@@ -578,6 +579,37 @@ export class AudioSystem {
         }
         break;
       }
+      case 'hourTick': // Stopped Hour dial: soft wooden tick-tock, alternating pitch each call; very quiet
+        this._tock = !this._tock;
+        tone('triangle', this._tock ? 900 : 700, 0.04, 0.05, undefined);
+        tone('noise', 2500, 0.025, 0.04, 1500);
+        break;
+      case 'hourWarn': // rising chime over 1.5 s: stacked bell partials stepping up
+        [392, 466.16, 523.25, 622.25, 783.99].forEach((f, i) => {
+          tone('sine', f, 0.7, 0.05 + i * 0.012, undefined, i * 0.3);
+          tone('sine', f * 2.76, 0.3, 0.012, undefined, i * 0.3);
+        });
+        break;
+      case 'hourToll': // the stop: deep bell with inharmonic partials and a low thud
+        tone('sine', 98, 2, 0.22, 94);
+        tone('sine', 98 * 2.4, 1.4, 0.08);
+        tone('sine', 98 * 4.1, 0.8, 0.04);
+        tone('sine', 50, 0.5, 0.2, 32);
+        break;
+      case 'hourHum': // 1.4 s of stopped time: low detuned drone, one-shot
+        tone('sine', 55, 1.4, 0.12, undefined);
+        tone('sine', 55.7, 1.4, 0.1, undefined);
+        tone('triangle', 110, 1.4, 0.04, 108);
+        break;
+      case 'echoReplay': // reversed whoosh: filtered noise rising into a soft tick
+        tone('noise', 300, 0.22, 0.12, 4200);
+        tone('sine', 220, 0.22, 0.04, 660);
+        break;
+      case 'echoHit': // Echo strikes the hero: hollow, cold hurt
+        tone('sawtooth', 160, 0.2, 0.12, 60);
+        tone('noise', 1400, 0.15, 0.22, 200);
+        tone('sine', 82 * 2.4, 0.4, 0.05);
+        break;
       case 'hurt':
         tone('sawtooth', 140, 0.25, 0.15, 48);
         tone('noise', 1800, 0.2, 0.3, 180);

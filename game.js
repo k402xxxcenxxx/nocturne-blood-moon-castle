@@ -1,5 +1,5 @@
-import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn } from './art.js';
+import { HOUR_PERIOD, Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -152,7 +152,7 @@ function handleEvent(e) {
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; pendingToast = t('hint.curse'); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
-      audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
+      audio.play(e.echo ? 'echoHit' : e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
         if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
         flashNumber({ ...e, amount: `+${e.amount}` }, game.debtLethal() ? '#ff3a4d' : '#aab4c8'); burst(e.x, e.y, '#8d97aa', 8, 90); break;
@@ -191,6 +191,15 @@ function handleEvent(e) {
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
       if (e.enemy) effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#ffd36e' }); // castle posture break: gold ring (the crack is drawn on the body)
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
+      break;
+    case 'hour': // #69
+      if (e.state === 'warn') { audio.play('hourWarn'); toast(t('castle.hourWarn')); }
+      else if (e.state === 'stop') { audio.play('hourToll'); audio.play('hourHum'); }
+      if (e.state === 'stop') toast(t(e.awake ? 'castle.hourAwake' : 'castle.hourStill'));
+      break;
+    case 'echo': // #69
+      if (e.state === 'replay') audio.play('echoReplay');
+      if (e.state !== 'end' && e.x != null) effects.push({ type: 'wardBreak', x: e.x, y: (e.y ?? FLOOR) - 30, life: .35, max: .35, color: e.state === 'replay' ? '#e6f0ff' : '#9fb4d8', r: 70 });
       break;
     case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
       audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase);
@@ -374,7 +383,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: eliteLabel(e) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathEcho = e.cause === 'echo'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -438,7 +447,8 @@ function synergyLine(id) {
 let vigilNo = 1; // 2 after the Warden's kill, 3 after floor 20
 let lastFightKing = false; let lastFight = null; // last Warden fightStats, shown on the slice-end and floor-10 death screens
 let kingResult = ''; // 'won' or 'dead' when the slice-end screen follows a Fallen King attempt
-let deathDebt = false, deathToll = false, deathGreat = false, deathFlood = false, gateHinted = false, guardHinted = false; // the killing blow of the last death was the Warden's Gate Toll
+let hourTickAt = 0; // #69: last whole second the dial ticked
+let deathDebt = false, deathToll = false, deathGreat = false, deathFlood = false, deathEcho = false, gateHinted = false, guardHinted = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
 // castle elites have a twist and no affix
 const eliteLabel = e => e.affix ? t(`affix.${e.affix}`) : t(`elite.${e.twist}`);
@@ -451,7 +461,7 @@ function openVigil() { // rest point: one weapon card each, choosing one starts 
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathDebt ? 'castle.deadDebt' : deathGreat ? 'castle.deadGreatToll' : deathFlood ? 'castle.deadFlood' : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KEEPER_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / ${SLICE_FLOORS}`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathDebt ? 'castle.deadDebt' : deathGreat ? 'castle.deadGreatToll' : deathFlood ? 'castle.deadFlood' : deathEcho ? 'castle.deadEcho' : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KEEPER_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / ${SLICE_FLOORS}`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -862,6 +872,8 @@ function render(dt) {
     ctx.save(); zoomed = true; ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy);
   }
   drawScene(ctx, { camera, width: viewWidth, height: 540, time: worldTime, stage: game.stage, platforms: game.platforms, worldWidth: game.worldWidth });
+  if (!title && game.hour.on && !game.hour.still) { const left = Math.ceil(HOUR_PERIOD - game.hour.t); if (left <= 4 && left !== hourTickAt) { hourTickAt = left; audio.play('hourTick'); } }
+  if (!title && game.hour.on) drawHourDial(ctx, Math.round(viewWidth / 2) + 190, 32, game.hour.t / HOUR_PERIOD, game.hour.warn, game.hour.still > 0, settings.shake ? .75 + .25 * Math.sin(performance.now() / 70) : 1); // #69: Belfry dial; render clock is wall time because game.time freezes in the Hour
   if (!title && game.mode === 'castle') for (const e of game.enemies) if (e.king && e.hp > 0 && e.bossPhase >= 3) { ctx.save(); ctx.globalAlpha = settings.shake ? .85 + .15 * Math.sin(worldTime * 2) : 1; ctx.fillStyle = '#8a102a30'; ctx.fillRect(0, 0, viewWidth, 540); ctx.restore(); break; } // Blood Moon: a red cast over the arena in the King's last phase
   ctx.save(); ctx.translate(-Math.round(camera), 0);
   if (title) {
@@ -940,6 +952,7 @@ function render(dt) {
     if (floodFx) drawFlood(ctx, floodFx, game.platforms, worldTime, !settings.shake, camera, camera + viewWidth); // over the hero's feet: the tide
     if (numb && p.debt > 0) { const lethal = game.debtLethal(); ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const dy = Math.round(p.y - 92 - (lethal && settings.shake ? Math.abs(Math.sin(worldTime * 10)) * 3 : 0)); ctx.strokeText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.fillStyle = lethal ? '#ff3a4d' : '#cfd6e6'; ctx.fillText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.restore(); }
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
+    if (game.hour.on && game.echo.list.length) { drawEchoBoxes(ctx, game.echo, performance.now() / 1000, !settings.shake); for (const g of game.echo.list) if (g.state < 2) { ctx.save(); ctx.globalAlpha = g.state ? .5 : .32; drawHeroTinted({ x: g.x, y: g.y, dir: g.dir, vx: 0, grounded: true, invulnerable: 0 }, 'rgba(150,170,205,.8)'); ctx.restore(); } } // #69: the Echo, a pale cold ghost of the hero
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
       if (b.ground) { drawGroundWave(b); continue; }
@@ -949,6 +962,7 @@ function render(dt) {
   }
   drawEffects(dt); ctx.restore();
   if (zoomed) ctx.restore();
+  if (!title && game.hour.still > 0) { ctx.fillStyle = 'rgba(96,84,140,.2)'; ctx.fillRect(0, 0, viewWidth, 540); } // #69: steady soft grey-violet tint for the Stopped Hour, no flash, so it needs no reduced-motion branch
   if (phaseTime > 0) { // phase roar: screen darkens, then a red pulse blooms on the moon (steady when reduced motion is on)
     const k = Math.max(0, Math.min(1, phaseTime / .4, (1.6 - phaseTime) / .15)), pulse = settings.shake ? .5 + .5 * Math.sin(phaseTime * 14) : 1;
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
