@@ -114,7 +114,7 @@ function handleEvent(e) {
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
       $('stage-number').textContent = stageLabel(e.stage, e.floor); $('stage-name').textContent = t(`stage.${e.stage}.name`);
       const announcement = $('stage-announcement');
-      announcement.querySelector('small').textContent = t('decor.announce', { stage: e.mode === 'endless' ? e.floor : roman[e.stage], name: t(`decor.stage.${e.stage}`) });
+      announcement.querySelector('small').textContent = t('decor.announce', { stage: e.mode === 'endless' ? e.floor : roman[e.mode === 'castle' && e.stage === 2 ? 1 : e.stage], name: t(`decor.stage.${e.stage}`) });
       announcement.querySelector('strong').textContent = t(`stage.${e.stage}.name`);
       announcement.querySelector('span').textContent = t(`stage.${e.stage}.subtitle`);
       announcement.classList.add('show'); announceTime = 2.8;
