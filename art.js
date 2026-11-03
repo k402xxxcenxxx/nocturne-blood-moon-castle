@@ -1534,3 +1534,27 @@ export function drawAffixIcon(ctx, affix, x, y) {
   else if (affix === 'warded') { ctx.strokeStyle = ctx.fillStyle = '#9fd8ff'; ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(4, -4); ctx.lineTo(4, 0); ctx.lineTo(0, 5); ctx.lineTo(-4, 0); ctx.closePath(); ctx.stroke(); ctx.fillRect(-1, -2, 2, 3); }
   ctx.restore();
 }
+
+// #69: the Belfry clock dial (screen space). Hour hand turns once per period, minute hand 4x, so both meet at XII on the toll; warn turns them red.
+export function drawHourDial(ctx, cx, cy, frac, warn, still, pulse = 1) {
+  const r = 20, hands = warn ? '#ff5a6a' : '#cbbfe8';
+  ctx.save(); ctx.globalAlpha = (still ? .9 : .6) * (warn ? pulse : 1);
+  ctx.fillStyle = '#13111bcc'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = warn ? '#ff5a6a' : '#8f86a8'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#8f86a8'; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.fillRect(Math.round(cx + Math.sin(a) * (r - 3)) - 1, Math.round(cy - Math.cos(a) * (r - 3)) - 1, i % 3 ? 2 : 3, i % 3 ? 2 : 3); }
+  ctx.strokeStyle = hands; ctx.lineCap = 'round';
+  for (const [k, len, w] of [[1, 9, 3], [4, 16, 2]]) { const a = frac * k * Math.PI * 2; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(Math.round(cx + Math.sin(a) * len), Math.round(cy - Math.cos(a) * len)); ctx.stroke(); }
+  ctx.restore();
+}
+
+// #69: the Echo's attack boxes in world space: dashed and pale while pending, solid and brighter while active. Pale blue so it never reads as the red enemy tell.
+export function drawEchoBoxes(ctx, echo, time, calm) {
+  ctx.save(); ctx.lineWidth = 2;
+  for (const g of echo.list) {
+    if (g.state > 1) continue;
+    const act = g.state === 1;
+    ctx.strokeStyle = act ? '#e6f0ff' : '#9fb4d8'; ctx.globalAlpha = act ? .9 : .5; ctx.setLineDash(act ? [] : [6, 5]); ctx.lineDashOffset = calm ? 0 : -time * 20;
+    for (const b of g.boxes) ctx.strokeRect(Math.round(b.x0), Math.round(b.y0), Math.round(b.x1 - b.x0), Math.round(b.y1 - b.y0));
+  }
+  ctx.restore();
+}

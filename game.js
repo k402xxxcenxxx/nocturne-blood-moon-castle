@@ -1,5 +1,5 @@
-import { Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn } from './art.js';
+import { HOUR_PERIOD, Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
+import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -191,6 +191,12 @@ function handleEvent(e) {
       burst(e.x, e.y, '#ffd36e', e.boss ? 26 : 16, 240); burst(e.x, e.y, '#fff0c0', 8, 150, 0, 3);
       if (e.enemy) effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#ffd36e' }); // castle posture break: gold ring (the crack is drawn on the body)
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
+      break;
+    case 'hour': // #69 visual only. PRODUCER: add audio.play calls here (warn / stop / resume)
+      if (e.state === 'stop' && e.awake) toast(t('castle.hourAwake'));
+      break;
+    case 'echo': // #69 visual only. PRODUCER: add audio.play calls here (record / replay / end)
+      if (e.state !== 'end' && e.x != null) effects.push({ type: 'wardBreak', x: e.x, y: (e.y ?? FLOOR) - 30, life: .35, max: .35, color: e.state === 'replay' ? '#e6f0ff' : '#9fb4d8', r: 70 });
       break;
     case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
       audio.play('roar', e.phase >= 3 ? 1.3 : 1); audio.setIntensity(e.phase);
@@ -862,6 +868,7 @@ function render(dt) {
     ctx.save(); zoomed = true; ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy);
   }
   drawScene(ctx, { camera, width: viewWidth, height: 540, time: worldTime, stage: game.stage, platforms: game.platforms, worldWidth: game.worldWidth });
+  if (!title && game.hour.on) drawHourDial(ctx, Math.round(viewWidth / 2) + 190, 32, game.hour.t / HOUR_PERIOD, game.hour.warn, game.hour.still > 0, settings.shake ? .75 + .25 * Math.sin(performance.now() / 70) : 1); // #69: Belfry dial; render clock is wall time because game.time freezes in the Hour
   if (!title && game.mode === 'castle') for (const e of game.enemies) if (e.king && e.hp > 0 && e.bossPhase >= 3) { ctx.save(); ctx.globalAlpha = settings.shake ? .85 + .15 * Math.sin(worldTime * 2) : 1; ctx.fillStyle = '#8a102a30'; ctx.fillRect(0, 0, viewWidth, 540); ctx.restore(); break; } // Blood Moon: a red cast over the arena in the King's last phase
   ctx.save(); ctx.translate(-Math.round(camera), 0);
   if (title) {
@@ -940,6 +947,7 @@ function render(dt) {
     if (floodFx) drawFlood(ctx, floodFx, game.platforms, worldTime, !settings.shake, camera, camera + viewWidth); // over the hero's feet: the tide
     if (numb && p.debt > 0) { const lethal = game.debtLethal(); ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const dy = Math.round(p.y - 92 - (lethal && settings.shake ? Math.abs(Math.sin(worldTime * 10)) * 3 : 0)); ctx.strokeText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.fillStyle = lethal ? '#ff3a4d' : '#cfd6e6'; ctx.fillText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.restore(); }
     if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
+    if (game.hour.on && game.echo.list.length) { drawEchoBoxes(ctx, game.echo, performance.now() / 1000, !settings.shake); for (const g of game.echo.list) if (g.state < 2) { ctx.save(); ctx.globalAlpha = g.state ? .5 : .32; drawHeroTinted({ x: g.x, y: g.y, dir: g.dir, vx: 0, grounded: true, invulnerable: 0 }, 'rgba(150,170,205,.8)'); ctx.restore(); } } // #69: the Echo, a pale cold ghost of the hero
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {
       if (b.ground) { drawGroundWave(b); continue; }
@@ -949,6 +957,7 @@ function render(dt) {
   }
   drawEffects(dt); ctx.restore();
   if (zoomed) ctx.restore();
+  if (!title && game.hour.still > 0) { ctx.fillStyle = 'rgba(96,84,140,.2)'; ctx.fillRect(0, 0, viewWidth, 540); } // #69: steady soft grey-violet tint for the Stopped Hour, no flash, so it needs no reduced-motion branch
   if (phaseTime > 0) { // phase roar: screen darkens, then a red pulse blooms on the moon (steady when reduced motion is on)
     const k = Math.max(0, Math.min(1, phaseTime / .4, (1.6 - phaseTime) / .15)), pulse = settings.shake ? .5 + .5 * Math.sin(phaseTime * 14) : 1;
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
