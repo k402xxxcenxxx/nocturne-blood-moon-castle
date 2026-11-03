@@ -31,6 +31,7 @@ input (game.js) → Game.update(dt, input) (core.js) → emit(event) → game.js
 | `i18n.js` | `STRINGS` per language, `t()`, language detection | Any player-visible text |
 | `art.js` | `drawScene/drawHero/drawEnemy/drawPortal`, with static scene caching; draws generated images from `assets/` as they replace code-drawn art | New enemy or scene visuals |
 | `assets/` | Normalized runtime images generated through the art pipeline | New art |
+| `spectacle.js` | Situational slow motion (#53): which answers earn a slow-motion moment, the budget, crisis and curve; pure, random injected | Slow-motion rules; game.js runs the clock |
 | `audio.js` | `AudioSystem.play(name, intensity)`: synthesized sounds plus vibration patterns | New sounds |
 | `index.html` / `style.css` | HUD, touch buttons, SVG icons (`#i-<name>`) | New buttons, new icons |
 
@@ -48,7 +49,7 @@ Logic and presentation talk only through events: core calls `this.emit('type', d
 
 ## Tests
 
-- `npm test` runs `tests/*.test.js` (`core`, `endless`, `i18n`, `bot`). In core tests, `arena()` clears the scene, `enemy()` places a target and `advance()` steps time at 1/120 s. Add a test in that style for each new mechanic and assert **rules** (hits, cooldowns, state transitions), not feel-tuning numbers. The i18n test fails if a language is missing a key.
+- `npm test` runs `tests/*.test.js` (`core`, `endless`, `i18n`, `bot`, `spectacle`). In core tests, `arena()` clears the scene, `enemy()` places a target and `advance()` steps time at 1/120 s. Add a test in that style for each new mechanic and assert **rules** (hits, cooldowns, state transitions), not feel-tuning numbers. The i18n test fails if a language is missing a key.
 - Browser test (optional): run `python3 -m http.server 8080`, then `node tests/browser-smoke.mjs`. Needs Playwright; `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` and `BASE_URL` override the paths. `node tests/cursed-ui.mjs` is a second optional browser check (cursed-relic UI and room banners) run the same way.
 - Test bot (#52): `bot.js` plays the hero under human limits (0.18 s reaction, 8 presses/s). `node tools/bot-run.mjs --seeds 20 --floors 1-9` prints per-floor clear rate, deaths and blood stats for a build (use it to check enemy changes). With `?test`, key B or the on-screen AI button hands the hero to the bot and ignores all other player input.
 - Adding `?test` to the URL exposes `window.__nocturne` (`game`, `settings`, `startRun`, `clearInput`) for changing state from the browser console, for example `__nocturne.game.loadStage(4)` to jump to the boss stage.

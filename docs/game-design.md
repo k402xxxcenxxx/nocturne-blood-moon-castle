@@ -676,6 +676,22 @@ The King (floor 50, `king: true`) keeps its #50 body, `KING_HP` 1200 HP (unchang
 
 **Measured** (100 seeds, heavy / twin / spear, 100 blood, floor 50): expert 86 / 100 / 93% (audit 0 of 55 / 116 / 208; seed 1 wins heavy and twin, seed 2 spear: `node tools/bot-run.mjs --duel 1 --type king --seeds 1 --weapon heavy|twin|spear`), average 12 / 40 / 3%; mash bot 0% with every weapon at 100 and 200 blood. Before this PR the expert was 100 / 100 / 70%. The King is not part of the floor 1-10 runs, so the full-run numbers are the PR 4 ones (expert 48 / 48 / 51%, average 0 / 0 / 0%).
 
+### Situational slow motion (#53)
+
+Presentation only (`spectacle.js` + `game.js`; core adds events and one read-only query). All modes. State and bot results are unchanged (the Normal, Endless and castle state hashes are identical; the scripted skeleton golden changed only because the event stream gained `interrupt`).
+
+**Triggers** (`rowOf`, weight before crisis, novelty and budget): posture break that cancelled a tell or contact `breakCancel` 0.6, other break 0.35; Eclipse cancelling a heavy wind-up `interruptHeavy` 0.6, a light or a cast 0.2; perfect dodge through a heavy 0.5, otherwise 0.1; Eclipse breaking a shield guard 0.3; **always full**: a boss break (`stagger` with `boss`, or the Warden's and King's `armorBreak`) and a boss phase change (`bossPhase`, `wardenPhase`, `kingPhase`). Never triggers: blocked hits, the knight parrying the hero (`parry`), the spearman's haft guard (`apexGuard`), normal hits, kills, ripostes, hits taken. One per frame: the highest weight wins; a failed roll is an **accent** (flash, light thump).
+
+**Budget** `b` 0..1 refills over 12 s (7 s in crisis), a full slow motion empties it; chance = min(0.95, weight x crisis x novelty) x b^2; no full inside 2.5 s of the last one's end (1.5 s in crisis); the same row as the last full is x0.5, the first of a row on a floor x1.5; boss moments ignore the budget and cooldown, but not tell protection: if `threatIn()` is under 0.15 s even a boss moment becomes an accent, so every glint is still seen at normal speed (decided 2026-11-03, #53 QA). Crisis x: blood <= 100 1.5, blood <= 40 (normal: HP <= 30%) 2, last living enemy 1.5, 3+ others on screen 1.4, within 2 s of `frenzyEnd` 1.3, a boss alive 1.3. The roll is `Math.random()` injected into `decide(state, event, now, random)`; it never touches `game.rand()`.
+
+**Curve** (real seconds, `curve`, `scaleAt`, `kAt`): drop to 0.25x, hold 0.12 s, ease back 0.45 s (ease-out cubic), 0.57 s total; boss 0.2x / 0.2 s / 0.55 s = 0.75 s; never above 0.8 s. `game.update(dt x scale)`; screen feedback and UI (shake, flashes, banners, toasts, HUD) keep the real clock, the world, effects and particles use the scaled one. Zoom up to 1.08 around the event point (the hero kept in view), a cached silver or red radial vignette at 0.45 x k plus a 15% darkening, a 2-frame impact burst. No `ctx.filter`.
+
+**Fairness**: `game.threatIn()` (read-only, no state, no `rand()`) is the game time until the earliest moment an enemy attack, projectile, bell ring or flood is 0.4 s from the hero (0 once one is). At the trigger `threatIn() < 0.15 s` gives an accent and spends nothing; a shorter threat than the curve's game time drops the hold and compresses the ease. Every frame, a threat inside the rest of the curve switches to a fast exit (linear to 1.0x in 0.08 s). Pause, death, any state change and every floor load cancel it at once.
+
+**Reduced motion**: with "Screen shake and flashes" off there is no time scale, no zoom and no flash; the tint fades in and out over 0.3 s (0.6 s total), the audio hooks still fire.
+
+**Core additions**: `stagger.cancelled` is now true only for a cancelled tell or contact (a break in a recovery is false); `interrupt` {x, y, enemy, heavy} when Eclipse cuts a wind-up or a cast; `perfectDash.heavy`; `threatIn()`. The type field of the Issue is `enemy` in the events (the event name already uses `type`).
+
 ## Playtest verdicts
 
 After each proposal is playtested, add one line here: `#<issue> <name> — keep / adjust / drop: <one-line reason>`.

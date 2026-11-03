@@ -889,7 +889,7 @@ export class Game {
         if (castle) e.steady = e.stun + STEADY;
         e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * (e.type === 'boss' ? .25 : 1);
       } else if (!quiet && e.type === 'knight') e.vx = dir * this.player.knockback * (heavy ? 1.6 : 1) * knock * .4;
-      if ((!quiet || (castle && e.blessRadius)) && !keepsTell && e.type !== 'boss') { if (winding) this.cancelAttack(e); if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; } // a bless has no armor: any hit cancels it
+      if ((!quiet || (castle && e.blessRadius)) && !keepsTell && e.type !== 'boss') { if (eclipse && (winding || e.blessRadius)) this.emit('interrupt', { x: e.x, y: e.y - e.h * .55, enemy: e.type, heavy: !!e.heavy }); /* Eclipse cut a wind-up or a cast */ if (winding) this.cancelAttack(e); if (e.blessRadius) e.blessCd = 2.5; e.tell = 0; e.thrustBox = null; e.blessRadius = 0; } // a bless has no armor: any hit cancels it
       this.freeze = Math.max(this.freeze, heavy || crit ? .065 : .035);
       this.emit('hit', { x: e.x, y: e.y - e.h * .55, amount: through, absorbed, dir, crit, heavy, punish: this.punishing(e) });
     }
@@ -1042,6 +1042,28 @@ export class Game {
     Object.assign(e, { bossPhase: phase, tell: 0, warn: null, move: '', travel: 0, recover: 0, punishable: false, poise: e.maxPoise, pause: 1.1 });
     this.emit('bossPhase', { phase, x: e.x, y: e.y - e.h * .5 });
   }
+  // Read-only (no state, no rand): game seconds until the earliest moment any live enemy attack, projectile, ring or flood is 0.4 s from reaching the hero (0 when one already is). Infinity when nothing threatens. Presentation (situational slow motion) uses it to keep every glint at normal speed.
+  threatIn() {
+    const p = this.player, lead = GLINT_LEAD;
+    let t = Infinity;
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      if (e.tell > 0) t = Math.min(t, e.tell - lead);
+      else if ((e.strikeT > 0 && !e.struck) || e.travel > 0 || e.cutT > 0 || e.plantT > 0 || e.stepT > 0) t = 0; // a single-hit attack whose contact is over (struck: hit or dodged) is no threat; a charge that can still hit is
+    }
+    for (const b of this.projectiles) {
+      const dx = p.x - b.x;
+      if (!b.vx || dx * b.vx <= 0) { if (b.vx && Math.abs(dx) < b.r + p.w / 2) t = 0; continue; }
+      const left = Math.max(0, (Math.abs(dx) - b.r - p.w / 2) / Math.abs(b.vx));
+      if (left <= (b.life ?? 9)) t = Math.min(t, left - lead);
+    }
+    for (const r of this.rings) {
+      const dx = p.x - r.x; if (dx * r.dir <= 0) continue;
+      t = Math.min(t, Math.max(0, r.wait) + Math.max(0, (Math.abs(dx) - (BELL.thick + p.w) / 2) / BELL.speed) - lead);
+    }
+    if (this.flood) t = Math.min(t, this.flood.live ? 0 : this.flood.tell - lead);
+    return Math.max(0, t);
+  }
   // An attack in progress: wind-up, strike, the skeleton's backstep and lunge, or a boss charge.
   attacking(e) { return e.tell > 0 || e.strikeT > 0 || e.stepT > 0 || e.cutT > 0 || e.travel > 0 || e.plantT > 0; }
   cancelAttack(e) {
@@ -1053,7 +1075,7 @@ export class Game {
     if (e.crossT !== undefined) Object.assign(e, { crossT: 0, dartT: 0, blinkT: 0, recoilT: 0, bmT: 0, plantT: 0, parryT: 0, parried: false }); // castle-only movement states (crossover, dart, blink, recoil)
   }
   stagger(e) {
-    const cancelled = this.attacking(e) || e.recover > 0, castle = this.mode === 'castle' && e.type !== 'boss';
+    const cancelled = this.attacking(e), castle = this.mode === 'castle' && e.type !== 'boss';
     this.cancelAttack(e); e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : castle ? STAGGER_STUN : 1;
     e.riposte = castle; // the first sword hit during this stun is a riposte
@@ -2271,7 +2293,7 @@ export class Game {
   // The Great Toll (great): all blood above 100, then 40 more (40 at 100 or less); the hero is thrown 160 px back.
   wardenToll(e, great = false) {
     const p = this.player;
-    if (p.invulnerable > 0) { this.perfectDodge(); return; }
+    if (p.invulnerable > 0) { this.perfectDodge(true); return; }
     const taken = Math.min(p.blood, great ? Math.max(0, p.blood - BLOOD_HALF) + GREAT.extra : p.blood > BLOOD_HALF ? p.blood - BLOOD_HALF : TOLL_BASE), numb = this.frenzyOf('heavy'); // Numb to pain: the toll is debt and no knockback, but the gauge still refills
     if (numb) p.debt += Math.round(taken); else p.blood -= taken; // debt stays whole so the HUD, lethal cue and payment agree
     e.superArmor = Math.min(e.superArmorMax, e.superArmor + taken); e.struck = true;
@@ -2952,18 +2974,18 @@ export class Game {
     e.action++;
   }
   // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.
-  perfectDodge() {
+  perfectDodge(heavy = false) {
     const p = this.player;
     if (p.perfect <= 0 || p.perfectUsed || p.otherInv > 0) return; // only if the dash itself stopped the hit
     p.perfectUsed = true; p.mp = Math.min(p.maxMp, p.mp + p.perfectMp); if (this.mode === 'castle' && !this.noBlood && this.state === 'playing') this.addBlood(p.frenzy ? 2 : 5); // the curse does not stop a perfect dodge's blood
     p.thrustWindow = Math.max(p.thrustWindow, .9);
     this.freeze = Math.max(this.freeze, .05);
-    this.emit('perfectDash', { x: p.x, y: p.y - 30 });
+    this.emit('perfectDash', { x: p.x, y: p.y - 30, heavy }); // heavy: the dodged hit was a heavy (100)
   }
   hurt(amount, dir, hazard = false, heavy = false) {
     const p = this.player;
     if (this.state !== 'playing') return;
-    if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(); return; } // a trap is never a perfect dodge
+    if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(heavy); return; } // a trap is never a perfect dodge
     const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
     const castle = this.mode === 'castle';
     const numb = this.frenzyOf('heavy'); // Numb to pain: damage becomes debt, no knockback
