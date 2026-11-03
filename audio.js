@@ -1,6 +1,6 @@
 // Original procedural sound: no downloads, samples, or autoplay dependency.
 // Enemy warning cues that do not start with 'tell': they must stay clear and unpitched during slow motion.
-const DRY = new Set(['heavyWarn', 'trapWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
+const DRY = new Set(['batWing', 'kingTitheStart', 'heavyWarn', 'trapWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
   'kingTellSlash', 'kingTellString', 'kingTellTurn', 'kingTellSlam', 'kingTellCharge', 'kingTellDescent', 'kingTellVolley', 'kingTellRitual',
   'kingJudgement', 'kingJudgementB', 'kingBloodMoon', 'kingLongNight', 'kingCommit', 'knightCommit', 'wardenHorn', 'wardenBellow', 'wardenRattle', 'gateDrop']);
 export class AudioSystem {
