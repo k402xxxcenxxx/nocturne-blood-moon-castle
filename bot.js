@@ -32,6 +32,7 @@ export function resolveModal(game) {
   return false;
 }
 
+const CROWN_HOLD = 1.6; // the crown guard tell (0.45 s) plus its hold (1.0 s), with slack
 const CHARGE_SPEED = 610; // Warden charge: 305 px in 0.5 s
 const WARDEN_STANDOFF = 120; // the bot waits this far from the Warden: outside its slam box, so every close move shows a tell it can answer
 // Seconds until the Warden's current attack would hurt a hero standing at feet (px, py); Infinity if it would miss (a seize box is 80 px tall: feet above it are safe).
@@ -52,6 +53,8 @@ function wardenHit(w, px, py) {
     }
     return Infinity;
   }
+  if (a.kind === 'bloodMoon') return Math.abs(px - a.ring.x) - 14 >= a.ring.r ? w.tell : Infinity; // everything outside the safe ring
+  if (a.kind === 'judgement' || a.kind === 'judgementB') { const cols = a.setA || a.setB; return cols.some(c => px + 14 > c.x && px - 14 < c.x + c.w) ? w.tell : Infinity; } // light columns: walk to a gap
   if (a.kind === 'ritual') return a.circles.some(c => Math.abs(px - c.x) < c.r + 14 && py > w.y - c.r) ? w.tell : Infinity; // ground discs: a gap between them is safe
   if (a.kind === 'descent') { const l = a.landing; return Math.abs(px - l.x) < l.r + 14 && py > l.y - 70 && py < l.y + 20 ? w.tell : Infinity; } // shockwave on the ledge surface
   return a.box && rectHit(px, py, a.box) ? w.tell : Infinity;
@@ -100,6 +103,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
   const rng = () => { let t = rs += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const roll = r => { r.jit = skill.mistime && rng() < skill.mistime ? (rng() < .5 ? -1 : 1) * skill.mistimeBy : 0; r.flip = !!skill.misread && rng() < skill.misread; };
   const jit = o => info.get(o)?.jit || 0, flip = (o, d) => (info.get(o)?.flip ? -d : d);
+  let floodSeen = -1; // when the bot first saw the flood tell
+  let guardSeen = 0; // until when the bot knows the King is holding his guard
   let bellPlan = null; // where and when the Gate Bell's rings leave the Warden, from its tell
   let fightN = 0, clipSince = -1, greedyUntil = 0, wasOpen = false; // a pending greedy extra swing expires at greedyUntil
   const greedyOn = now => now < greedyUntil;
@@ -176,7 +181,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
           const l = w.warn.landing, plat = game.platforms.find(pl => pl.y === l.y), edge = plat ? (p.x < plat.x + plat.w / 2 ? -1 : 1) : -Math.sign(p.x - l.x) || 1;
           if (p.grounded) { o.dir = edge; o.urgent = true; }
         }
-        else if (kind !== 'charge') for (let d = 10; d <= 260 && !best; d += 10) for (const sd of kind === 'volley' || kind === 'ritual' ? [away, toward] : [away]) { // lines and circles have gaps on both sides
+        else if (kind !== 'charge') for (let d = 10; d <= (kind === 'bloodMoon' ? 440 : 260) && !best; d += 10) for (const sd of kind === 'bloodMoon' ? [toward] : kind === 'volley' || kind === 'ritual' || kind === 'judgement' || kind === 'judgementB' ? [away, toward] : [away]) { // lines and circles have gaps on both sides
           const x = p.x + sd * d;
           if (x > 40 && x < W - 40 && (x - w.x) * (p.x - w.x) > 0 && Math.abs(x - w.x) > 52 && d / (kind === 'greatToll' ? speed - 80 : speed) < t - .05 && wardenHit(w, x, p.y) === Infinity) { best = { dir: sd }; break; }
         }
@@ -220,6 +225,23 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       if (dashReady && lowT <= .1 + lock + jit(w)) { o.dash = true; o.urgent = true; o.dir = toward; }
       else if (p.grounded && !dashReady && lowT <= .45 + jit(w) && lowT >= .15) { o.jump = true; o.urgent = true; }
     }
+    if (!game.flood) floodSeen = -1; else if (floodSeen < 0) floodSeen = now;
+    if (game.flood && now - floodSeen >= skill.reaction && danger > .6) { // rising blood: get onto a ledge (walk to it, double jump), stay there and jump the descent
+      const ledges = game.platforms.filter(pl => pl.kind === 'ledge'), on = p.grounded && p.on && p.on.kind === 'ledge';
+      if (!on) {
+        const L = ledges.sort((a, c) => Math.abs(p.x - (a.x + a.w / 2)) - Math.abs(p.x - (c.x + c.w / 2)))[0];
+        if (L) {
+          const edge = p.x < L.x ? L.x + 30 : p.x > L.x + L.w ? L.x + L.w - 30 : p.x, d = edge - p.x;
+          if (Math.abs(d) > 6) o.dir = Math.sign(d);
+          if (Math.abs(d) < 110 && p.y > L.y - 20 && (p.grounded || (p.jumps === 1 && p.vy > -150))) { o.jump = true; o.dir = Math.sign(d) || p.dir; }
+          o.urgent = true;
+          return o;
+        }
+      } else if (w.warn?.kind === 'descent' && w.tell > 0 && api.reacts(w, now)) { if (w.tell <= .5 && w.tell >= .25 && p.grounded) o.jump = true; o.urgent = true; return o; }
+      else if (w.move !== 'descent') { return o; } // hold the ledge
+    }
+    if (w.move === 'crownGuard' && api.reacts(w, now)) guardSeen = now + CROWN_HOLD;
+    const guarding = (w.move === 'crownGuard' || w.move === 'guardHold') && (api.reacts(w, now) || now < guardSeen);
     if (danger > .45) {
       const dx = w.x - p.x, face = Math.sign(dx) || p.dir, gap = Math.abs(dx);
       const open = w.superArmor <= 0 || (w.heavy && w.recover > 0); // blood-paying windows: break stun, heavy recovery
@@ -232,7 +254,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         const spacing = Math.max(50, p.reach - 22);
         if (gap > spacing) { goal = w.x; tol = spacing - 4; }
         else if (p.dir !== face) o.dir = face;
-        else if (ready && p.y >= FLOOR - 5) o.attack = true;
+        else if (ready && p.y >= FLOOR - 5 && !guarding) o.attack = true; // the Crown Guard counters the first sword hit: wait it out
       } else if (pool && p.grounded) { goal = pool.x; tol = 6; }
       else if (gap < WARDEN_STANDOFF - 25 || held === away && gap < WARDEN_STANDOFF - 5) { const x = p.x + away * 30; if (x > 60 && x < W - 60) o.dir = away; } // too close: back off to the standoff
       else if (gap > WARDEN_STANDOFF + 40 || held === toward && gap > WARDEN_STANDOFF + 20) { goal = w.x - Math.sign(w.x - p.x) * WARDEN_STANDOFF; tol = 20; } // hysteresis: a step that started keeps going to the edge of the band, so the standoff never flips direction every frame
