@@ -196,7 +196,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
-    this.brainOff = new Set(); this.flood = null; this.rings = []; this.dashLog = []; this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.hour = { on: false, t: 0, warn: false, still: 0, awake: false, elapsed: 0 }; this.echo = { list: [], t: 0, armed: false }; this.deathCause = ''; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
+    this.brainOff = new Set(); this.flood = null; this.rings = []; this.dashLog = []; this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.hour = { on: false, t: 0, warn: false, still: 0, awake: false, elapsed: 0, grace: 0 }; this.echo = { list: [], t: 0, armed: false }; this.deathCause = ''; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
     this.apex = true; this.snaps = []; this.guardedHit = false; // apex skeletons (castle only); the hero snapshot ring
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
@@ -229,7 +229,7 @@ export class Game {
     this.scaleStage = this.mode === 'castle' ? 0 : index; // what scales numbers (trap damage, barricade HP, cooldown fallbacks): castle difficulty comes from the floor, tier and cast, so the Belfry's stage index 2 raises nothing (#69 D3)
     const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
-    this.hour = { on: castle && this.floor >= BELFRY_FROM && this.floor < KEEPER_FLOOR, t: 0, warn: false, still: 0, awake: false, elapsed: 0 }; this.echo = { list: [], t: 0, armed: false}; // a floor load restarts the clock and clears the Echo
+    this.hour = { on: castle && this.floor >= BELFRY_FROM && this.floor < KEEPER_FLOOR, t: 0, warn: false, still: 0, awake: false, elapsed: 0, grace: 0 }; this.echo = { list: [], t: 0, armed: false}; // a floor load restarts the clock and clears the Echo
     this.tier = tier; this.gaps = []; this.snaps = []; this.flood = null; this.rings = []; this.dashLog = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
@@ -593,7 +593,7 @@ export class Game {
     if (this.state !== 'playing' || this.eliteBeat > 0) return; // an elite that died this frame: the beat starts now, no chest, portal or projectile step
     if (!stopped) for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-      if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
+      if (this.hour.grace <= 0 && Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
         if (this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy) && b.hex) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
@@ -618,6 +618,7 @@ export class Game {
   tickHour(dt) {
     const h = this.hour, p = this.player;
     if (!h.on) return;
+    if (h.grace > 0) h.grace = Math.max(0, h.grace - dt);
     if (h.still > 0) { h.elapsed += dt; if ((h.still -= dt) <= 0) this.resumeHour(); return; }
     h.t += dt;
     if (!h.warn && h.t >= HOUR_PERIOD - HOUR_WARN) { h.warn = true; this.emit('hour', { state: 'warn', duration: HOUR_WARN }); }
@@ -627,7 +628,7 @@ export class Game {
   }
   // Resume: an attack whose contact is under STILL_GRACE s away is pushed back to it (a heavy glints again), then the Echo's replay clock starts.
   resumeHour() {
-    this.hour.still = 0;
+    this.hour.still = 0; this.hour.grace = STILL_GRACE; // no enemy hit (strike, travel, projectile) can land on the hero for STILL_GRACE s
     for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; }
     this.echo.armed = this.echo.list.length > 0; this.echo.t = 0;
     this.emit('hour', { state: 'resume' });
@@ -3054,6 +3055,7 @@ export class Game {
   hurt(amount, dir, hazard = false, heavy = false) {
     const p = this.player;
     if (this.state !== 'playing') return;
+    if (this.hour.grace > 0 && !hazard && this.deathCause !== 'echo') return; // resume grace: enemy hits wait
     if (p.invulnerable > 0) { if (!hazard) this.perfectDodge(heavy); return; } // a trap is never a perfect dodge
     const actual = Math.max(1, Math.round(amount * p.armor * p.takenMul)); // a landed hit always costs at least 1 HP
     const castle = this.mode === 'castle';

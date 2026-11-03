@@ -6000,3 +6000,17 @@ test('the Hour and the Echo are deterministic for a seed', () => {
   };
   assert.equal(run(), run());
 });
+
+test('the resume grace: a frozen projectile and a live strike cannot hurt the hero for STILL_GRACE s', () => {
+  const { game, player } = castle(7, BELFRY_FROM);
+  toll(game, 60);
+  game.projectiles.push({ x: player.x + 5, y: player.y - 20, vx: 0, vy: 0, r: 8, damage: 10, life: 9 });
+  const e = enemy(game, player.x + 20); e.cd = 99; e.strikeT = 1; e.strikeMax = 1; e.struck = false; e.heavy = true; e.heavyKind = 'rush'; e.from = { x: e.x, y: e.y }; e.warn = { to: e.x }; e.dmg = 10;
+  while (game.hour.still > 0) game.update(1 / 120, {});
+  const blood = player.blood;
+  game.hurt(10, 1); // a direct enemy hit inside the grace is refused
+  advance(game, STILL_GRACE - .06);
+  assert.equal(player.blood, blood); assert.ok(game.projectiles.length >= 1, 'the projectile is not consumed');
+  advance(game, .3);
+  assert.ok(player.blood < blood || game.projectiles.length === 0, 'it can hit after the grace');
+});
