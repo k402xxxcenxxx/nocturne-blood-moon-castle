@@ -1,4 +1,8 @@
 // Original procedural sound: no downloads, samples, or autoplay dependency.
+// Enemy warning cues that do not start with 'tell': they must stay clear and unpitched during slow motion.
+const DRY = new Set(['heavyWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
+  'kingTellSlash', 'kingTellString', 'kingTellTurn', 'kingTellSlam', 'kingTellCharge', 'kingTellDescent', 'kingTellVolley', 'kingTellRitual',
+  'kingJudgement', 'kingJudgementB', 'kingBloodMoon', 'kingLongNight', 'kingCommit', 'knightCommit', 'wardenHorn', 'wardenBellow', 'wardenRattle', 'gateDrop']);
 export class AudioSystem {
   constructor() {
     this.muted = false;
@@ -238,7 +242,7 @@ export class AudioSystem {
     const amount = Number.isFinite(intensity) ? Math.max(0, Math.min(intensity, 1.6)) : 1;
     if (!amount) return;
     const at = ctx.currentTime + 0.005;
-    const dry = /^(tell|glint|slow|accent)/.test(name); // never filtered or pitched by slow motion
+    const dry = /^(tell|glint|slow|accent)/.test(name) || DRY.has(name); // never filtered or pitched by slow motion
     const tone = (type, frequency, duration, gain, slide, delay = 0) =>
       this._voice(type, frequency, duration, gain * amount, at + delay, slide, false, dry);
     const notes = (frequencies, speed = 0.09, gain = 0.12) => frequencies.forEach((f, i) => {
