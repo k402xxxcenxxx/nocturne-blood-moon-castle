@@ -13,7 +13,7 @@ const [lo, hi = lo] = arg('floors', '1-3').split('-').map(Number), start = +arg(
 const rows = new Map(); // floor -> accumulated stats
 const row = f => { if (!rows.has(f)) rows.set(f, { runs: 0, clears: 0, deaths: {}, timeouts: 0, clearTime: 0, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, fights: 0, fg: 0, ft: 0, fs: 0, fb: 0, ff: 0 }); return rows.get(f); };
 const DT = 1 / 60;
-const duelN = +arg('duel', 0), through = +arg('through', 10); // --run --through 20 plays the Belfry placeholder floors 11-20 as well
+const duelN = +arg('duel', 0), through = +arg('through', hi > 10 ? 20 : 10); // --floors 1-20 (or --through 20) plays the Belfry placeholder floors 11-20 as well
 const foeTypes = (type, n) => type.startsWith('mix:') ? type.slice(4).split(',') : Array(n).fill(type);
 
 export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics = [], tier = 0, cap: capSeconds = 60, skill: botSkill = 'expert', type = 'skeleton', floor = 1, brainOff = false } = {}) {

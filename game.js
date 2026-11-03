@@ -119,7 +119,8 @@ function handleEvent(e) {
       announcement.querySelector('span').textContent = t(`stage.${e.stage}.subtitle`);
       announcement.classList.add('show'); announceTime = 2.8;
       if (e.mode === 'castle' && e.floor === 1) toast(t('toast.apex')); // the skeletons are apex-trained from floor 1
-      [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === e.stage ? 'current' : i < e.stage ? 'done' : ''; });
+      const chapter = e.mode === 'castle' && e.stage === 2 ? 1 : e.stage; // the Belfry is chapter II of the castle: the dots follow the label
+      [...$('stage-dots').children].forEach((dot, i) => { dot.className = i === chapter ? 'current' : i < chapter ? 'done' : ''; });
       [...$('journey-stages').children].forEach((item, i) => { item.className = i === e.stage ? 'active' : i < e.stage ? 'done' : ''; });
       $('relic-tray').innerHTML = relicTray();
       if (e.mode === 'castle') { /* castle records come in step 3 */ } else if (e.mode === 'endless') records.bestFloor = Math.max(records.bestFloor, e.floor); else records.best = Math.max(records.best, e.stage + 1);

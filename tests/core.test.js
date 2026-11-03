@@ -5866,9 +5866,36 @@ test('belfry frame: a death on floors 11-20 returns to the second Vigil with the
   const first = new Game(() => {}, 3, 'castle'); first.start(); first.setWeapon('spear'); first.descend(); first.relics = ['edge']; first.loadFloor(5); first.state = 'dead'; first.enterRest(); assert.deepEqual(first.relics, [], 'the first Vigil still clears relics');
 });
 
+function modesHash() { // Normal stages 0-4 and Endless floors, scripted hero: state and event stream
+  const h = createHash('sha1');
+  for (const mode of ['normal', 'endless']) for (const seed of [2, 6]) for (const lvl of mode === 'normal' ? [0, 1, 2, 3, 4] : [1, 4, 5, 10]) {
+    const ev = []; const g = new Game(e => ev.push(e.type), seed, mode); g.start(); g.state = 'playing'; if (mode === 'endless') g.loadFloor(lvl); else g.loadStage(lvl); g.state = 'playing';
+    const p = g.player;
+    for (let step = 0; step < 900 && g.state === 'playing'; step++) {
+      const f = g.enemies.filter(e => e.hp > 0).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0], d = f ? f.x - p.x : 1, close = f && Math.abs(d) < p.reach - 20;
+      g.update(1 / 60, { attack: step % 240 < 150, right: !close && d > 0, left: !close && d < 0, jump: step % 97 === 0, dash: step % 311 === 0, magic: step % 400 === 0 });
+      if (step % 30 === 0) h.update(JSON.stringify([g.state, Math.round(p.x), Math.round(p.hp), g.stage, g.enemies.map(e => [e.type, Math.round(e.x), Math.round(e.hp), +e.tell.toFixed(2)]), g.traps.map(t => t.damage), g.obstacles.map(o => o.hp)]));
+    }
+    h.update(ev.join(','));
+  }
+  return h.digest('hex').slice(0, 16);
+}
+
 test('belfry frame: leaveKing returns to floor 20, the Belfry placeholder cast is built from existing enemies with brains, and Normal and Endless never see any of it', () => {
   const g = new Game(() => {}, 4, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.challengeKing = Game.prototype.challengeKing; g.state = 'sliceEnd'; assert.equal(g.challengeKing(), true); g.state = 'dead'; assert.equal(g.leaveKing(false), true); assert.equal(g.floor, KEEPER_FLOOR); assert.equal(g.state, 'sliceEnd');
   const types = new Set(); for (let seed = 1; seed <= 12; seed++) for (const f of [11, 14, 17, 19]) { const b = new Game(() => {}, seed, 'castle'); b.start(); b.setWeapon('spear'); b.descend(); b.loadFloor(f); for (const e of b.enemies) types.add(e.type); const ranged = b.enemies.filter(e => e.type === 'priest' || e.type === 'mage').length; assert.ok(ranged <= 2, `at most 2 ranged on ${f}`); assert.ok(b.enemies.some(e => e.type === 'bat')); }
   assert.ok([...types].every(t => ['skeleton', 'shield', 'spear', 'knight', 'bat', 'priest', 'mage'].includes(t)), [...types].join());
-  const n = new Game(() => {}, 5, 'normal'); n.loadStage(2); assert.equal(n.enemies.every(e => !e.add), true); assert.equal(n.floor, 1);
+  assert.equal(modesHash(), '51cf5fb532e28223', 'Normal and Endless replay bit-for-bit (golden from main before #69)');
+});
+
+test('belfry frame: floor 11 scales nothing that floor 9 does not (trap damage, barricade HP, cooldown fallbacks), while Normal keeps its stage scaling', () => {
+  const at = f => { const g = new Game(() => {}, 5, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(f); g.brainOff = new Set(['spear', 'skeleton']); return g; };
+  const nine = at(9), eleven = at(11), nineteen = at(19);
+  for (const g of [eleven, nineteen]) {
+    assert.equal(g.stage, 2); assert.equal(g.scaleStage, 0, 'the Belfry art index scales nothing'); assert.equal(g.tier, nine.tier);
+    assert.ok(g.traps.length > 0 && g.traps.every(t => t.damage === 10), 'trap damage like floor 9 (10)'); assert.ok(g.obstacles.filter(o => o.kind === 'barricade').every(o => o.hp === 38), 'barricade HP like floor 9');
+    assert.equal(g.lightCd({ type: 'orc' }), nine.lightCd({ type: 'orc' })); assert.equal(g.spearCd(), nine.spearCd());
+  }
+  assert.ok(nine.traps.every(t => t.damage === 10));
+  const normal = new Game(() => {}, 5, 'normal'); normal.loadStage(2); assert.equal(normal.scaleStage, 2); assert.ok(normal.traps.every(t => t.damage > 10), 'Normal still scales by stage');
 });
