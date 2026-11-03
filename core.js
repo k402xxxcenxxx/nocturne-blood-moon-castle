@@ -68,6 +68,8 @@ export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon f
 export const WARDEN_HP = 1100; // user decision 2026-10-31: the boss is the gate the 5.3x regulars guard, so it carries more than the regulars it commands (was 520)
 // The Timeless Belfry (#69): floors 11-19 load Belfry rooms (stage index 2), floor 20 is a boss slot (the Warden's gate until the Keeper lands), the third Vigil ends the slice. A death on 11-20 returns to the second Vigil.
 export const SLICE_FLOORS = 20, BELFRY_FROM = 11, KEEPER_FLOOR = 20;
+// The Stopped Hour and the Echo (#69 PR 2, castle floors BELFRY_FROM..KEEPER_FLOOR-1): every HOUR_PERIOD s the field freezes for STILL s. A hero above 100 blood acts in it; each swing is recorded and replayed ECHO_DELAY s after the resume as a box that hurts only the hero. Playtest starting points.
+export const HOUR_PERIOD = 18, HOUR_WARN = 1.5, STILL = 1.4, STILL_GRACE = .45, ECHO_DELAY = 1.0, ECHO_DAMAGE = 14;
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 // The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
 const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
@@ -194,7 +196,7 @@ export class Game {
     this.souls = 0;
     this.relics = [];
     this.player = basePlayer();
-    this.brainOff = new Set(); this.flood = null; this.rings = []; this.dashLog = []; this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
+    this.brainOff = new Set(); this.flood = null; this.rings = []; this.dashLog = []; this.curseT = 0; this.habits = {}; this.pair = null; this.pairCd = 0; this.hour = { on: false, t: 0, warn: false, still: 0, awake: false, elapsed: 0 }; this.echo = { list: [], t: 0, armed: false }; this.deathCause = ''; this.lastHurt = -9; this.frenzyAt = -9; this.wasFrenzy = false; // brains: types switched off (?test), hero answer memory, the running pair, pair cooldown
     this.apex = true; this.snaps = []; this.guardedHit = false; // apex skeletons (castle only); the hero snapshot ring
     this.step = 0; // last frame's dt (denied token requests count their wait with it)
     this.pools = []; this.assaulted = null; this.fightStats = null; this.fightOn = false; this.vigil = 0; this.vigilT = 0; this.kingT = 0; // Warden fight: blood pools, stats, rest-point number (1 or 2), kill-to-Vigil timer
@@ -227,6 +229,7 @@ export class Game {
     this.scaleStage = this.mode === 'castle' ? 0 : index; // what scales numbers (trap damage, barricade HP, cooldown fallbacks): castle difficulty comes from the floor, tier and cast, so the Belfry's stage index 2 raises nothing (#69 D3)
     const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
+    this.hour = { on: castle && this.floor >= BELFRY_FROM && this.floor < KEEPER_FLOOR, t: 0, warn: false, still: 0, awake: false, elapsed: 0 }; this.echo = { list: [], t: 0, armed: false}; // a floor load restarts the clock and clears the Echo
     this.tier = tier; this.gaps = []; this.snaps = []; this.flood = null; this.rings = []; this.dashLog = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
     const total = plan ? plan.length : spec.count;
@@ -515,7 +518,7 @@ export class Game {
   update(dt, input = {}) {
     if (this.state !== 'playing') return;
     dt = Math.min(dt, 1 / 30);
-    this.time += dt;
+    if (!(this.hour.still > 0)) this.time += dt; // the Stopped Hour freezes game time, so every absolute-time enemy timer waits too
     this.elapsed += dt;
     if (this.eliteBeat > 0) { // frozen beat after an elite dies: nothing updates, then the reward pick opens
       if ((this.eliteBeat -= dt) <= 0) this.rollChoices('elite');
@@ -524,12 +527,15 @@ export class Game {
     if (this.freeze > 0) { this.freeze -= dt; return; }
     const p = this.player;
     this.step = dt;
+    this.tickHour(dt);
+    const stopped = this.hour.still > 0;
+    if (stopped && !this.hour.awake) return; // a stilled hero: no input, nothing moves but the clock
     if (this.vigilT > 0 && (this.vigilT -= dt) <= 0) { this.enterVigil(); return; }
     if (this.kingT > 0 && (this.kingT -= dt) <= 0) { this.leaveKing(true); return; }
     if (this.fightOn && this.enemies.some(e => e.armored && e.engaged)) this.fightStats.time += dt;
-    this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
+    if (!stopped) this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
     if (p.frenzy && !this.bossDown()) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
-    this.updatePlatforms(dt);
+    if (stopped) for (const pl of this.platforms) pl.dx = pl.dy = 0; else this.updatePlatforms(dt);
     for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -569,26 +575,30 @@ export class Game {
     }
     if (p.plunge === 2) this.plungeHit(oldY);
     if (p.attack > .035) this.hitTargets();
-    if (this.mode === 'castle' && this.apex) { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - APEX_REACT - .1) this.snaps.shift(); }
+    if (this.mode === 'castle' && this.apex && !stopped) { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - APEX_REACT - .1) this.snaps.shift(); }
     if (p.frenzy && !this.wasFrenzy) this.frenzyAt = this.time;
     this.wasFrenzy = p.frenzy;
-    for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
-    this.updatePair(dt);
-    if (this.curseT > 0) this.curseT = Math.max(0, this.curseT - dt);
-    this.updateTraps(dt);
-    for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
-    if (this.rings.length || this.obstacles.length) this.updateWardenField(dt);
-    if (this.flood) this.updateFlood(dt);
+    if (!stopped) {
+      this.stepEcho(dt);
+      if (this.state !== 'playing') return;
+      for (const e of this.enemies) if (e.hp > 0) this.updateEnemy(e, dt);
+      this.updatePair(dt);
+      if (this.curseT > 0) this.curseT = Math.max(0, this.curseT - dt);
+      this.updateTraps(dt);
+      for (const o of this.obstacles) o.flash = Math.max(0, o.flash - dt);
+      if (this.rings.length || this.obstacles.length) this.updateWardenField(dt);
+      if (this.flood) this.updateFlood(dt);
+    }
     this.updateShots(dt);
     if (this.state !== 'playing' || this.eliteBeat > 0) return; // an elite that died this frame: the beat starts now, no chest, portal or projectile step
-    for (const b of this.projectiles) {
+    if (!stopped) for (const b of this.projectiles) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (Math.abs(b.x - p.x) < p.w / 2 + b.r && b.y > p.y - p.h && b.y < p.y + 4) {
         if (this.hurt(b.damage, Math.sign(b.vx), false, !!b.heavy) && b.hex) this.hex('priest'); b.life = 0; // a shot that meets the hero is consumed, also while a dash shields them
         if (this.state !== 'playing') return;
       }
     }
-    this.projectiles = this.projectiles.filter(b => b.life > 0 && b.x > 0 && b.x < this.worldWidth);
+    if (!stopped) this.projectiles = this.projectiles.filter(b => b.life > 0 && b.x > 0 && b.x < this.worldWidth);
     for (const item of this.pickups) {
       item.age += dt;
       const d = Math.hypot(item.x - p.x, item.y - (p.y - 25));
@@ -596,13 +606,55 @@ export class Game {
       if (d < 25) { p.hp = Math.min(p.maxHp, p.hp + 14); item.dead = true; this.emit('heal', { x: p.x, y: p.y - 70, amount: 14 }); }
     }
     this.pickups = this.pickups.filter(i => !i.dead);
-    this.updatePools(dt);
+    if (!stopped) this.updatePools(dt);
     this.updateChests();
     if (this.state !== 'playing') return;
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
     if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
+  }
+  // The Stopped Hour clock (castle floors 11-19): warn HOUR_WARN s before the toll, freeze for STILL s, then resume. Runs on dt, so pause, picks, hit-stop and the elite beat (all return before it) stop it.
+  tickHour(dt) {
+    const h = this.hour, p = this.player;
+    if (!h.on) return;
+    if (h.still > 0) { h.elapsed += dt; if ((h.still -= dt) <= 0) this.resumeHour(); return; }
+    h.t += dt;
+    if (!h.warn && h.t >= HOUR_PERIOD - HOUR_WARN) { h.warn = true; this.emit('hour', { state: 'warn', duration: HOUR_WARN }); }
+    if (h.t < HOUR_PERIOD) return;
+    Object.assign(h, { t: 0, warn: false, still: STILL, elapsed: 0, awake: p.blood > 100 });
+    this.emit('hour', { state: 'stop', awake: h.awake });
+  }
+  // Resume: an attack whose contact is under STILL_GRACE s away is pushed back to it (a heavy glints again), then the Echo's replay clock starts.
+  resumeHour() {
+    this.hour.still = 0;
+    for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; }
+    this.echo.armed = this.echo.list.length > 0; this.echo.t = 0;
+    this.emit('hour', { state: 'resume' });
+  }
+  // Records a sword attack made by the awake hero in the Stopped Hour: boxes are { x0, x1, y0, y1 } (feet-line overlap like the hero's own hit checks), fixed where the swing happened.
+  recordEcho(kind, boxes, dur) {
+    const h = this.hour, p = this.player;
+    if (!(h.still > 0 && h.awake)) return;
+    this.echo.list.push({ kind, off: h.elapsed, x: p.x, y: p.y, dir: p.dir, boxes, dur, state: 0, hit: false });
+    this.emit('echo', { state: 'record', x: p.x, y: p.y, box: boxes[0], boxes });
+  }
+  sweepBox(reach, y0, y1) { const p = this.player; return { x0: Math.min(p.x, p.x + p.dir * reach), x1: Math.max(p.x, p.x + p.dir * reach), y0: p.y + y0, y1: p.y + y1 }; }
+  stepEcho(dt) {
+    const ec = this.echo, p = this.player;
+    if (!ec.armed) return;
+    ec.t += dt;
+    for (const g of ec.list) {
+      const start = ECHO_DELAY + g.off;
+      if (g.state === 0 && ec.t >= start) { g.state = 1; this.emit('echo', { state: 'replay', x: g.x, y: g.y, box: g.boxes[0], boxes: g.boxes }); }
+      if (g.state !== 1) continue;
+      if (ec.t >= start + g.dur) { g.state = 2; continue; }
+      if (!g.hit && g.boxes.some(b => p.x + p.w / 2 >= b.x0 && p.x - p.w / 2 <= b.x1 && p.y >= b.y0 && p.y - p.h <= b.y1)) { // once per swing; an i-frame dodge spends it too
+        g.hit = true; this.deathCause = 'echo'; this.hurt(ECHO_DAMAGE, Math.sign(p.x - g.x) || g.dir); this.deathCause = '';
+        if (this.state !== 'playing') return;
+      }
+    }
+    if (ec.list.every(g => g.state === 2)) { ec.list = []; ec.armed = false; this.emit('echo', { state: 'end' }); }
   }
   // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.
   updatePlatforms(dt) {
@@ -645,6 +697,7 @@ export class Game {
     if (p.dashCd > 0 || p.plunge || p.attack > p.attackLen * .26 || (assault && p.dash > 0)) { if (!fromBuffer) p.dashBuf = .16; return; } // an attack can only be cancelled after 74% of it has played; an assault dash is one at a time
     p.attack = 0; p.dashBuf = 0; p.otherInv = p.invulnerable; p.perfect = assault ? 0 : .15; p.perfectUsed = assault;
     p.dash = .18; p.dashCd = assault ? 0 : p.dashCooldown;
+    if (assault) this.recordEcho('assault', [{ ...this.sweepBox(131, -p.h, 0), x0: Math.min(p.x, p.x + p.dir * 131) - 8, x1: Math.max(p.x, p.x + p.dir * 131) + 8 }], .18);
     if (this.mode === 'castle') { this.dashLog.push(this.time); if (this.dashLog.length > 6) this.dashLog.shift(); } // the Warden reads dash spam
     if (!assault) p.invulnerable = Math.max(p.invulnerable, Math.min(.23 + p.dashShield, p.dashCooldown * .8)); // i-frames cover at most 80% of the cooldown, so chained dashes always leave a gap; an assault has none
     p.vy = Math.min(p.vy, 0);
@@ -682,6 +735,7 @@ export class Game {
     p.attack = p.attackLen = .24 * quick; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed * quick); // never shorter than the swing animation
     this.hitSet = new Set(); this.swingShields = new Set(); this.flameUsed = this.chainUsed = false;
     this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo', cost });
+    this.recordEcho(thrust ? 'thrust' : 'combo', [thrust ? this.sweepBox(155 + Math.min(60, 20 * this.stacks('pierce')), -48, -18) : this.sweepBox(p.reach + (p.combo === 3 ? 24 : 0), -88, -4)], Math.max(.1, p.attackLen - .035));
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
     if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, BEAM_REACH / 780, 10);
     this.hitTargets();
@@ -801,6 +855,7 @@ export class Game {
     if (!p.grounded || p.plunge !== 2) return;
     const radius = p.y - p.plungeY >= 40 ? p.plungeRadius : 0; // short drops: fall hits only, radius 0 = no shockwave
     p.plunge = 3; p.plungeT = .09;
+    this.recordEcho('plunge', [{ x0: p.x - p.w / 2, x1: p.x + p.w / 2, y0: p.plungeY - p.h, y1: p.y }].concat(radius ? [{ x0: p.x - radius, x1: p.x + radius, y0: p.y - 100, y1: p.y + 4 }] : []), .09);
     this.emit('plunge', { x: p.x, y: p.y, radius });
     if (!radius) return;
     const vow = this.stacks('plunge');
@@ -3016,7 +3071,7 @@ export class Game {
   heroDown(heavy, cause = '') {
     const p = this.player;
     this.state = 'dead'; this.curseT = 0; p.plunge = 0; p.move = ''; this.endFrenzy(); this.endFight(false);
-    this.emit('death', { heavy, cause });
+    this.emit('death', { heavy, cause: cause || this.deathCause });
   }
   finishStage() {
     this.player.plunge = 0; this.player.move = '';

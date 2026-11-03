@@ -122,7 +122,9 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       if (game.state !== 'playing' || game.freeze > 0 || game.eliteBeat > 0) return last; // the core ignores this frame; a pending impulse waits
       const now = game.time;
       track(game, now);
-      const want = (decider || decide)(game, now);
+      if (game.hour.still > 0 && !game.hour.awake) return last; // a stilled hero: the core ignores input
+      const want = (decider || decide)(game, now), off = echoStep(game);
+      if (off) Object.assign(want, { dir: off, attack: false, urgent: true }); // step off its own Echo box (drawn since the swing was recorded)
       while (presses.length && presses[0] < now - 1) presses.shift();
       const out = {};
       const allow = (kind, key) => { // rising edges cost budget; attacks and non-urgent steps leave a reserve for dodges
@@ -145,6 +147,16 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       return out;
     },
   };
+  // The Echo (#69): the direction to walk to leave every pending replay box once the reaction delay has passed since the resume; 0 when clear.
+  function echoStep(game) {
+    const ec = game.echo, p = game.player;
+    if (!ec.armed || ec.t < skill.reaction || game.hour.still > 0) return 0;
+    const live = ec.list.filter(g => g.state < 2).flatMap(g => g.boxes);
+    const hit = x => live.some(b => x + p.w / 2 >= b.x0 && x - p.w / 2 <= b.x1 && p.y >= b.y0 && p.y - p.h <= b.y1);
+    if (!hit(p.x)) return 0;
+    for (let d = 10; d <= 400; d += 10) for (const sd of [p.dir, -p.dir]) { const x = p.x + sd * d; if (x > 40 && x < game.worldWidth - 40 && !hit(x)) return sd; }
+    return 0;
+  }
   function track(game, now) {
     const p = game.player;
     for (const e of game.enemies) {

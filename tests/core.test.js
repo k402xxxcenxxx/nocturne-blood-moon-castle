@@ -5899,3 +5899,104 @@ test('belfry frame: floor 11 scales nothing that floor 9 does not (trap damage, 
   assert.ok(nine.traps.every(t => t.damage === 10));
   const normal = new Game(() => {}, 5, 'normal'); normal.loadStage(2); assert.equal(normal.scaleStage, 2); assert.ok(normal.traps.every(t => t.damage > 10), 'Normal still scales by stage');
 });
+
+// ---- The Stopped Hour and the Echo (#69 PR 2) ----
+import { HOUR_PERIOD, HOUR_WARN, STILL, STILL_GRACE, ECHO_DELAY, ECHO_DAMAGE } from '../core.js';
+const hourTypes = events => events.filter(e => e.type === 'hour').map(e => e.state);
+function toll(game, blood) { game.player.blood = blood; game.hour.t = HOUR_PERIOD - .01; advance(game, .03); } // jump the clock to the toll
+
+test('the Hour runs only on castle floors 11-19: warn, toll and resume on the clock', () => {
+  const { game, events } = castle(7, BELFRY_FROM);
+  game.player.blood = 60;
+  advance(game, HOUR_PERIOD - HOUR_WARN - .1);
+  assert.deepEqual(hourTypes(events), []);
+  advance(game, .2);
+  assert.deepEqual(hourTypes(events), ['warn']);
+  advance(game, HOUR_WARN + .05);
+  assert.deepEqual(hourTypes(events), ['warn', 'stop']);
+  assert.equal(game.hour.awake, false);
+  advance(game, STILL + .05);
+  assert.deepEqual(hourTypes(events), ['warn', 'stop', 'resume']);
+  assert.equal(game.hour.still, 0);
+  for (const floor of [1, 10, KEEPER_FLOOR]) {
+    const c = castle(7, floor); c.game.player.blood = 60; advance(c.game, HOUR_PERIOD + 2);
+    assert.equal(c.game.hour.on, false); assert.deepEqual(hourTypes(c.events), []);
+  }
+  for (const mode of ['normal', 'endless']) {
+    const events2 = []; const g = new Game(e => events2.push(e), 3, mode); g.start(); g.state = 'playing';
+    advance(g, HOUR_PERIOD + 2); assert.equal(g.hour.on, false); assert.deepEqual(hourTypes(events2), []);
+  }
+});
+
+test('the Hour clock waits during hit-stop and picks; a stilled hero ignores input and nothing hurts it', () => {
+  const { game, player } = castle(7, BELFRY_FROM);
+  game.hour.t = 5; game.freeze = .5; advance(game, .3);
+  assert.equal(game.hour.t, 5);
+  game.freeze = 0;
+  const e = enemy(game, player.x + 30); e.tell = .2; e.cd = 5;
+  toll(game, 60);
+  const t0 = e.tell, x0 = player.x, blood = player.blood, time = game.time;
+  advance(game, .6, { right: true, attack: true, jump: true });
+  assert.equal(e.tell, t0); assert.equal(player.x, x0); assert.equal(player.attack, 0); assert.equal(player.jumps, 0);
+  assert.equal(player.blood, blood); assert.equal(game.time, time);
+  advance(game, STILL);
+  assert.equal(game.hour.still, 0);
+});
+
+test('the resume grace pushes an imminent contact back to STILL_GRACE', () => {
+  const { game, player } = castle(7, BELFRY_FROM);
+  const e = enemy(game, player.x + 30); e.tell = .1; e.cd = 5;
+  const far = enemy(game, player.x + 400); far.tell = 1.2; far.cd = 5;
+  toll(game, 60); while (game.hour.still > 0) game.update(1 / 120, {}); // stop on the resume frame
+  assert.ok(e.tell >= STILL_GRACE - 1 / 120 - 1e-9, `tell ${e.tell}`);
+  assert.ok(far.tell > 1.1);
+});
+
+test('an awake hero acts, the field stays frozen, and every swing is replayed as a box that hurts only the hero once', () => {
+  const { game, player, events } = castle(7, BELFRY_FROM);
+  const target = enemy(game, player.x + 60, { hp: 900 }); target.cd = 5; target.tell = 0;
+  toll(game, 150);
+  assert.equal(game.hour.awake, true);
+  const hp = target.hp, ex = target.x, gx = player.x, cd = target.cd;
+  advance(game, .1, { attack: true });
+  assert.ok(target.hp < hp, 'the hit lands in the Hour'); assert.equal(target.x, ex); assert.equal(target.cd, cd);
+  const rec = events.filter(e => e.type === 'echo' && e.state === 'record');
+  assert.ok(rec.length >= 1);
+  const box = game.echo.list[0].boxes[0], snapshot = JSON.stringify(box);
+  advance(game, STILL);
+  assert.equal(game.hour.still, 0); assert.ok(game.echo.armed);
+  assert.equal(JSON.stringify(game.echo.list[0].boxes[0]), snapshot, 'the box stays where it was swung');
+  target.hp = 0; // keep the field quiet
+  game.enemies = [];
+  player.x = gx; player.invulnerable = 0; const before = player.blood;
+  advance(game, ECHO_DELAY - .3);
+  assert.equal(player.blood, before, 'nothing before the delay');
+  advance(game, .6);
+  assert.ok(player.blood < before, 'the Echo struck');
+  const hurts = events.filter(e => e.type === 'hurt' && e.amount === ECHO_DAMAGE).length;
+  assert.ok(hurts >= 1 && hurts <= rec.length, 'at most one hit per recorded swing');
+  advance(game, 3);
+  assert.ok(events.some(e => e.type === 'echo' && e.state === 'end')); assert.equal(game.echo.list.length, 0);
+});
+
+test('i-frames avoid the Echo, a lethal Echo reports death cause echo', () => {
+  const a = castle(7, BELFRY_FROM); a.game.enemies = [];
+  toll(a.game, 150); advance(a.game, .05, { attack: true }); advance(a.game, STILL);
+  a.player.invulnerable = 5; const blood = a.player.blood;
+  advance(a.game, ECHO_DELAY + 1);
+  assert.equal(a.player.blood, blood);
+  const b = castle(7, BELFRY_FROM); b.game.enemies = [];
+  toll(b.game, 150); advance(b.game, .05, { attack: true }); advance(b.game, STILL);
+  b.player.blood = 5; advance(b.game, ECHO_DELAY + 1);
+  assert.equal(b.game.state, 'dead');
+  assert.equal(b.events.find(e => e.type === 'death').cause, 'echo');
+});
+
+test('the Hour and the Echo are deterministic for a seed', () => {
+  const run = () => {
+    const { game, player } = castle(11, BELFRY_FROM); const e = enemy(game, player.x + 60, { hp: 900 });
+    toll(game, 150); advance(game, .5, { attack: true }); advance(game, STILL + 3);
+    return JSON.stringify([game.echo, game.hour, player.blood, e.hp, game.time]);
+  };
+  assert.equal(run(), run());
+});
