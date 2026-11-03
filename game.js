@@ -3,6 +3,7 @@ import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, 
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
+import { createSpectacle, resetFloor, decide as decideSlow, rowOf, ROWS, scaleAt, kAt, SPEC as SLOW } from './spectacle.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
@@ -15,6 +16,8 @@ const storedSettings = readSaved('nocturne-settings', {});
 const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, lang: detectLanguage(navigator.language), ...storedSettings };
 const records = { runs: 0, wins: 0, best: 0, bestFloor: 0, ...readSaved('nocturne-records', {}) };
 let game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
+// Situational slow motion (#53): spectacle.js decides, this file runs the clock. `slow` is the running one (curve, real time into it, tint, point, fast exit), `slowK` its 0..1 strength for the zoom, tint and audio.
+const spectacle = createSpectacle(); let slow = null, slowK = 0, pendingSlow = null, realTime = 0, lastFrenzyEnd = -99, slowTintK = 0;
 let phaseTime = 0, dustTimer = 0, shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
 let announceTime = 0, roomTime = 0, toastTime = 0, trailTimer = 0, returnState = null, modalKind = '', modalReturn = null, previousFocus = null;
 const held = new Map(), buffered = new Map();
@@ -102,8 +105,10 @@ function handleEvent(e) {
   { const gw = { gateDrop: 'gateDrop', gateLift: 'gateLift', wardenWake: 'wardenWake', ring: { low: 'ringLow', high: 'ringHigh' }[e.kind], ringNear: { low: 'ringNearLow', high: 'ringNearHigh' }[e.kind], wardenCall: e.horn ? 'wardenHorn' : 'wardenBellow', enemyTell: e.kind === 'call' && e.enemy === 'warden' && 'wardenHorn', enemyHeavy: e.enemy === 'warden' && { gate: 'tellGate', bell: 'tellBell', greatToll: 'tellGreatToll' }[e.kind] }[e.type]; if (gw) audio.play(gw, e.type === 'enemyTell' ? .6 : 1); } // Gate Warden brain (#62 PR 4)
   { const kx = { kingWake: 'kingWake', raise: 'raise', husk: 'husk', crownGuard: { start: 'crownGuardStart', counter: 'crownCounter', end: 'crownGuardEnd' }[e.state], flood: { tell: 'floodTell', rise: 'floodRise', end: 'floodEnd' }[e.state] }[e.type]; if (kx) audio.play(kx, e.type === 'husk' ? .8 : 1); } // Fallen King brain (#62 PR 5)
   if (e.type === 'enemyHeavy') { const h = { charge: e.enemy === 'knight' && 'tellCharge', turnrush: 'tellTurnrush', spin: 'tellSpin', pin: 'tellPin', vault: 'tellVault', herd: 'tellHerd', cover: 'tellRiteCover', high: 'tellRayHigh', crossfire: 'tellRayCross', impaler: 'tellSkewerImpale', landing: e.enemy === 'bat' ? 'tellDiveLand' : e.enemy === 'priest' ? 'tellRiteLand' : 'tellGreatLand' }[e.variant] || (e.enemy === 'spear' && { spin: 'tellSpin', pin: 'tellPin' }[e.kind]); if (h) audio.play(h, .9); } // brain heavies layer over the shared heavyWarn // apex skeleton guard / crush / backstep (#66)
+  noteSlow(e);
   switch (e.type) {
     case 'stage': {
+      resetFloor(spectacle, realTime); cancelSlow();
       clearInput(); camera = 0; particles = []; effects = []; trails = []; numbers = [];
       for (let i = bannerQueue.length; i--;) if (bannerQueue[i].elite) bannerQueue.splice(i, 1); // an elite sighted on the last floor is not on this one
       hitCount = 0; comboTime = 0; $('title-screen').hidden = true; $('touch-controls').hidden = false; $('objective').hidden = false;
@@ -357,7 +362,7 @@ function handleEvent(e) {
       if (e.blocked) { audio.play('assaultBlock'); rumble(3, .1); burst(e.x, e.y, '#cfd6e6', 8, 200, e.dir, 3); effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: e.dir, color: '#9aa3b5', s: .7 }); } // blocked: small grey spark, no blood
       else { audio.play('assaultHit'); rumble(5, .14); burst(e.x, e.y, '#e6d4ff', 14, 240, e.dir, 3); burst(e.x, e.y, '#bf6078', 8, 150); effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: e.dir, color: '#e6d4ff', s: 1.5 }); }
       break;
-    case 'frenzyEnd': audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
+    case 'frenzyEnd': lastFrenzyEnd = realTime; audio.setHeartbeat(false); audio.play('frenzyEnd'); break;
     case 'rest': vigilNo = e.vigil; audio.setHeartbeat(false); $('title-screen').hidden = true; $('touch-controls').hidden = false; clearInput(); audio.play('vigil'); $('relic-tray').innerHTML = e.vigil === 2 ? relicTray() : ''; openVigil(); break;
     case 'sliceEnd': kingResult = e.king || ''; audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); openResult(true); break;
     case 'heal': flashNumber({ ...e, amount: `+${e.amount}` }, '#8cddb3'); burst(e.x, e.y + 20, '#82c9a3', 8, 75); break;
@@ -848,6 +853,12 @@ function render(dt) {
   ctx.save(); ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#0b0d15'; ctx.fillRect(0, 0, viewWidth, 540);
   if (shakeTime > 0 && settings.shake) ctx.translate(Math.round((Math.random() - .5) * shakePower * 2), Math.round((Math.random() - .5) * shakePower));
+  let zoomed = false;
+  if (slow && !slow.reduced && slowK > 0) { // zoom punch-in around the event point, eased with the curve; the hero is kept in view
+    const z = 1 + .08 * slowK, hx = p.x - camera; let cx = slow.x - camera;
+    if ((hx - cx) * z + cx < 24 || (hx - cx) * z + cx > viewWidth - 24) cx = hx;
+    ctx.save(); zoomed = true; ctx.translate(cx, slow.y); ctx.scale(z, z); ctx.translate(-cx, -slow.y);
+  }
   drawScene(ctx, { camera, width: viewWidth, height: 540, time: worldTime, stage: game.stage, platforms: game.platforms, worldWidth: game.worldWidth });
   if (!title && game.mode === 'castle') for (const e of game.enemies) if (e.king && e.hp > 0 && e.bossPhase >= 3) { ctx.save(); ctx.globalAlpha = settings.shake ? .85 + .15 * Math.sin(worldTime * 2) : 1; ctx.fillStyle = '#8a102a30'; ctx.fillRect(0, 0, viewWidth, 540); ctx.restore(); break; } // Blood Moon: a red cast over the arena in the King's last phase
   ctx.save(); ctx.translate(-Math.round(camera), 0);
@@ -935,6 +946,7 @@ function render(dt) {
     }
   }
   drawEffects(dt); ctx.restore();
+  if (zoomed) ctx.restore();
   if (phaseTime > 0) { // phase roar: screen darkens, then a red pulse blooms on the moon (steady when reduced motion is on)
     const k = Math.max(0, Math.min(1, phaseTime / .4, (1.6 - phaseTime) / .15)), pulse = settings.shake ? .5 + .5 * Math.sin(phaseTime * 14) : 1;
     ctx.fillStyle = `rgba(8,2,10,${.55 * k})`; ctx.fillRect(0, 0, viewWidth, 540);
@@ -944,7 +956,15 @@ function render(dt) {
   if (damageFlash > 0) { ctx.fillStyle = `rgba(144,27,50,${damageFlash * .65})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (whiteFlash > 0) { ctx.fillStyle = `rgba(255,232,193,${whiteFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
   if (silverFlash > 0) { ctx.fillStyle = `rgba(214,224,255,${silverFlash * 3})`; ctx.fillRect(0, 0, viewWidth, 540); }
+  const sk = slow ? (slow.reduced ? slowTintK : slowK) : 0;
+  if (sk > 0) { ctx.fillStyle = `rgba(0,0,0,${.15 * sk})`; ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = .45 * sk; ctx.fillStyle = slowVignette(slow.tint); ctx.fillRect(0, 0, viewWidth, 540); ctx.globalAlpha = 1; } // cold silver (dodges, interrupts) or blood red (breaks, bosses)
   ctx.restore();
+}
+const slowVigCache = {}; let slowVigW = 0;
+function slowVignette(tint) { // cached like the frenzy vignette: no per-frame allocation, no ctx.filter
+  if (slowVigW !== viewWidth) { slowVigW = viewWidth; for (const o in slowVigCache) delete slowVigCache[o]; }
+  if (!slowVigCache[tint]) { const rgb = tint === 'red' ? '150,20,40' : '170,190,230', g = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.max(viewWidth, 540) * .7); g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(1, `rgba(${rgb},1)`); slowVigCache[tint] = g; }
+  return slowVigCache[tint];
 }
 let hudTimer = 0;
 let prevBlood = null; // castle blood meter feedback: no core event, so compare per frame
@@ -962,24 +982,55 @@ function watchLethal() { // lethal-debt tone: same rule as the HUD band; no allo
   const p = game.player;
   audio.setLethal(game.state === 'playing' && game.mode === 'castle' && game.debtLethal());
 }
+// --- Situational slow motion ---
+function noteSlow(e) { const row = rowOf(e); if (row && (!pendingSlow || ROWS[row].weight > pendingSlow.w)) pendingSlow = { e, w: ROWS[row].weight }; } // one per frame: the highest weight wins
+function cancelSlow() { if (slow || slowK) { slow = null; slowK = 0; slowTintK = 0; pendingSlow = null; audio.setSlow?.(0); } }
+function slowContext(e) {
+  const p = game.player, castle = game.mode === 'castle', live = game.enemies.filter(o => o.hp > 0);
+  return { castle, blood: p.blood, hp: p.hp, maxHp: p.maxHp, last: live.length <= 1, others: live.filter(o => Math.abs(o.x - e.x) > 20 && Math.abs(o.x - p.x) < 560).length, frenzyAgo: realTime - lastFrenzyEnd, boss: live.some(o => o.type === 'boss') };
+}
+function startSlow(e) {
+  if (game.state !== 'playing') return;
+  const d = decideSlow(spectacle, { ...e, ctx: slowContext(e), threat: game.threatIn() }, realTime, Math.random); // presentation only: Math.random, never game.rand()
+  if (!d) return;
+  if (d.kind === 'accent') { audio.play('accent', 1); if (settings.shake) { whiteFlash = Math.max(whiteFlash, .05); effects.push({ type: 'impact', x: e.x, y: e.y, life: .12, max: .12, color: d.tint === 'red' ? '#ffd0d6' : '#e8f0ff', s: 1.6 }); } return; }
+  slow = { c: d.curve, t: 0, tint: d.tint, x: e.x, y: e.y, boss: d.boss, reduced: !settings.shake, fast: false, fastT: 0, from: 1 };
+  audio.play('slowIn', d.boss ? 1.2 : 1);
+  if (settings.shake) effects.push({ type: 'impact', x: e.x, y: e.y, life: .1, max: .1, color: '#ffffff', s: 2.2 });
+}
+// The time scale for this frame (dt is real). A new threat (a glint about to show) ends the slow motion in 0.08 s; pause, death and any state change cancel it at once.
+function slowScale(dt) {
+  if (!slow) return 1;
+  if (game.state !== 'playing') { cancelSlow(); return 1; }
+  if (slow.reduced) { slow.t += dt; slowTintK = Math.max(0, Math.sin(Math.min(1, slow.t / .6) * Math.PI)); if (slow.t >= .6) { audio.play('slowOut'); slow = null; slowTintK = 0; } return 1; } // reduced motion: the tint only, 0.3 s in and out
+  if (!slow.fast && game.freeze <= 0 && game.threatIn() < gameLeft(slow)) { slow.fast = true; slow.from = scaleAt(slow.c, slow.t); slow.fastT = 0; }
+  let scale;
+  if (slow.fast) { slow.fastT += dt; scale = slow.from + (1 - slow.from) * Math.min(1, slow.fastT / SLOW.fastExit); slowK = (1 - scale) / (1 - slow.c.drop); if (slow.fastT >= SLOW.fastExit) { audio.play('slowOut'); slow = null; slowK = 0; audio.setSlow?.(0); return 1; } }
+  else { if (game.freeze <= 0) slow.t += dt; scale = scaleAt(slow.c, slow.t); slowK = kAt(slow.c, slow.t); if (slow.t >= slow.c.len) { audio.play('slowOut'); slow = null; slowK = 0; audio.setSlow?.(0); return 1; } }
+  audio.setSlow?.(slowK);
+  return scale;
+}
+function gameLeft(s) { let g = 0; for (let t = s.t; t < s.c.len; t += .03) g += scaleAt(s.c, t) * .03; return g; } // game seconds the rest of the curve would play
 function tick(now) {
-  const dt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; worldTime += dt;
-  if (ai) aiModal(dt);
+  const rdt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; realTime += rdt;
+  if (pendingSlow) { startSlow(pendingSlow.e); pendingSlow = null; }
+  const scale = slowScale(rdt), dt = rdt * scale; worldTime += rdt;
+  if (ai) aiModal(rdt);
   const input = ai && game.state === 'playing' ? ai.input(game) : getInput(), consume = game.state === 'playing' && game.freeze <= 0;
   game.update(dt, input);
   watchBlood(); watchHold(); watchLethal();
   if (consume) for (const control of impulseControls) if (input[control]) buffered.delete(control);
   if (game.state === 'playing' && game.player.dash > 0) { trailTimer -= dt; if (trailTimer <= 0) { trails.push({ ...game.player, life: .24, invulnerable: 0 }); trailTimer = .035; } }
-  shakeTime = Math.max(0, shakeTime - dt); if (!shakeTime) shakePower = 0;
-  phaseTime = Math.max(0, phaseTime - dt);
-  damageFlash = Math.max(0, damageFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt); silverFlash = Math.max(0, silverFlash - dt);
-  comboTime = Math.max(0, comboTime - dt); if (!comboTime) hitCount = 0;
-  if (announceTime > 0) { announceTime -= dt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
-  if (roomTime > 0) { roomTime -= dt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
+  shakeTime = Math.max(0, shakeTime - rdt); if (!shakeTime) shakePower = 0; // real-time UI and screen feedback keep the real clock; the world follows the scaled one
+  phaseTime = Math.max(0, phaseTime - rdt);
+  damageFlash = Math.max(0, damageFlash - rdt); whiteFlash = Math.max(0, whiteFlash - rdt); silverFlash = Math.max(0, silverFlash - rdt);
+  comboTime = Math.max(0, comboTime - rdt); if (!comboTime) hitCount = 0;
+  if (announceTime > 0) { announceTime -= rdt; if (announceTime <= 0) { $('stage-announcement').classList.remove('show'); if (game.state === 'playing' && game.roomIndex > 0) showRoom(game.stage, game.roomIndex); } }
+  if (roomTime > 0) { roomTime -= rdt; if (roomTime <= 0) $('room-banner').classList.remove('show'); }
   pumpBanner();
   if (pendingToast && announceTime <= 0) { toast(pendingToast); pendingToast = ''; }
-  if (toastTime > 0) { toastTime -= dt; if (toastTime <= 0) $('toast').classList.remove('show'); }
-  render(dt); hudTimer -= dt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
+  if (toastTime > 0) { toastTime -= rdt; if (toastTime <= 0) $('toast').classList.remove('show'); }
+  render(dt); hudTimer -= rdt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
 }
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
@@ -987,4 +1038,4 @@ syncGear();
 // Opt-in test handle: absent in normal play; useful for deterministic browser smoke checks.
 if (testMode) $('ai-toggle').hidden = false;
 if (testMode) $('ai-toggle').addEventListener('click', e => { toggleAI(); e.currentTarget.blur(); });
-if (testMode) window.__nocturne = { get game() { return game; }, audio, settings, startRun, clearInput, toggleAI, get ai() { return !!ai; } };
+if (testMode) window.__nocturne = { get game() { return game; }, get slow() { return slow; }, spectacle, audio, settings, startRun, clearInput, toggleAI, get ai() { return !!ai; } };

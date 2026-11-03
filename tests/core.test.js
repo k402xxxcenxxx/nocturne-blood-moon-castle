@@ -4918,7 +4918,7 @@ function skeletonHash() { // the refactor guard: a skeleton-only castle floor, s
 }
 
 test('brains: a skeleton-only castle floor replays bit-for-bit (hash updated for the halved stat profile)', () => {
-  assert.equal(skeletonHash(), 'c3aaaae865e8d907', 'hash of the scripted skeleton floor with the halved stat profile (user decision 2026-10-31; the PR 1 refactor hash 0edbaf3fe1ff4c49 was taken with the old x9.6 profile)');
+  assert.equal(skeletonHash(), '186c408138057b1f', 'hash of the scripted skeleton floor (the state part is unchanged since the halved profile: only the new interrupt event joined the stream) (user decision 2026-10-31; the PR 1 refactor hash 0edbaf3fe1ff4c49 was taken with the old x9.6 profile)');
 });
 
 test('brains: every castle regular type has one (the bosses do not); brainOff switches a type back to the #50 rules', () => {
@@ -5759,4 +5759,45 @@ test('PR 5 review: judgement gaps keep 60 px at the arena walls, the Long Night 
   const b = night(); b.game.kingPhase(b.k, 3); assert.deepEqual([b.k.night, b.k.chipT], [null, 0], 'and so does a phase change');
   const c = night(); c.game.wardenPhase = c.game.wardenPhase; const g = c.game.spawnEnemy('skeleton', 1500, 4); Object.assign(g, { add: true, tell: .85 }); c.game.kingFollow = () => 'string'; c.game.kingRecover(c.k, 'slash'); assert.equal(c.k.night, null, 'a follow-up held back by a husk\'s tell ends it');
   const d = kingBrainArena(1600, 1700, 200); d.k.bossPhase = 2; d.player.frenzy = true; d.game.kingStart(d.k, 'crownGuard'); advance(d.game, .5); d.player.invulnerable = 5; const x0 = d.player.x; d.game.damageEnemy(d.k, 30, 1, false, false, false, 17); assert.equal(d.player.x, x0, 'no shove when the riposte is absorbed');
+});
+
+// --- Situational slow motion (#53): the events and the read-only threat query ---
+test('slow motion events: stagger.cancelled is true only when a tell or a contact was cancelled (not in a walk or a recovery)', () => {
+  const run = prep => { const { game, player, events } = castle(42, 1); const e = enemy(game, player.x + 60); Object.assign(e, { maxPoise: 50, poise: 1, cd: 99 }); prep(e); game.damageEnemy(e, 1, 1, false, false, false, 10); return events.find(ev => ev.type === 'stagger'); };
+  assert.equal(run(e => { e.tell = .4; e.warn = { kind: 'slash' }; }).cancelled, true, 'a tell');
+  assert.equal(run(e => { e.strikeT = .1; }).cancelled, true, 'a contact in progress');
+  assert.equal(run(e => {}).cancelled, false, 'walking');
+  assert.equal(run(e => { e.recover = .5; e.punishable = true; }).cancelled, false, 'a recovery');
+});
+
+test('slow motion events: Eclipse emits one interrupt per cancelled wind-up with heavy set right, none for an idle enemy', () => {
+  const cast = prep => { const { game, player, events } = castle(42, 1); player.blood = 150; player.magicCd = 0; const e = enemy(game, player.x + 80); Object.assign(e, { cd: 99 }); prep(e); game.magic(); return evs(events, 'interrupt'); };
+  const light = cast(e => { e.tell = .4; e.warn = { kind: 'slash' }; }); assert.equal(light.length, 1); assert.equal(light[0].heavy, false); assert.equal(light[0].enemy, 'skeleton');
+  const heavy = cast(e => { e.tell = .6; e.heavy = true; e.heavyKind = 'cleave'; e.warn = { kind: 'cleave' }; }); assert.equal(heavy.length, 1); assert.equal(heavy[0].heavy, true);
+  assert.equal(cast(e => {}).length, 0, 'an idle enemy is not interrupted');
+});
+
+test('slow motion events: perfectDash carries heavy when the dodged hit was a heavy', () => {
+  const dodge = heavy => { const { game, player, events } = castle(42, 1); Object.assign(player, { perfect: .15, perfectUsed: false, otherInv: 0, invulnerable: .2 }); game.hurt(heavy ? 100 : 10, 1, false, heavy); return evs(events, 'perfectDash'); };
+  assert.equal(dodge(true)[0].heavy, true); assert.equal(dodge(false)[0].heavy, false);
+  const toll = castle(42, 10), w = toll.game.spawnWarden(1200); Object.assign(toll.player, { perfect: .15, perfectUsed: false, otherInv: 0, invulnerable: .2 }); toll.game.wardenToll(w); assert.equal(evs(toll.events, 'perfectDash')[0].heavy, true, 'the Gate Toll is a heavy');
+});
+
+test('threatIn: Infinity with nothing coming; 0.4 s before an attack\'s contact; 0 once one is in progress; projectiles, rings and a flood count; it reads and changes nothing', () => {
+  const { game, player } = castle(42, 1); assert.equal(game.threatIn(), Infinity);
+  const e = enemy(game, player.x + 80); e.cd = 99; e.tell = 1; assert.ok(Math.abs(game.threatIn() - .6) < 1e-9, 'tell 1.0 -> 0.6 s');
+  e.tell = .3; assert.equal(game.threatIn(), 0, 'inside the last 0.4 s'); e.tell = 0; e.strikeT = .1; assert.equal(game.threatIn(), 0, 'a contact in progress'); e.strikeT = 0;
+  game.projectiles.push({ x: player.x - 414, y: player.y - 30, vx: 200, vy: 0, r: 7, life: 5, damage: 10 }); assert.ok(Math.abs(game.threatIn() - ((414 - 7 - player.w / 2) / 200 - .4)) < 1e-9, 'a bolt 0.4 s before it arrives');
+  game.projectiles[0].vx = -200; assert.equal(game.threatIn(), Infinity, 'a bolt flying away'); game.projectiles = [];
+  game.rings.push({ x: player.x - 420 - 29, dir: 1, kind: 'low', wait: 0, dist: 0, hit: false, top: 0, bottom: 0 }); assert.ok(Math.abs(game.threatIn() - (1 - .4)) < 1e-9, 'a ring 1.0 s away'); game.rings = [];
+  game.flood = { tell: 1.2, life: 4, live: false }; assert.ok(Math.abs(game.threatIn() - .8) < 1e-9); game.flood.live = true; assert.equal(game.threatIn(), 0); game.flood = null;
+  const a = castle(7, 1), b = castle(7, 1); for (const t of [a, b]) { const x = enemy(t.game, t.player.x + 80); x.tell = .9; x.cd = 99; t.game.projectiles.push({ x: t.player.x - 300, y: 0, vx: 100, vy: 0, r: 5, life: 9, damage: 1 }); }
+  const snap = JSON.stringify([a.game.enemies, a.game.projectiles, a.game.player, a.game.time]); for (let i = 0; i < 5; i++) a.game.threatIn();
+  assert.equal(JSON.stringify([a.game.enemies, a.game.projectiles, a.game.player, a.game.time]), snap, 'no state changes'); assert.equal(a.game.rand(), b.game.rand(), 'the seeded stream is untouched');
+});
+
+test('threatIn counts the brain heavies, the Warden\'s tell and a husk or guard tell', () => {
+  const w = wardenBrainArena(1100, 1300); w.game.wardenStart(w.b, 'greatToll'); assert.ok(Math.abs(w.game.threatIn() - (w.b.tell - .4)) < 1e-9);
+  const k = kingBrainArena(1500, 1700); k.game.kingStart(k.k, 'judgement'); assert.ok(Math.abs(k.game.threatIn() - (k.k.tell - .4)) < 1e-9);
+  const { game, player } = castle(42, 8, true); const g = enemy(game, player.x + 90, { type: 'knight' }); Object.assign(g, { heavy: true, heavyKind: 'greatswing', tell: 1, cd: 99 }); assert.ok(Math.abs(game.threatIn() - .6) < 1e-9);
 });
