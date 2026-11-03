@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Game, clamp, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
+import { Game, KEEPER_FLOOR, SLICE_FLOORS, BELFRY_FROM, CASTLE_PICKS, clamp, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 
 function arena(seed = 42) {
   const events = [];
@@ -3585,7 +3585,7 @@ test('warden: after the kill the second Vigil keeps relics, restores blood 100 a
   assert.equal(game.setWeapon('twin'), true);
   assert.equal(player.weapon, 'twin'); assert.equal(player.damage, 17 * 1.25, 'relics stack on the new weapon base'); assert.ok(dmg !== player.damage);
   assert.equal(game.descend(), true);
-  assert.equal(game.state, 'sliceEnd'); assert.ok(events.some(e => e.type === 'sliceEnd'));
+  assert.equal(game.state, 'playing'); assert.equal(game.floor, 11, 'the second Vigil descends to the Belfry (#69)'); assert.equal(game.stage, 2);
 });
 
 test('warden: dying on floor 10 emits the fight stats and returns to the first Vigil without relics', () => {
@@ -3890,7 +3890,7 @@ test('king kill: fightStats won, then 1.6 s later the slice-end screen; the floo
   assert.equal(b.hp, 0); assert.equal(events.find(e => e.type === 'kill').king, true);
   const stats = events.find(e => e.type === 'fightStats'); assert.ok(stats && stats.won === true); assert.equal(game.pools.length, 0);
   assert.equal(game.state, 'playing'); advance(game, 1.7);
-  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, WARDEN_FLOOR);
+  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, KEEPER_FLOOR);
   assert.deepEqual(events.filter(e => e.type === 'sliceEnd').map(e => e.king), ['won']);
 });
 
@@ -3902,7 +3902,7 @@ test('king flow: slice end -> Face the Fallen King (floor 50, 100 blood, same we
   assert.equal(game.challengeKing(), false, 'not before the slice end');
   game.state = 'playing'; game.damageEnemy(game.enemies[0], 99999, 1, false, false); advance(game, 1.7);
   assert.equal(game.state, 'rest'); assert.equal(game.vigil, 2); game.player.blood = 180; game.player.frenzy = true;
-  assert.equal(game.setWeapon('spear'), true); game.descend(); assert.equal(game.state, 'sliceEnd');
+  assert.equal(game.setWeapon('spear'), true); game.floor = KEEPER_FLOOR; game.enterVigil(); assert.equal(game.vigil, 3); game.descend(); assert.equal(game.state, 'sliceEnd'); // the slice ends after the third Vigil
   assert.equal(game.challengeKing(), true);
   assert.equal(game.state, 'playing'); assert.equal(game.floor, KING_FLOOR); assert.equal(game.player.blood, 100); assert.equal(game.player.frenzy, false);
   assert.equal(game.player.weapon, 'spear'); assert.deepEqual(game.relics, ['edge']);
@@ -3910,7 +3910,7 @@ test('king flow: slice end -> Face the Fallen King (floor 50, 100 blood, same we
   game.player.invulnerable = 0; game.hurt(500, 1, false, true);
   assert.equal(game.state, 'dead'); assert.equal(events.filter(e => e.type === 'fightStats').at(-1).won, false);
   assert.equal(game.leaveKing(false), true);
-  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, WARDEN_FLOOR); assert.equal(events.filter(e => e.type === 'sliceEnd').at(-1).king, 'dead');
+  assert.equal(game.state, 'sliceEnd'); assert.equal(game.floor, KEEPER_FLOOR); assert.equal(events.filter(e => e.type === 'sliceEnd').at(-1).king, 'dead');
   assert.equal(game.challengeKing(), true); assert.equal(game.player.blood, 100); assert.equal(game.enemies[0].hp, KING_HP, 'a fresh King');
   assert.equal(game.leaveKing(true), true, 'leaving mid-fight is allowed from the playing state');
   assert.equal(game.leaveKing(true), false, 'only from the King floor');
@@ -5806,4 +5806,96 @@ test('threatIn ignores a single-hit attack whose contact is over (struck), but s
   const { game, player } = castle(42, 1); const e = enemy(game, player.x + 80); e.cd = 99;
   e.strikeT = .2; e.struck = false; assert.equal(game.threatIn(), 0, 'a live contact'); e.struck = true; assert.equal(game.threatIn(), Infinity, 'a dodged contact is over');
   e.strikeT = 0; e.travel = .3; assert.equal(game.threatIn(), 0, 'a charge in flight can still hit');
+});
+
+// --- The Timeless Belfry frame (#69 PR 1) ---
+function castleFloorsHash() { // floors 1-10, two seeds and weapons, a scripted hero: state and event stream
+  const h = createHash('sha1');
+  for (const seed of [5, 9]) for (let f = 1; f <= 10; f++) {
+    const ev = []; const g = new Game(e => ev.push(e.type), seed, 'castle'); g.start(); g.setWeapon(seed === 5 ? 'spear' : 'heavy'); g.descend(); g.loadFloor(f); g.state = 'playing';
+    const p = g.player; p.blood = 150;
+    for (let step = 0; step < 900 && g.state === 'playing'; step++) {
+      const fo = g.enemies.filter(e => e.hp > 0).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0], d = fo ? fo.x - p.x : 1, close = fo && Math.abs(d) < p.reach - 20;
+      g.update(1 / 60, { attack: step % 200 < 120, right: !close && d > 0, left: !close && d < 0, jump: step % 97 === 0, dash: step % 131 === 0, magic: step % 400 === 0 });
+      if (step % 30 === 0) h.update(JSON.stringify([g.state, g.floor, g.stage, g.tier, g.worldWidth, Math.round(p.x), Math.round(p.blood), g.enemies.map(e => [e.type, Math.round(e.x), Math.round(e.hp), +e.tell.toFixed(2), e.move, !!e.required, e.elite ? 1 : 0]), g.traps.length, g.obstacles.length, g.platforms.length]));
+    }
+    h.update(ev.join(','));
+  }
+  return h.digest('hex').slice(0, 16);
+}
+
+test('belfry frame: castle floors 1-10 replay bit-for-bit (the golden is from main before #69)', () => {
+  assert.equal(castleFloorsHash(), 'a7b2567624cfce15');
+});
+
+test('belfry frame: floors 1-20 in order, rooms, required guards, portals, relic picks, the Vigils and the slice end', () => {
+  const events = [], game = new Game(e => events.push(e), 42, 'castle'); game.start(); assert.equal(game.vigil, 1); game.setWeapon('spear'); assert.equal(game.descend(), true);
+  const picks = [], vigils = [];
+  const clear = () => { for (const e of game.enemies) if (e.required) e.hp = 0; game.update(1 / 60, {}); };
+  assert.equal(SLICE_FLOORS, 20); assert.deepEqual(CASTLE_PICKS, [3, 6, 9, 13, 16, 19]); assert.equal(KEEPER_FLOOR, 20); assert.equal(BELFRY_FROM, 11); assert.equal(KING_FLOOR, 50);
+  for (let f = 1; f <= 20; f++) {
+    assert.equal(game.state, 'playing', `floor ${f}`); assert.equal(game.floor, f); assert.ok(game.tier <= 4 && game.tier === Math.min(4, (f - 1) >> 1), `tier ${game.tier} on ${f}`);
+    if (f === WARDEN_FLOOR || f === KEEPER_FLOOR) { // the boss slot: the Warden's gate until the Keeper lands
+      assert.equal(game.enemies.length, 1); assert.ok(game.enemies[0].warden && game.enemies[0].required, `boss floor ${f}`); assert.equal(game.worldWidth, 2800);
+      assert.equal(game.stage, f === KEEPER_FLOOR ? 2 : 0, 'the Keeper slot has Belfry art');
+      assert.equal(game.portalOpen, false); game.damageEnemy(game.enemies[0], 99999, 1, false, false); advance(game, 1.8);
+      assert.equal(game.state, 'rest'); vigils.push(game.vigil); assert.equal(game.vigil, f === KEEPER_FLOOR ? 3 : 2); assert.deepEqual(game.relics.length, picks.length, 'relics stay'); assert.equal(game.player.blood, 100);
+      if (f === WARDEN_FLOOR) { assert.equal(game.setWeapon('twin'), true); assert.equal(game.descend(), true); continue; }
+      assert.equal(game.descend(), true); assert.equal(game.state, 'sliceEnd'); assert.equal(evs(events, 'sliceEnd').length, 1); break;
+    }
+    const belfry = f >= BELFRY_FROM; assert.equal(game.stage, belfry ? 2 : 0, `stage index on ${f}`);
+    assert.equal(game.enemies.filter(e => e.required).length, 2, 'the last two are the required guards'); assert.equal(game.chests.length, 0, 'no chests');
+    const expected = f <= 3 ? 5 : f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6; assert.equal(game.enemies.length, expected + (f >= 8 ? 1 : 0), `floor ${f}: the plan plus the bonus elite from floor 8`);
+    assert.equal(game.portalOpen, false); clear(); assert.equal(game.portalOpen, true, `the portal opens on ${f}`);
+    game.finishStage();
+    if (CASTLE_PICKS.includes(f)) { assert.equal(game.state, 'upgrade', `a relic pick after ${f}`); picks.push(f); game.chooseRelic(game.choices[0].id); } else assert.equal(game.state, 'playing', `no pick after ${f}`);
+  }
+  assert.deepEqual(picks, [3, 6, 9, 13, 16, 19]); assert.deepEqual(vigils, [2, 3]); assert.equal(game.relics.length, 6);
+});
+
+test('belfry frame: a death on floors 11-20 returns to the second Vigil with the relics from floor 11; floors 1-10 and 50 are unchanged', () => {
+  const mk = () => { const g = new Game(() => {}, 7, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.relics = ['edge', 'reach']; g.floor = WARDEN_FLOOR; g.enterVigil(); assert.equal(g.vigil, 2); g.descend(); return g; };
+  for (const f of [11, 13, 19, 20]) {
+    const g = mk(); g.relics.push('haste'); g.loadFloor(f); g.state = 'dead'; g.player.blood = 0; assert.equal(g.returnToVigil2(), true, `death on ${f}`);
+    assert.equal(g.state, 'rest'); assert.equal(g.vigil, 2); assert.deepEqual(g.relics, ['edge', 'reach'], 'relics from when floor 11 began'); assert.equal(g.player.blood, 100); assert.equal(g.player.debt, 0);
+    assert.equal(g.setWeapon('twin'), true); assert.equal(g.descend(), true); assert.equal(g.floor, 11); assert.equal(g.state, 'playing');
+  }
+  for (const f of [1, 5, WARDEN_FLOOR, KING_FLOOR]) { const g = mk(); g.loadFloor(f); g.state = 'dead'; assert.equal(g.returnToVigil2(), false, `floor ${f} keeps its old return`); }
+  const alive = mk(); alive.loadFloor(12); assert.equal(alive.returnToVigil2(), false, 'only a dead hero');
+  const normal = new Game(() => {}, 1, 'normal'); normal.state = 'dead'; normal.floor = 12; assert.equal(normal.returnToVigil2(), false);
+  const first = new Game(() => {}, 3, 'castle'); first.start(); first.setWeapon('spear'); first.descend(); first.relics = ['edge']; first.loadFloor(5); first.state = 'dead'; first.enterRest(); assert.deepEqual(first.relics, [], 'the first Vigil still clears relics');
+});
+
+function modesHash() { // Normal stages 0-4 and Endless floors, scripted hero: state and event stream
+  const h = createHash('sha1');
+  for (const mode of ['normal', 'endless']) for (const seed of [2, 6]) for (const lvl of mode === 'normal' ? [0, 1, 2, 3, 4] : [1, 4, 5, 10]) {
+    const ev = []; const g = new Game(e => ev.push(e.type), seed, mode); g.start(); g.state = 'playing'; if (mode === 'endless') g.loadFloor(lvl); else g.loadStage(lvl); g.state = 'playing';
+    const p = g.player;
+    for (let step = 0; step < 900 && g.state === 'playing'; step++) {
+      const f = g.enemies.filter(e => e.hp > 0).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0], d = f ? f.x - p.x : 1, close = f && Math.abs(d) < p.reach - 20;
+      g.update(1 / 60, { attack: step % 240 < 150, right: !close && d > 0, left: !close && d < 0, jump: step % 97 === 0, dash: step % 311 === 0, magic: step % 400 === 0 });
+      if (step % 30 === 0) h.update(JSON.stringify([g.state, Math.round(p.x), Math.round(p.hp), g.stage, g.enemies.map(e => [e.type, Math.round(e.x), Math.round(e.hp), +e.tell.toFixed(2)]), g.traps.map(t => t.damage), g.obstacles.map(o => o.hp)]));
+    }
+    h.update(ev.join(','));
+  }
+  return h.digest('hex').slice(0, 16);
+}
+
+test('belfry frame: leaveKing returns to floor 20, the Belfry placeholder cast is built from existing enemies with brains, and Normal and Endless never see any of it', () => {
+  const g = new Game(() => {}, 4, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.challengeKing = Game.prototype.challengeKing; g.state = 'sliceEnd'; assert.equal(g.challengeKing(), true); g.state = 'dead'; assert.equal(g.leaveKing(false), true); assert.equal(g.floor, KEEPER_FLOOR); assert.equal(g.state, 'sliceEnd');
+  const types = new Set(); for (let seed = 1; seed <= 12; seed++) for (const f of [11, 14, 17, 19]) { const b = new Game(() => {}, seed, 'castle'); b.start(); b.setWeapon('spear'); b.descend(); b.loadFloor(f); for (const e of b.enemies) types.add(e.type); const ranged = b.enemies.filter(e => e.type === 'priest' || e.type === 'mage').length; assert.ok(ranged <= 2, `at most 2 ranged on ${f}`); assert.ok(b.enemies.some(e => e.type === 'bat')); }
+  assert.ok([...types].every(t => ['skeleton', 'shield', 'spear', 'knight', 'bat', 'priest', 'mage'].includes(t)), [...types].join());
+  assert.equal(modesHash(), '51cf5fb532e28223', 'Normal and Endless replay bit-for-bit (golden from main before #69)');
+});
+
+test('belfry frame: floor 11 scales nothing that floor 9 does not (trap damage, barricade HP, cooldown fallbacks), while Normal keeps its stage scaling', () => {
+  const at = f => { const g = new Game(() => {}, 5, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(f); g.brainOff = new Set(['spear', 'skeleton']); return g; };
+  const nine = at(9), eleven = at(11), nineteen = at(19);
+  for (const g of [eleven, nineteen]) {
+    assert.equal(g.stage, 2); assert.equal(g.scaleStage, 0, 'the Belfry art index scales nothing'); assert.equal(g.tier, nine.tier);
+    assert.ok(g.traps.length > 0 && g.traps.every(t => t.damage === 10), 'trap damage like floor 9 (10)'); assert.ok(g.obstacles.filter(o => o.kind === 'barricade').every(o => o.hp === 38), 'barricade HP like floor 9');
+    assert.equal(g.lightCd({ type: 'orc' }), nine.lightCd({ type: 'orc' })); assert.equal(g.spearCd(), nine.spearCd());
+  }
+  assert.ok(nine.traps.every(t => t.damage === 10));
+  const normal = new Game(() => {}, 5, 'normal'); normal.loadStage(2); assert.equal(normal.scaleStage, 2); assert.ok(normal.traps.every(t => t.damage > 10), 'Normal still scales by stage');
 });

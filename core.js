@@ -62,10 +62,12 @@ const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spaw
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
 // Castle Descent (mode 'castle', #44): one blood meter replaces HP and MP.
-export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
+export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9, 13, 16, 19], SWING_COST = 2, HEAVY_DAMAGE = 100;
 export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon frenzies (#61)
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
 export const WARDEN_HP = 1100; // user decision 2026-10-31: the boss is the gate the 5.3x regulars guard, so it carries more than the regulars it commands (was 520)
+// The Timeless Belfry (#69): floors 11-19 load Belfry rooms (stage index 2), floor 20 is a boss slot (the Warden's gate until the Keeper lands), the third Vigil ends the slice. A death on 11-20 returns to the second Vigil.
+export const SLICE_FLOORS = 20, BELFRY_FROM = 11, KEEPER_FLOOR = 20;
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 // The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
 const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
@@ -185,7 +187,7 @@ export class Game {
     this.randomState = seed || 1;
     this.state = 'title';
     this.heldDir = 0;
-    this.stage = 0;
+    this.stage = 0; this.scaleStage = 0;
     this.time = 0;
     this.elapsed = 0;
     this.kills = 0;
@@ -221,8 +223,9 @@ export class Game {
   // Pairs where both relics are owned, as [{ a, b, key }] (for the pause menu).
   activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
-    this.stage = index;
-    const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
+    this.stage = index; // art, text and room layout
+    this.scaleStage = this.mode === 'castle' ? 0 : index; // what scales numbers (trap damage, barricade HP, cooldown fallbacks): castle difficulty comes from the floor, tier and cast, so the Belfry's stage index 2 raises nothing (#69 D3)
+    const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
     this.tier = tier; this.gaps = []; this.snaps = []; this.flood = null; this.rings = []; this.dashLog = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
@@ -271,7 +274,7 @@ export class Game {
     if (!fight) this.placeHazards(index);
     Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
-  // Castle floor table (#50): floors 1-3 are fixed mixes (5 enemies), 4-7 roll 6, 8-9 roll 7. Floor 4 teaches the bat with two bat slots (1 and 3, never a gate guard), floors 5-9 keep slot 1 a bat,
+  // Castle floor table (#50, #69): floors 1-3 are fixed mixes (5 enemies), 4-7 roll 6, 8-9 roll 7 (the Belfry placeholder: floors 11-16 roll 6, 17-19 roll 7, same cast and elite rules as 8-9). Floor 4 teaches the bat with two bat slots (1 and 3, never a gate guard), floors 5-9 keep slot 1 a bat,
   // floor 7 previews one knight, floors 8-9 roll knights. The priest is taught on floor 5 and the mage on floor 6 (never gate guards); later floors roll them in with the caps below.
   castlePlan() {
     const f = this.floor, fill = (n, t) => Array(n).fill(t);
@@ -280,7 +283,7 @@ export class Game {
       for (let i = list.length; --i > 0;) { const j = Math.floor(this.rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       return list;
     }
-    const n = f >= 8 ? 7 : 6, base = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(n).fill('');
+    const n = f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6, base = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(n).fill('');
     for (const i of f === 4 ? [1, 3] : [1]) plan[i] = 'bat';
     if (f === 7) plan[2] = 'knight';
     const open = () => plan.map((t, i) => t ? -1 : i).filter(i => i >= 0), count = t => plan.filter(x => x === t).length;
@@ -295,7 +298,8 @@ export class Game {
   }
   loadFloor(n) {
     if (n === KING_FLOOR && this.mode !== 'castle') return false; // the Fallen King's castle fight is a Castle Descent floor
-    this.floor = n; this.loadStage(n === KING_FLOOR ? 4 : 0); this.emit('stage', { stage: this.stage, floor: n, mode: this.mode });
+    // the Belfry (floors 11-20) reuses stage index 2: rooms, gears, art
+    this.floor = n; this.loadStage(n === KING_FLOOR ? 4 : this.mode === 'castle' && n >= BELFRY_FROM && n <= KEEPER_FLOOR ? 2 : 0); this.emit('stage', { stage: this.stage, floor: n, mode: this.mode });
     return true;
   }
   // The slice-end screen's "Face the Fallen King": floor 50 at 100 blood with the current weapon and relics. A win or a death comes back to the slice end (no records).
@@ -309,7 +313,7 @@ export class Game {
     if (this.floor !== KING_FLOOR || (this.state !== 'playing' && this.state !== 'dead')) return false;
     this.endFight(false); this.endFrenzy();
     this.enemies = []; this.projectiles = []; this.pools = []; this.kingT = 0;
-    this.floor = WARDEN_FLOOR; this.state = 'sliceEnd'; this.emit('sliceEnd', { king: won ? 'won' : 'dead' });
+    this.floor = KEEPER_FLOOR; this.state = 'sliceEnd'; this.emit('sliceEnd', { king: won ? 'won' : 'dead' });
     return true;
   }
   // Weapon base stats replace damage, attack cooldown and reach (frenzy effects are step 2). Chosen at a Vigil; the player is rebuilt so owned relics stack on the new base.
@@ -320,28 +324,38 @@ export class Game {
     for (const r of this.relics) RELICS.find(x => x.id === r).apply(p);
     return true;
   }
-  // The first Vigil (rest point): blood back to 100, no relics, no frenzy; also where death returns. Pick a weapon, then descend().
+  // The first Vigil (rest point): blood back to 100, no relics, no frenzy; also where a death on floors 1-10 returns (floors 11-20 return to the second Vigil). Pick a weapon, then descend().
   enterRest() {
     this.endFrenzy(); this.endFight(false);
-    this.relics = []; Object.assign(this.player, basePlayer());
+    this.relics = []; this.vigil2Relics = null; Object.assign(this.player, basePlayer());
     this.state = 'rest'; this.vigil = 1;
     this.emit('rest', { weapons: Object.keys(WEAPONS), vigil: 1 });
   }
-  // The second Vigil, after the Warden: relics stay, blood back to 100, frenzy ends and debt is cleared; the weapon may change.
-  enterVigil() {
+  // The second Vigil (after the Warden) and the third (after floor 20): relics stay, blood back to 100, frenzy ends and debt is cleared; the weapon may change. The second remembers the relics, because a death on floors 11-20 returns here.
+  enterVigil(vigil = this.floor >= KEEPER_FLOOR ? 3 : 2) {
     const p = this.player;
     this.endFrenzy(); p.blood = BLOOD_HALF; p.debt = 0; p.invulnerable = 0;
-    this.state = 'rest'; this.vigil = 2; this.vigilT = 0;
-    this.emit('rest', { weapons: Object.keys(WEAPONS), vigil: 2 });
+    if (vigil === 2) this.vigil2Relics = this.relics.slice();
+    this.state = 'rest'; this.vigil = vigil; this.vigilT = 0;
+    this.emit('rest', { weapons: Object.keys(WEAPONS), vigil });
+  }
+  // A death on floors 11-20 (D2): back to the second Vigil with the relics the hero had when floor 11 began; blood 100, no frenzy or debt.
+  returnToVigil2() {
+    if (this.mode !== 'castle' || this.state !== 'dead' || this.floor < BELFRY_FROM || this.floor >= KING_FLOOR || !this.vigil2Relics) return false;
+    this.endFrenzy(); this.endFight(false);
+    this.enemies = []; this.projectiles = []; this.pools = []; this.rings = []; this.flood = null;
+    this.relics = this.vigil2Relics.slice(); this.setWeapon(this.player.weapon); // rebuilds the hero from base + weapon + the saved relics
+    this.enterVigil(2);
+    return true;
   }
   descend() {
     if (this.state !== 'rest' || !this.player.weapon) return false;
-    if (this.vigil === 2) { this.state = 'sliceEnd'; this.emit('sliceEnd'); return true; } // floors 11+ are not built
-    this.state = 'playing'; this.loadFloor(1);
+    if (this.vigil === 3) { this.state = 'sliceEnd'; this.emit('sliceEnd'); return true; } // the Belfry is climbed: the slice ends
+    this.state = 'playing'; this.loadFloor(this.vigil === 2 ? BELFRY_FROM : 1);
     return true;
   }
   nextFloor() {
-    if (this.floor >= WARDEN_FLOOR) { this.enterVigil(); return; } // normally the Warden's death gets here first
+    if (this.floor === WARDEN_FLOOR || this.floor >= KEEPER_FLOOR) { this.enterVigil(); return; } // normally the boss's death gets here first
     this.state = 'playing'; this.loadFloor(this.floor + 1);
   }
   // Blood gain from a hit, kill or perfect dodge; halved (min 1) during frenzy. Skill and damage-over-time hits set noBlood.
@@ -436,16 +450,16 @@ export class Game {
     const kind = TRAP_KINDS[index], altars = index === 3 ? 1 + Math.floor(this.rand() * 2) : 0;
     const pillars = kind ? (altars === 1 ? 2 : 2 + Math.floor(this.rand() * 2)) : 0;
     const altarObjs = []; // altars first so each pillar can be placed within PILLAR_LINK of the altar that disables it
-    for (let i = 0; i < altars; i++) { const x = place(OBSTACLES.altar.w); if (x !== null) altarObjs.push(this.spawnObstacle('altar', x, index)); }
+    for (let i = 0; i < altars; i++) { const x = place(OBSTACLES.altar.w); if (x !== null) altarObjs.push(this.spawnObstacle('altar', x, this.scaleStage)); }
     for (let i = 0; i < pillars; i++) {
       const altar = altarObjs.length ? altarObjs[i % altarObjs.length] : null;
       const w = Math.round(60 + this.rand() * 30), period = 3.4 + this.rand() * 1.1, active = kind === 'pillar' ? 1.8 + this.rand() * .35 : 1.1 + this.rand() * 1.05, x = place(w, altar && altar.x);
       if (x === null) continue;
-      const trap = this.spawnTrap(kind, x, w, period, active, this.rand() * period, index);
+      const trap = this.spawnTrap(kind, x, w, period, active, this.rand() * period, this.scaleStage);
       if (altar) { trap.altar = altar.id; altar.traps.push(trap.id); }
     }
     const barricades = 1 + Math.floor(this.rand() * 2);
-    for (let i = 0; i < barricades; i++) { const x = place(OBSTACLES.barricade.w); if (x !== null) this.spawnObstacle('barricade', x, index); }
+    for (let i = 0; i < barricades; i++) { const x = place(OBSTACLES.barricade.w); if (x !== null) this.spawnObstacle('barricade', x, this.scaleStage); }
   }
   spawnTrap(kind, x, w, period, active, t = 0, stage = 0) {
     const trap = { id: this.traps.length, kind, x, y: FLOOR, w, h: TRAP_HEIGHT[kind], period, active, t, damage: 10 * 1.13 ** stage, altar: null, disabled: false, state: 'idle', warn: false, progress: 0 };
@@ -587,7 +601,7 @@ export class Game {
     if (this.state !== 'playing') return;
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
-    if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
+    if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
   // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.
@@ -1092,7 +1106,7 @@ export class Game {
     return o.hp > 0 && o.type !== 'boss' && !o.token && !this.attacking(o) && !(o.crossT > 0) && !(o.blinkT > 0) && !(o.recoilT > 0) && o.recover <= 0 && o.stun <= 0 && o.frozen <= 0 && this.ready(o) && o.turn <= 0
       && Math.abs(o.x - p.x) < (this.provoked(o) ? PROVOKED_REACH : TRIGGER[o.type]) && (o.type === 'priest' || o.type === 'mage' || Math.abs(o.y - p.y) < 90);
   }
-  // Wind-up limiter. Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
+  // Wind-up limiter (its this.stage reads run only outside castle mode). Castle: only a token holder may start a tell (kind 'light', 'heavy' or 'support'); several ready enemies are ranked starved first, then the
   // one in front of the hero, then the longest waiting. Elsewhere: at most 2 (stages 1-3) or 3 (stages 4-5) enemies near the hero may be winding up at once.
   canWindUp(e, kind = 'light') {
     const p = this.player;
@@ -1262,23 +1276,23 @@ export class Game {
     } else if (castle && e.type === 'mage') {
       if (distance <= BLINK.range && e.blinkCd <= 0 && Math.abs(p.y - e.y) < 90 && this.startBlink(e)) e.vx = 0; // a hero inside 120: shimmer, then teleport away
       else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) {
-        e.tell = BOLT_TELL.mage; e.cd = 2.4 - this.stage * .13; e.vx = 0;
+        e.tell = BOLT_TELL.mage; e.cd = 2.4 - this.scaleStage * .13; e.vx = 0;
         if (e.twist === 'prism') e.warn = this.fan(e);
       } else { e.vx = distance > 320 ? e.dir * e.speed * .6 : distance < 260 ? -face * e.speed * .6 : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); } // band 260-460
     } else if (castle && e.type === 'priest') {
       const near = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= 250);
       if (distance <= RECOIL.range && e.recoilCd <= 0 && Math.abs(p.y - e.y) < 90) this.startRecoil(e, face); // a hero inside 120: a quick backstep, no damage
       else if (near.length && e.blessCd <= 0 && this.canWindUp(e, 'support')) { e.tell = .9; e.blessRadius = 250; e.vx = 0; }
-      else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = BOLT_TELL.priest; e.cd = 2.4 - this.stage * .13; e.vx = 0; }
+      else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = BOLT_TELL.priest; e.cd = 2.4 - this.scaleStage * .13; e.vx = 0; }
       else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'mage') {
-      if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.stage * .13; }
+      if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .65; e.cd = 2.4 - this.scaleStage * .13; }
       else if (distance > 320) { e.vx = e.dir * e.speed * .6; e.x += e.vx * dt; }
       else e.vx = 0;
     } else if (e.type === 'priest') {
       const near = this.enemies.filter(o => o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= 250);
       if (near.length && e.blessCd <= 0 && this.canWindUp(e, 'support')) { e.tell = .9; e.blessRadius = 250; e.vx = 0; }
-      else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.stage * .13; }
+      else if (distance < 460 && e.cd <= 0 && this.canWindUp(e)) { e.tell = .9; e.cd = 2.4 - this.scaleStage * .13; }
       else { e.vx = distance > 335 ? e.dir * e.speed : distance < 185 ? -e.dir * e.speed : 0; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
     } else if (e.type === 'boss') {
       e.pause = Math.max(0, e.pause - dt); e.recover = Math.max(0, e.recover - dt);
@@ -1290,10 +1304,10 @@ export class Game {
       else if (castle && distance <= SWEEP_RANGE && Math.abs(p.y - e.y) < 64) { // a hero inside the tip: the low sweep, or a step back to 120 while no token is free
         if (e.cd <= 0 && this.canWindUp(e)) {
           const d = e.dir, box = { x: Math.min(e.x + d * 10, e.x + d * 100), y: e.y - 30, w: 90, h: 30 };
-          Object.assign(e, { tell: SWEEP_TELL, move: 'sweep', cd: Math.max(1.2, 2.2 - this.stage * .12), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
+          Object.assign(e, { tell: SWEEP_TELL, move: 'sweep', cd: Math.max(1.2, 2.2 - this.scaleStage * .12), vx: 0, thrustBox: box, warn: { kind: 'sweep', box } });
         } else { e.backoff = true; e.vx = -face * e.speed * 1.2; e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); }
       } else if (distance <= 193 && Math.abs(p.y - e.y) < 64 && e.cd <= 0 && this.canWindUp(e)) {
-        e.tell = .64; e.cd = Math.max(1.2, 2.2 - this.stage * .12); e.vx = 0;
+        e.tell = .64; e.cd = Math.max(1.2, 2.2 - this.scaleStage * .12); e.vx = 0;
         const x0 = e.x + e.dir * 10, x1 = e.x + e.dir * 194;
         e.thrustBox = { x: Math.min(x0, x1), y: e.y - 54, w: 184, h: 54 };
         if (castle) e.warn = { kind: 'thrust', box: e.thrustBox };
@@ -1308,7 +1322,7 @@ export class Game {
     } else {
       const near = distance < (this.provoked(e) ? PROVOKED_REACH : e.type === 'shield' ? 70 : 60) && Math.abs(p.y - e.y) < 82 && this.ready(e);
       if (near && this.canWindUp(e)) {
-        e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = (castle && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.stage * .12);
+        e.tell = e.type === 'knight' ? .6 : e.type === 'shield' ? .55 : castle ? .5 : .43; e.cd = (castle && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.scaleStage * .12);
         if (castle && e.type === 'knight') e.warn = { kind: 'slash', box: { x: Math.min(e.x + e.dir * 10, e.x + e.dir * 90), y: e.y - 100, w: 80, h: 100 } };
       }
       else if (castle && HOLD_RING[e.type] && (near || !this.ready(e) || this.tokensFree() <= 0)) { // no token: wait just outside probe range, backing off when the hero walks in
@@ -1671,7 +1685,7 @@ export class Game {
     else walk(d > 45 ? e.dir * e.speed : 0);
     return true;
   }
-  lightCd(e) { return (this.mode === 'castle' && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.stage * .12); }
+  lightCd(e) { return (this.mode === 'castle' && LIGHT_CD[e.type]) || Math.max(.9, 1.7 - this.scaleStage * .12); }
   bashBox(e) { return { x: Math.min(e.x, e.x + e.dir * SHIELD.bashReach), y: e.y - 77, w: SHIELD.bashReach, h: 96 }; } // the bash hits a hero within 70 px in front and 77 px of height difference
   // --- Priest and mage (#62 PR 3). Casters: a bolt is aimed once, at tell start, at where the hero will stand. Rows are checked in priority order. ---
   // The bolt both casters throw: tell fixed now, aim fixed now (e.aim), at the hero's predicted position when the bolt leaves.
@@ -1680,7 +1694,7 @@ export class Game {
     if (this.state !== 'playing' || d >= 460 || !this.canStrike(e, tell)) return false;
     const lx = this.landing(s, tell), o = { x: e.x, y: e.y - e.h * .6 }, aim = Math.atan2(s.y - 30 - o.y, lx - o.x);
     e.dir = Math.sign(s.x - e.x) || e.dir;
-    Object.assign(e, { tell, cd: Math.max(.9, 2.4 - this.stage * .13), vx: 0, aim, warn: e.twist === 'prism' ? this.fan(e, aim, Math.hypot(lx - o.x, s.y - 30 - o.y)) : null });
+    Object.assign(e, { tell, cd: Math.max(.9, 2.4 - this.scaleStage * .13), vx: 0, aim, warn: e.twist === 'prism' ? this.fan(e, aim, Math.hypot(lx - o.x, s.y - 30 - o.y)) : null });
     return true;
   }
   priestThink(e, dt) {
@@ -1978,7 +1992,7 @@ export class Game {
     walk(d < hold - 10 ? -toward * e.speed * SPEAR.back : d > hold + 10 ? toward * e.speed : 0); // out-space the hero's weapon, inside its own tip
     return true;
   }
-  spearCd() { return this.brainOn({ type: "spear", hp: 1 }) ? SPEAR.cd : Math.max(1.2, 2.2 - this.stage * .12); }
+  spearCd() { return this.brainOn({ type: "spear", hp: 1 }) ? SPEAR.cd : Math.max(1.2, 2.2 - this.scaleStage * .12); }
   // A thrust whose box is fixed now: 10-194 px in front, or (aimed) the same 184 px centred where the hero will stand at contact.
   spearBox(e, f, cx, len) { const u0 = Math.max(10, (cx - e.x) * f - len / 2); return { x: Math.min(e.x + f * u0, e.x + f * (u0 + len)), y: e.y - 54, w: len, h: 54 }; }
   spearThrust(e, s, tell, aim, len = 184, fixed = null, move = '') {
@@ -3016,7 +3030,7 @@ export class Game {
     if (!relic) return false;
     relic.apply(this.player); this.relics.push(relic.id);
     for (const k in this.player) if (typeof this.player[k] === 'number' && !(Math.abs(this.player[k]) <= STAT_CAP)) this.player[k] = Number.isNaN(this.player[k]) ? 0 : Math.sign(this.player[k]) * STAT_CAP; // finite guard for endless stacking
-    if (this.mode === 'castle') { this.nextFloor(); return true; } // castle picks restore nothing; they only come after floors 3, 6 and 9
+    if (this.mode === 'castle') { this.nextFloor(); return true; } // castle picks restore nothing; they only come after the CASTLE_PICKS floors
     if (this.pickReason === 'elite') { this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20); this.player.mp = this.player.maxMp; this.state = 'playing'; return true; } // like a stage pick's restore, but play resumes in place
     if (this.pickReason === 'chest') { this.state = 'playing'; return true; } // chest pick: no heal, no stage change
     if (this.pickReason === 'start') this.state = 'playing'; // opening pick: no heal, stage 1 is already loaded
