@@ -283,7 +283,32 @@ No floor holds more than 2 ranged or support enemies, and the priest and mage ar
 - **Relic picks** after floors 3, 6 and 9 (`CASTLE_PICKS`), drawn from `SLICE_POOL`: every relic except `vital`, `leech`, `mana`, `arcane`, `lunaticMoon` and `nightwalk`. Their HP and MP side effects do nothing here. Relics are lost on death.
 - **Death**: the `dead` screen's button returns to the Vigil (100 blood, no relics, weapon picked again, floor 1).
 - **Floor 10, the Gate Warden** (#50 section 5, `loadFloor(10)`): floor 9's pick leads to floor 10, the Warden alone in the boss arena layout (width 2800, two ledges, Gate art, HUD "Floor 10 / 10"). `loadFloor(50)` is the Fallen King (castle only; returns false in the normal and endless modes). See "The Gate Warden" and "The Fallen King, castle version" below.
-- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then sets state `sliceEnd` and emits `sliceEnd` (the slice-end screen offers "Face the Fallen King", see below). Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
+- **Second Vigil**: the Warden's kill (`kill` {boss, warden}, then `fightStats`, then 1.6 s later) opens a second `rest` (`vigil: 2`). Blood 100, frenzy ends, debt cleared, relics kept; the weapon may change (`setWeapon` rebuilds the player from base + weapon + owned relics). `descend()` then loads floor 11 (#69; before #69 it ended the slice); the slice now ends after floor 20's third Vigil, and `sliceEnd` (the slice-end screen offers "Face the Fallen King", see below). Death on floor 10 returns to the first Vigil like any death. Castle runs write no records and no save yet.
+
+### The Timeless Belfry: floors 11-20 (#69 PR 1, the frame)
+
+Castle only (Normal and Endless hashes are identical; castle floors 1-10 replay bit-for-bit, see the golden in `tests/core.test.js`). User decisions on #69: D1 a hero above 100 blood acts in the Stopped Hour with the Echo as the cost (PR 2); D2 a death on floors 11-20 returns to the **second Vigil** with the relics held when floor 11 began; D3 stat levers only with a trait reason, each logged; D4 the new cast is built on the #62 brain framework. This PR builds only the frame: no Stopped Hour, no Echo, no new enemy and no Keeper yet.
+
+- **Structure.** The Warden's kill opens the second Vigil (`vigil: 2`), whose `descend()` loads floor 11 (it used to end the slice). Floors 11-19 load stage index 2 (Belfry rooms, gear platforms and gear traps, Belfry art and `stage.2.*` text) with the usual last-two-are-required-guards rule and no chests. Floor 20 (`KEEPER_FLOOR`) is the boss arena (width 2800, two ledges, Belfry art) holding **the Gate Warden as a placeholder** until the Keeper lands; its kill opens the **third Vigil** (`vigil: 3`: blood 100, frenzy ended, debt cleared, relics kept, the weapon may change), whose `descend()` emits `sliceEnd`. `KING_FLOOR` stays 50; `leaveKing()` returns the floor to 20.
+- **Relic picks** after floors 3, 6, 9, 13, 16 and 19 (`CASTLE_PICKS`), from `SLICE_POOL`, restoring nothing. Tier stays capped at 4 (`min(4, (floor - 1) >> 1)`).
+- **Death.** Floors 1-10 and 50 keep their old returns (the first Vigil: no relics; the slice end). On floors 11-20 `returnToVigil2()` restores the relics saved by the second Vigil (`vigil2Relics`), blood 100, no frenzy or debt, and `descend()` loads floor 11 again.
+- **Placeholder cast** (existing enemies with their #62 brains): floors 11-16 roll 6 enemies, floors 17-19 roll 7 (slot 1 a bat; skeleton, shield bearer, spearman, knight; at most one priest and one mage); floors 8+ add the bonus elite knight as before.
+- **Hard-coded floor counts changed together:** `SLICE_FLOORS` (HUD `hud.floorOf` total, the result screen, `pause.infoCastle` now takes `{total}`), the boss-stage checks in `game.js`, the Vigil texts (`rest.title3`), `help.castleFootnote`, `castle.sliceEnd`; `tools/bot-run.mjs` accepts `--floors 11-20` and `--run --through 20`.
+
+Floor table (skeleton; the cast rows land in the later PRs, see the proposal):
+
+| Floor | Rooms | Cast today | Lesson planned |
+| --- | --- | --- | --- |
+| 11 | Belfry, 6 enemies | slot 1 bat, rolled skeleton / shield / spear / knight / priest / mage | the Stopped Hour (PR 2) |
+| 12 | 6 | as 11 | Gargoyle (PR 3) |
+| 13 | 6, relic pick after | as 11 | Pendulum Blade (PR 3) |
+| 14 | 6 | as 11 | Clockwork Sentinel (PR 4) |
+| 15 | 6 | as 11 | Chime Acolyte preview (PR 4) |
+| 16 | 6, relic pick after | as 11 | Carillon Cantor preview (PR 5) |
+| 17 | 7 | as 11 | Bellringer preview (PR 5) |
+| 18 | 7 | as 11 | test (PR 5) |
+| 19 | 7, relic pick after | as 11 | test (PR 5) |
+| 20 | boss arena, Belfry art | the Gate Warden (stub) | the Keeper of the Hour (PR 6) |
 
 ### The Gate Warden (floor 10)
 

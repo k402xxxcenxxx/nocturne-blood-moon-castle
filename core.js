@@ -62,10 +62,12 @@ const SPAWN_CLEAR = 250; // traps and obstacles keep this far from the hero spaw
 const OBSTACLE_GAP = 30; // minimum free floor between two hazards
 const CHEST_SIZE = { w: 34, h: 28 }, CHEST_REACH = 46; // a grounded hero this close (x) on the chest's surface opens it
 // Castle Descent (mode 'castle', #44): one blood meter replaces HP and MP.
-export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9], SWING_COST = 2, HEAVY_DAMAGE = 100;
+export const BLOOD_MAX = 200, BLOOD_HALF = 100, SKILL_COST = 18, SKILL_MIN = 40, FRENZY_BURN = 12, CASTLE_PICKS = [3, 6, 9, 13, 16, 19], SWING_COST = 2, HEAVY_DAMAGE = 100;
 export const ASSAULT_BURN = 6, TWIN_FRENZY_CD = .6, TWIN_SEEK = 260; // weapon frenzies (#61)
 // The Gate Warden (#50 section 5, floor 10): super armor gauge instead of posture, the Gate Toll, blood pools. All numbers are playtest starting points.
 export const WARDEN_HP = 1100; // user decision 2026-10-31: the boss is the gate the 5.3x regulars guard, so it carries more than the regulars it commands (was 520)
+// The Timeless Belfry (#69): floors 11-19 load Belfry rooms (stage index 2), floor 20 is a boss slot (the Warden's gate until the Keeper lands), the third Vigil ends the slice. A death on 11-20 returns to the second Vigil.
+export const SLICE_FLOORS = 20, BELFRY_FROM = 11, KEEPER_FLOOR = 20;
 export const WARDEN_FLOOR = 10, ARMOR_MAX = 100, ECLIPSE_CHIP = 25, FRENZY_CHIP = 34, BREAK_STUN = 1.8, BREAK_MUL = 1.5, ARMOR_LOCK = 2.5, BREAK_KNOCK = 140, TOLL_BASE = 30, POOL_GAIN = 14, POOL_LIFE = 4, MAX_POOLS = 2;
 // The Gate Warden's brain (#62 PR 4): it decides from the hero 0.12 s ago, drops portcullises, calls gate guards, rings the Gate Bell and collects the Great Toll. Playtest starting points.
 const GATE = { tell: 1, recover: 1, behind: 240, w: 44, h: 150, life: 5, apart: 300, max: 2, pick: .15, cd: 6, edge: 80, near: 140, wake: 1.2 }; // a portcullis: a 44 px column 240 px behind the hero, a 150 px wall for 5 s
@@ -222,7 +224,7 @@ export class Game {
   activeSynergies() { return SYNERGY_PAIRS.filter(([a, b]) => this.relics.includes(a) && this.relics.includes(b)).map(([a, b]) => ({ a, b, key: `synergy.${a}-${b}` })); }
   loadStage(index) {
     this.stage = index;
-    const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
+    const castle = this.mode === 'castle', king = castle && this.floor === KING_FLOOR, fight = castle && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || king), spec = fight ? STAGES[4] : STAGES[index], boss = index === 4 || fight; // the Warden fights in the boss arena layout with Gate art
     const tier = castle ? Math.min(4, (this.floor - 1) >> 1) : index; // enemy scaling; castle floors keep the Gate art and rooms (index 0)
     this.tier = tier; this.gaps = []; this.snaps = []; this.flood = null; this.rings = []; this.dashLog = []; this.pair = null; this.pairCd = 0; this.habits = {}; this.curseT = 0; // splitting copies use the floor tier; attack-token retake gaps start clear
     const plan = castle ? this.castlePlan() : null; // enemy types of the floor; the last two are the gate guards
@@ -280,7 +282,7 @@ export class Game {
       for (let i = list.length; --i > 0;) { const j = Math.floor(this.rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       return list;
     }
-    const n = f >= 8 ? 7 : 6, base = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(n).fill('');
+    const n = f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6, base = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(n).fill('');
     for (const i of f === 4 ? [1, 3] : [1]) plan[i] = 'bat';
     if (f === 7) plan[2] = 'knight';
     const open = () => plan.map((t, i) => t ? -1 : i).filter(i => i >= 0), count = t => plan.filter(x => x === t).length;
@@ -295,7 +297,8 @@ export class Game {
   }
   loadFloor(n) {
     if (n === KING_FLOOR && this.mode !== 'castle') return false; // the Fallen King's castle fight is a Castle Descent floor
-    this.floor = n; this.loadStage(n === KING_FLOOR ? 4 : 0); this.emit('stage', { stage: this.stage, floor: n, mode: this.mode });
+    // the Belfry (floors 11-20) reuses stage index 2: rooms, gears, art
+    this.floor = n; this.loadStage(n === KING_FLOOR ? 4 : this.mode === 'castle' && n >= BELFRY_FROM && n <= KEEPER_FLOOR ? 2 : 0); this.emit('stage', { stage: this.stage, floor: n, mode: this.mode });
     return true;
   }
   // The slice-end screen's "Face the Fallen King": floor 50 at 100 blood with the current weapon and relics. A win or a death comes back to the slice end (no records).
@@ -309,7 +312,7 @@ export class Game {
     if (this.floor !== KING_FLOOR || (this.state !== 'playing' && this.state !== 'dead')) return false;
     this.endFight(false); this.endFrenzy();
     this.enemies = []; this.projectiles = []; this.pools = []; this.kingT = 0;
-    this.floor = WARDEN_FLOOR; this.state = 'sliceEnd'; this.emit('sliceEnd', { king: won ? 'won' : 'dead' });
+    this.floor = KEEPER_FLOOR; this.state = 'sliceEnd'; this.emit('sliceEnd', { king: won ? 'won' : 'dead' });
     return true;
   }
   // Weapon base stats replace damage, attack cooldown and reach (frenzy effects are step 2). Chosen at a Vigil; the player is rebuilt so owned relics stack on the new base.
@@ -327,21 +330,31 @@ export class Game {
     this.state = 'rest'; this.vigil = 1;
     this.emit('rest', { weapons: Object.keys(WEAPONS), vigil: 1 });
   }
-  // The second Vigil, after the Warden: relics stay, blood back to 100, frenzy ends and debt is cleared; the weapon may change.
-  enterVigil() {
+  // The second Vigil (after the Warden) and the third (after floor 20): relics stay, blood back to 100, frenzy ends and debt is cleared; the weapon may change. The second remembers the relics, because a death on floors 11-20 returns here.
+  enterVigil(vigil = this.floor >= KEEPER_FLOOR ? 3 : 2) {
     const p = this.player;
     this.endFrenzy(); p.blood = BLOOD_HALF; p.debt = 0; p.invulnerable = 0;
-    this.state = 'rest'; this.vigil = 2; this.vigilT = 0;
-    this.emit('rest', { weapons: Object.keys(WEAPONS), vigil: 2 });
+    if (vigil === 2) this.vigil2Relics = this.relics.slice();
+    this.state = 'rest'; this.vigil = vigil; this.vigilT = 0;
+    this.emit('rest', { weapons: Object.keys(WEAPONS), vigil });
+  }
+  // A death on floors 11-20 (D2): back to the second Vigil with the relics the hero had when floor 11 began; blood 100, no frenzy or debt.
+  returnToVigil2() {
+    if (this.mode !== 'castle' || this.state !== 'dead' || this.floor < BELFRY_FROM || this.floor >= KING_FLOOR || !this.vigil2Relics) return false;
+    this.endFrenzy(); this.endFight(false);
+    this.enemies = []; this.projectiles = []; this.pools = []; this.rings = []; this.flood = null;
+    this.relics = this.vigil2Relics.slice(); Object.assign(this.player, basePlayer(), { weapon: this.player.weapon });
+    this.enterVigil(2);
+    return true;
   }
   descend() {
     if (this.state !== 'rest' || !this.player.weapon) return false;
-    if (this.vigil === 2) { this.state = 'sliceEnd'; this.emit('sliceEnd'); return true; } // floors 11+ are not built
-    this.state = 'playing'; this.loadFloor(1);
+    if (this.vigil === 3) { this.state = 'sliceEnd'; this.emit('sliceEnd'); return true; } // the Belfry is climbed: the slice ends
+    this.state = 'playing'; this.loadFloor(this.vigil === 2 ? BELFRY_FROM : 1);
     return true;
   }
   nextFloor() {
-    if (this.floor >= WARDEN_FLOOR) { this.enterVigil(); return; } // normally the Warden's death gets here first
+    if (this.floor === WARDEN_FLOOR || this.floor >= KEEPER_FLOOR) { this.enterVigil(); return; } // normally the boss's death gets here first
     this.state = 'playing'; this.loadFloor(this.floor + 1);
   }
   // Blood gain from a hit, kill or perfect dodge; halved (min 1) during frenzy. Skill and damage-over-time hits set noBlood.
@@ -587,7 +600,7 @@ export class Game {
     if (this.state !== 'playing') return;
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
-    if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
+    if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
   // Moving platforms swing on a sine; dx / dy are this frame's movement, which riders (hero, grounded enemies) copy.

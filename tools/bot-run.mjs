@@ -3,7 +3,7 @@
 // --duel N [--blood 100] [--relics dash,reach] [--tier 0] [--weapon w] [--cap 60]: apex arms-race harness. The bot fights N castle skeletons in an empty floor-1 room (no traps, obstacles or chests);
 // a win is every enemy dead. --type skeleton|shield|spear|bat|knight|priest|mage|elite:<type> or mix:a,b (one enemy per name, in order from the hero; default skeleton) picks the foe, --floor N sets the floor number the brains read (pairs from 4, cower from 5), --brain off switches the type's brain off (the #50 baseline). Reports win %, time, hero deaths by move, per-fight stats and the fairness audit ("unanswerable" = a hit landing less than REACTION_DELAY + 0.12 s after its tell started).
 // --type warden: the real floor-10 arena with its guards and 100 blood; a win is the Gate Warden's death (--brain off gives the #50 Warden).
-// --run [--brain off]: one life per seed from the first Vigil through floors 1-10; a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
+// --floors 11-20 and --duel --floor N play a Belfry floor directly. --run [--brain off] [--through 20]: one life per seed from the first Vigil through floors 1-10 (or 1-20); a clear is the Gate Warden's defeat. Reports clear rate, death floors and causes.
 import { Game, WEAPONS, RELICS, WARDEN_FLOOR, KING_FLOOR } from '../core.js';
 import { createBot, resolveModal, chooseWeapon, REACTION_DELAY } from '../bot.js';
 
@@ -13,7 +13,7 @@ const [lo, hi = lo] = arg('floors', '1-3').split('-').map(Number), start = +arg(
 const rows = new Map(); // floor -> accumulated stats
 const row = f => { if (!rows.has(f)) rows.set(f, { runs: 0, clears: 0, deaths: {}, timeouts: 0, clearTime: 0, gained: 0, taken: 0, frenzies: 0, swings: 0, whiffs: 0, fights: 0, fg: 0, ft: 0, fs: 0, fb: 0, ff: 0 }); return rows.get(f); };
 const DT = 1 / 60;
-const duelN = +arg('duel', 0);
+const duelN = +arg('duel', 0), through = +arg('through', 10); // --run --through 20 plays the Belfry placeholder floors 11-20 as well
 const foeTypes = (type, n) => type.startsWith('mix:') ? type.slice(4).split(',') : Array(n).fill(type);
 
 export function playDuel(seed, { n = 1, weapon: w = 'heavy', blood = 100, relics = [], tier = 0, cap: capSeconds = 60, skill: botSkill = 'expert', type = 'skeleton', floor = 1, brainOff = false } = {}) {
@@ -92,7 +92,7 @@ export function playRun(seed, { maxFloor = hi, cap: capSeconds = cap, onStep, st
   if (startFloor > 1) game.loadFloor(startFloor);
   let blood = game.player.blood;
   while (game.state !== 'dead' && game.state !== 'sliceEnd' && game.state !== 'won') {
-    if (game.state === 'rest' && game.vigil === 2) { clear(); break; } // the Warden is down: the second Vigil ends the measured run
+    if (game.state === 'rest' && game.vigil === (through > 10 ? 3 : 2)) { clear(); break; } // the last boss is down (the Warden, or floor 20 with --through 20): that Vigil ends the measured run
     if (game.state === 'rest' || game.state === 'upgrade') { if (!resolveModal(game)) break; blood = game.player.blood; continue; }
     if (game.state !== 'playing') break;
     if (cur && game.floor > maxFloor) break;
@@ -126,9 +126,9 @@ if (import.meta.url === `file://${process.argv[1]}` && duelN) {
   const t0 = Date.now(), floorsDied = {}, causes = {}, times = [];
   let clears = 0, timeouts = 0;
   for (let s = 0; s < seeds; s++) {
-    const { floors, game } = playRun(first + s, { startFloor: 1, maxFloor: 10 });
+    const { floors, game } = playRun(first + s, { startFloor: 1, maxFloor: through });
     const last = floors.at(-1);
-    if (last.floor === 10 && last.cleared) { clears++; times.push(game.elapsed); }
+    if (last.floor === through && last.cleared) { clears++; times.push(game.elapsed); }
     else if (last.timeout) timeouts++;
     else { floorsDied[last.floor] = (floorsDied[last.floor] || 0) + 1; causes[last.died || '?'] = (causes[last.died || '?'] || 0) + 1; }
   }
