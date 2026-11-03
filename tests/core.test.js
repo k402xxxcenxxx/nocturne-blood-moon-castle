@@ -6014,3 +6014,12 @@ test('the resume grace: a frozen projectile and a live strike cannot hurt the he
   advance(game, .3);
   assert.ok(player.blood < blood || game.projectiles.length === 0, 'it can hit after the grace');
 });
+
+test('a strike pushed back by the resume grace still hurts a hero in range afterwards', () => {
+  const { game, player } = castle(7, BELFRY_FROM);
+  const e = enemy(game, player.x + 30); e.tell = .1; e.cd = 5;
+  toll(game, 60); while (game.hour.still > 0) game.update(1 / 120, {});
+  const blood = player.blood;
+  advance(game, .3); assert.equal(player.blood, blood, 'nothing inside the grace');
+  advance(game, .4); assert.ok(player.blood < blood, 'the pushed strike lands');
+});

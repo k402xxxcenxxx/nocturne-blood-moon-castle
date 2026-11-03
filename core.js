@@ -329,6 +329,7 @@ export class Game {
   }
   // The first Vigil (rest point): blood back to 100, no relics, no frenzy; also where a death on floors 1-10 returns (floors 11-20 return to the second Vigil). Pick a weapon, then descend().
   enterRest() {
+    Object.assign(this.hour, { on: false, t: 0, warn: false, still: 0, awake: false, elapsed: 0, grace: 0 }); this.echo = { list: [], t: 0, armed: false }; // no dial in the Vigil
     this.endFrenzy(); this.endFight(false);
     this.relics = []; this.vigil2Relics = null; Object.assign(this.player, basePlayer());
     this.state = 'rest'; this.vigil = 1;
@@ -612,14 +613,14 @@ export class Game {
     const room = this.rooms.findIndex(r => p.x >= r.x && p.x < r.x + r.w);
     if (room >= 0 && room !== this.roomIndex) { this.roomIndex = room; this.emit('room', { stage: this.stage, index: room }); }
     if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
-    if (this.state === 'playing' && this.portalOpen && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
+    if (this.state === 'playing' && this.portalOpen && !this.echo.armed && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
   // The Stopped Hour clock (castle floors 11-19): warn HOUR_WARN s before the toll, freeze for STILL s, then resume. Runs on dt, so pause, picks, hit-stop and the elite beat (all return before it) stop it.
   tickHour(dt) {
     const h = this.hour, p = this.player;
     if (!h.on) return;
     if (h.grace > 0) h.grace = Math.max(0, h.grace - dt);
-    if (h.still > 0) { h.elapsed += dt; if ((h.still -= dt) <= 0) this.resumeHour(); return; }
+    if (h.still > 0) { h.elapsed += dt; if ((h.still -= dt) <= 0) this.resumeHour(dt); return; }
     h.t += dt;
     if (!h.warn && h.t >= HOUR_PERIOD - HOUR_WARN) { h.warn = true; this.emit('hour', { state: 'warn', duration: HOUR_WARN }); }
     if (h.t < HOUR_PERIOD) return;
@@ -627,8 +628,8 @@ export class Game {
     this.emit('hour', { state: 'stop', awake: h.awake });
   }
   // Resume: an attack whose contact is under STILL_GRACE s away is pushed back to it (a heavy glints again), then the Echo's replay clock starts.
-  resumeHour() {
-    this.hour.still = 0; this.hour.grace = STILL_GRACE; // no enemy hit (strike, travel, projectile) can land on the hero for STILL_GRACE s
+  resumeHour(dt) {
+    this.hour.still = 0; this.hour.grace = STILL_GRACE - 1.5 * dt; // enemy hits wait STILL_GRACE s; the resume frame already steps enemies by dt, so the grace starts 1.5 frames short and a pushed tell ends after it (that strike lands)
     for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; }
     this.echo.armed = this.echo.list.length > 0; this.echo.t = 0;
     this.emit('hour', { state: 'resume' });
@@ -3066,7 +3067,7 @@ export class Game {
     if (!numb) p.x = clamp(p.x + dir * 20, 25, this.worldWidth - 30);
     this.freeze = .06;
     if (this.fightOn) this.fightStats.taken += actual;
-    this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual, heavy, debt: numb ? p.debt : 0 });
+    this.emit('hurt', { x: p.x, y: p.y - 30, amount: actual, heavy, debt: numb ? p.debt : 0, echo: this.deathCause === 'echo' });
     if (!numb) { if (castle ? p.blood === 0 : p.hp === 0) this.heroDown(heavy); else this.checkFrenzy(); }
     return true; // the hit landed (not absorbed by i-frames)
   }

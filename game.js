@@ -152,7 +152,7 @@ function handleEvent(e) {
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; pendingToast = t('hint.curse'); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
-      audio.play(game.deathCause === 'echo' ? 'echoHit' : e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
+      audio.play(e.echo ? 'echoHit' : e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
         if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
         flashNumber({ ...e, amount: `+${e.amount}` }, game.debtLethal() ? '#ff3a4d' : '#aab4c8'); burst(e.x, e.y, '#8d97aa', 8, 90); break;
@@ -193,9 +193,9 @@ function handleEvent(e) {
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
     case 'hour': // #69
-      if (e.state === 'warn') audio.play('hourWarn');
+      if (e.state === 'warn') { audio.play('hourWarn'); toast(t('castle.hourWarn')); }
       else if (e.state === 'stop') { audio.play('hourToll'); audio.play('hourHum'); }
-      if (e.state === 'stop' && e.awake) toast(t('castle.hourAwake'));
+      if (e.state === 'stop') toast(t(e.awake ? 'castle.hourAwake' : 'castle.hourStill'));
       break;
     case 'echo': // #69
       if (e.state === 'replay') audio.play('echoReplay');
