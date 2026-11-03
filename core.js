@@ -632,6 +632,7 @@ export class Game {
     this.hour.still = 0; this.hour.grace = STILL_GRACE - 1.5 * dt; // enemy hits wait STILL_GRACE s; the resume frame already steps enemies by dt, so the grace starts 1.5 frames short and a pushed tell ends after it (that strike lands)
     for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; }
     this.echo.armed = this.echo.list.length > 0; this.echo.t = 0;
+    const o0 = this.echo.list.length ? this.echo.list[0].off : 0; for (const g of this.echo.list) g.off -= o0; // first replay ECHO_DELAY after the resume, recorded spacing kept
     this.emit('hour', { state: 'resume' });
   }
   // Records a sword attack made by the awake hero in the Stopped Hour: boxes are { x0, x1, y0, y1 } (feet-line overlap like the hero's own hit checks), fixed where the swing happened.

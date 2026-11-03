@@ -6023,3 +6023,17 @@ test('a strike pushed back by the resume grace still hurts a hero in range after
   advance(game, .3); assert.equal(player.blood, blood, 'nothing inside the grace');
   advance(game, .4); assert.ok(player.blood < blood, 'the pushed strike lands');
 });
+
+test('the first Echo replay comes ECHO_DELAY after the resume, however late in the Hour it was swung', () => {
+  const { game, player, events } = castle(7, BELFRY_FROM);
+  game.enemies = [];
+  toll(game, 150);
+  advance(game, .8); // swing late in the Hour
+  advance(game, .1, { attack: true });
+  assert.ok(game.echo.list.length >= 1);
+  advance(game, STILL); // past the resume
+  const resumeAt = events.findIndex(e => e.type === 'hour' && e.state === 'resume');
+  assert.ok(resumeAt >= 0);
+  assert.equal(game.echo.list[0].off, 0, 'the first recorded swing is rebased to the resume');
+  assert.ok(game.echo.list.every((g, i, a) => i === 0 || g.off >= a[i - 1].off), 'recorded order and spacing kept');
+});
