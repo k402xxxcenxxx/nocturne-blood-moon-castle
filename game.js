@@ -152,7 +152,7 @@ function handleEvent(e) {
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; pendingToast = t('hint.curse'); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
-      audio.play(e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
+      audio.play(game.deathCause === 'echo' ? 'echoHit' : e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
         if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
         flashNumber({ ...e, amount: `+${e.amount}` }, game.debtLethal() ? '#ff3a4d' : '#aab4c8'); burst(e.x, e.y, '#8d97aa', 8, 90); break;
@@ -192,10 +192,13 @@ function handleEvent(e) {
       if (e.enemy) effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .3, max: .3, color: '#ffd36e' }); // castle posture break: gold ring (the crack is drawn on the body)
       effects.push({ type: 'impact', x: e.x, y: e.y, life: .2, max: .2, dir: 0 });
       break;
-    case 'hour': // #69 visual only. PRODUCER: add audio.play calls here (warn / stop / resume)
+    case 'hour': // #69
+      if (e.state === 'warn') audio.play('hourWarn');
+      else if (e.state === 'stop') { audio.play('hourToll'); audio.play('hourHum'); }
       if (e.state === 'stop' && e.awake) toast(t('castle.hourAwake'));
       break;
-    case 'echo': // #69 visual only. PRODUCER: add audio.play calls here (record / replay / end)
+    case 'echo': // #69
+      if (e.state === 'replay') audio.play('echoReplay');
       if (e.state !== 'end' && e.x != null) effects.push({ type: 'wardBreak', x: e.x, y: (e.y ?? FLOOR) - 30, life: .35, max: .35, color: e.state === 'replay' ? '#e6f0ff' : '#9fb4d8', r: 70 });
       break;
     case 'bossPhase': // roar: darken the screen, pulse the moon red, burst of embers
@@ -444,6 +447,7 @@ function synergyLine(id) {
 let vigilNo = 1; // 2 after the Warden's kill, 3 after floor 20
 let lastFightKing = false; let lastFight = null; // last Warden fightStats, shown on the slice-end and floor-10 death screens
 let kingResult = ''; // 'won' or 'dead' when the slice-end screen follows a Fallen King attempt
+let hourTickAt = 0; // #69: last whole second the dial ticked
 let deathDebt = false, deathToll = false, deathGreat = false, deathFlood = false, deathEcho = false, gateHinted = false, guardHinted = false; // the killing blow of the last death was the Warden's Gate Toll
 let deathHeavy = false; // the killing blow of the last death was a castle heavy
 // castle elites have a twist and no affix
@@ -868,6 +872,7 @@ function render(dt) {
     ctx.save(); zoomed = true; ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy);
   }
   drawScene(ctx, { camera, width: viewWidth, height: 540, time: worldTime, stage: game.stage, platforms: game.platforms, worldWidth: game.worldWidth });
+  if (!title && game.hour.on && !game.hour.still) { const left = Math.ceil(HOUR_PERIOD - game.hour.t); if (left <= 4 && left !== hourTickAt) { hourTickAt = left; audio.play('hourTick'); } }
   if (!title && game.hour.on) drawHourDial(ctx, Math.round(viewWidth / 2) + 190, 32, game.hour.t / HOUR_PERIOD, game.hour.warn, game.hour.still > 0, settings.shake ? .75 + .25 * Math.sin(performance.now() / 70) : 1); // #69: Belfry dial; render clock is wall time because game.time freezes in the Hour
   if (!title && game.mode === 'castle') for (const e of game.enemies) if (e.king && e.hp > 0 && e.bossPhase >= 3) { ctx.save(); ctx.globalAlpha = settings.shake ? .85 + .15 * Math.sin(worldTime * 2) : 1; ctx.fillStyle = '#8a102a30'; ctx.fillRect(0, 0, viewWidth, 540); ctx.restore(); break; } // Blood Moon: a red cast over the arena in the King's last phase
   ctx.save(); ctx.translate(-Math.round(camera), 0);
