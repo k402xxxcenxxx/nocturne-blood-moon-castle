@@ -30,6 +30,13 @@ export class AudioSystem {
         limiter.attack.value = 0.003;
         limiter.release.value = 0.12;
         this._master.connect(limiter);
+        // Slow-motion bus: everything but tells/glint/slow cues goes through this low-pass; setSlow() sweeps it.
+        this._bus = ctx.createBiquadFilter();
+        this._bus.type = 'lowpass';
+        this._bus.frequency.value = 20000;
+        this._bus.connect(this._master);
+        this._detune = ctx.createConstantSource(); // cents, shared by every music oscillator
+        this._detune.start();
         limiter.connect(ctx.destination);
         this._noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
         const samples = this._noiseBuffer.getChannelData(0);
@@ -73,6 +80,16 @@ export class AudioSystem {
     if ((!this.haptics || this._paused) && pattern !== 0) return;
     if (globalThis.navigator?.userActivation?.hasBeenActive === false) return;
     try { globalThis.navigator?.vibrate?.(pattern); } catch { /* Optional hardware. */ }
+  }
+
+  // Slow motion (#53): k 1 -> 0 from the drop back to normal speed. Ramps existing params only; called every frame.
+  setSlow(k) {
+    k = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 0;
+    if (!this.context || k === this._slowK) return;
+    this._slowK = k;
+    const now = this.context.currentTime;
+    this._bus.frequency.setTargetAtTime(20000 * 0.045 ** k, now, 0.05); // 20 kHz open -> ~900 Hz
+    this._detune.offset.setTargetAtTime(-300 * k, now, 0.05);
   }
 
   // Frenzy heartbeat: a low double thump every 0.7 s, driven by game.js (start on frenzy, stop on end/death/Vigil/title).
@@ -163,7 +180,7 @@ export class AudioSystem {
     } catch { return false; }
   }
 
-  _voice(type, frequency, duration, gain, at, endFrequency, music = false) {
+  _voice(type, frequency, duration, gain, at, endFrequency, music = false, dry = false) {
     if (this._voices.size >= 64) this._voices.values().next().value.stop();
     const ctx = this.context;
     const source = type === 'noise' ? ctx.createBufferSource() : ctx.createOscillator();
@@ -185,12 +202,14 @@ export class AudioSystem {
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     source.connect(filter);
     filter.connect(envelope);
-    envelope.connect(this._master);
+    envelope.connect(dry ? this._master : this._bus);
+    if (music && type !== 'noise') this._detune.connect(source.detune);
     let ended = false;
     const voice = { music, stop: () => {
       if (ended) return;
       ended = true;
       try { source.stop(); } catch { /* Already ended. */ }
+      if (music && type !== 'noise') this._detune.disconnect(source.detune);
       source.disconnect();
       filter.disconnect();
       envelope.disconnect();
@@ -205,7 +224,7 @@ export class AudioSystem {
   play(name, intensity = 1) {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
-      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], cursedPick: [20, 30, 35], win: [30, 50, 50], death: [65, 35, 90], ui: 6,
+      magic: [12, 12, 24], kill: 28, upgrade: [15, 35, 25], cursedPick: [20, 30, 35], win: [30, 50, 50], death: [65, 35, 90], ui: 6, slowIn: [40, 380, 25], accent: 20,
       roar: [60, 40, 120], frenzy: [50, 30, 90, 30, 160], bossSlam: [40, 20, 70], bossBurst: [30, 20, 60],
       shatter: 14, bloodFlame: 14, chestOpen: [12, 20, 18], chestHeal: [12, 20, 18], guardDown: 14,
       woodBreak: 18, altarShatter: [25, 15, 40], eliteKill: [30, 20, 50],
@@ -219,8 +238,9 @@ export class AudioSystem {
     const amount = Number.isFinite(intensity) ? Math.max(0, Math.min(intensity, 1.6)) : 1;
     if (!amount) return;
     const at = ctx.currentTime + 0.005;
+    const dry = /^(tell|glint|slow|accent)/.test(name); // never filtered or pitched by slow motion
     const tone = (type, frequency, duration, gain, slide, delay = 0) =>
-      this._voice(type, frequency, duration, gain * amount, at + delay, slide);
+      this._voice(type, frequency, duration, gain * amount, at + delay, slide, false, dry);
     const notes = (frequencies, speed = 0.09, gain = 0.12) => frequencies.forEach((f, i) => {
       tone('triangle', f, 0.55, gain, f * 0.999, speed * i);
       tone('sine', f * 2, 0.3, gain * 0.3, undefined, speed * i);
@@ -1386,6 +1406,19 @@ export class AudioSystem {
       case 'death':
         notes([220, 185, 147, 110, 73], 0.18, 0.14);
         tone('noise', 1100, 0.8, 0.15, 100);
+        break;
+      case 'slowIn': // slow-motion drop: low whoosh sinking in, with a sub swell
+        tone('noise', 3200, 0.5, 0.3, 160);
+        tone('sine', 110, 0.55, 0.4, 38);
+        tone('triangle', 330, 0.35, 0.05, 90);
+        break;
+      case 'slowOut': // return to speed: reverse swell, staggered slices rising in gain and filter
+        [0, 0.05, 0.1, 0.15].forEach((dl, i) => tone('noise', 500 + i * 1100, 0.1, 0.05 + i * 0.05, 900 + i * 1400, dl));
+        tone('sine', 70, 0.12, 0.2, 140, 0.16);
+        break;
+      case 'accent': // light thump for non-full moments, under hit
+        tone('sine', 100, 0.1, 0.22, 50);
+        tone('noise', 1800, 0.04, 0.08, 500);
         break;
       case 'ui': tone('sine', 740, 0.07, 0.07, 550); break;
     }
