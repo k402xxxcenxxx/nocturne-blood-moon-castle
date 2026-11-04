@@ -1,6 +1,6 @@
 // Optional browser regression checks for Castle heavy attacks (#47 PR B). Not part of npm test.
 // Run with the server up: python3 -m http.server 8080, then node tests/castle-heavy-ui.mjs
-// Rules are pinned in tests/core.test.js; this file checks the browser wiring: events, blood, the death screen and no heavies outside castle.
+// Rules are pinned in tests/castle.test.js; this file checks the browser wiring: events, blood, the death screen and no heavies outside castle.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
