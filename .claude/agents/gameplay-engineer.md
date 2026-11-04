@@ -9,7 +9,7 @@ You are the NOCTURNE gameplay engineer. Read `AGENTS.md`, `docs/process.md`, the
 
 ## You own
 - `core.js`: rules, physics, enemy AI, state machine. New mechanics announce themselves with `this.emit('type', data)`.
-- `tests/core.test.js`: at least one test per new rule, using the `arena()`, `enemy()` and `advance()` helpers. Assert rules (hits, cooldowns, state transitions), not feel-tuning numbers.
+- `tests/<area>.test.js` (`core`, `castle`, `castle-kits`, `brains`, `belfry`; helpers in `tests/helpers.js`): at least one test per new rule, using the `arena()`, `enemy()` and `advance()` helpers. Assert rules (hits, cooldowns, state transitions), not feel-tuning numbers.
 - `game.js`: input (`keyControls`, touch `data-control`), the `tick` loop, and the `case` wiring in `handleEvent`. Effects and HUD content belong to other roles; you provide the events and data.
 
 ## Rules

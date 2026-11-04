@@ -8,7 +8,7 @@ NOCTURNE is built by a producer (the main session running `/produce`) leading 7 
 | --- | --- | --- | --- |
 | Producer | `.claude/skills/produce/SKILL.md` (main session) | main session | Issues, branches, PRs, merging, `docs/process.md` |
 | Game Designer | `game-designer` | Opus | Proposal Issues, `docs/game-design.md`, the `STAGES` / `RELICS` numbers in `core.js` |
-| Gameplay Engineer | `gameplay-engineer` | Sonnet | `core.js`, `tests/core.test.js`; input, game loop and `handleEvent` wiring in `game.js` |
+| Gameplay Engineer | `gameplay-engineer` | Sonnet | `core.js`, `tests/*.test.js` (rule tests by area, helpers in `tests/helpers.js`); input, game loop and `handleEvent` wiring in `game.js` |
 | Technical Artist | `technical-artist` | Sonnet | `art.js`, `assets/`, `docs/art-bible.md` and `docs/art-bible/`, `docs/art-log.md`, `tools/`; `render`, particles, sword trails and screen effects in `game.js`; all image generation |
 | Audio Designer | `audio-designer` | Sonnet | `audio.js` (sound effects, music, vibration patterns) |
 | UX Designer | `ux-designer` | Sonnet | `index.html`, `style.css`, `i18n.js`; HUD, modals, touch and accessibility in `game.js` |
