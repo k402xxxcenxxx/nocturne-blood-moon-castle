@@ -1,0 +1,39 @@
+{
+ "name": "hero",
+ "raw": "../docs/art-bible/raw",
+ "out": "../assets",
+ "height": 68,
+ "colors": 32,
+ "clips": {
+  "loco": { "file": "hero-locomotion.mp4", "size": 640, "heroHeight": 502, "feet": [ 335, 598 ] },
+  "combat": { "file": "hero-combat.mp4", "size": 640, "heroHeight": 300, "feet": [ 368, 502 ] },
+  "mobility": { "file": "hero-mobility.mp4", "size": 640, "heroHeight": 300, "feet": [ 368, 502 ] },
+  "fall": { "file": "hero-cast-fall.mp4", "size": 640, "heroHeight": 300, "feet": [ 368, 502 ] }
+ },
+ "anims": {
+  "idle": { "clip": "combat", "from": 4, "to": 5, "frames": 4, "fps": 6, "loop": true, "minGap": 12 },
+  "run": { "clip": "loco", "from": 2, "to": 3.2, "frames": 6, "fps": 14, "loop": true },
+  "jump": { "clip": "loco", "times": [ 3.5, 3.67 ], "dy": [ -86, -120 ], "fps": 10 },
+  "flip": { "clip": "mobility", "times": [ 0.375, 0.5, 0.625, 0.75, 0.875, 1 ], "dy": -128, "fps": 12 },
+  "fall": { "clip": "loco", "times": [ 3.83, 4 ], "dy": [ -120, -60 ], "fps": 10 },
+  "dash": { "clip": "mobility", "times": [ 2.62, 2.7, 2.8 ], "minX": 100, "fps": 16 },
+  "plunge": { "clip": "mobility", "times": [ 3.5, 3.72, 3.9 ], "dy": [ -134, -134, 0 ], "fps": 8 },
+  "slash1": { "clip": "combat", "times": [ 0.44, 0.6, 0.7, 0.92, 0.98, 1.06 ], "strike": 3, "fps": 20 },
+  "slash2": { "clip": "combat", "times": [ 3.33, 3.2, 2.87, 2.83, 2.78, 2.71 ], "strike": 4, "fps": 20 },
+  "slash3": { "clip": "combat", "times": [ 2.78, 2.83, 2.87, 2.95, 3.2, 2.87, 2.78 ], "strike": 4, "fps": 24 },
+  "thrust": { "clip": "combat", "times": [ 3.75, 3.79, 3.87, 3.96 ], "strike": 3, "fps": 16 },
+  "cast": { "clip": "fall", "times": [ 0.8, 0.875, 0.94, 1, 1.25 ], "fps": 12 },
+  "hurt": { "clip": "fall", "times": [ 2.375, 2.5, 2.625 ], "fps": 10 },
+  "death": { "clip": "fall", "times": [ 2.75, 3, 3.5, 3.75, 3.875, 4, 4.25, 4.5 ], "fps": 8 },
+  "land": { "clip": "loco", "times": [ 4.17, 4.33 ], "fps": 12 }
+ },
+ "sfx": {
+  "swing": { "clip": "combat", "from": 0.42, "to": 0.74 },
+  "lunge": { "clip": "combat", "from": 3.61, "to": 4.03 },
+  "jump": { "clip": "mobility", "from": 0.24, "to": 0.55 },
+  "dash": { "clip": "mobility", "from": 2.24, "to": 2.64 },
+  "plunge": { "clip": "mobility", "from": 3.84, "to": 4.25 },
+  "magic": { "clip": "fall", "from": 0.97, "to": 1.9 },
+  "hurt": { "clip": "fall", "from": 2.3, "to": 2.8 }
+ }
+}

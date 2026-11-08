@@ -1,4 +1,5 @@
-// Original, asset-free pixel artwork. Static stonework is painted once per stage.
+// Original pixel artwork, mostly drawn in code. Static stonework is painted once per stage.
+import { heroSheets } from './assets/hero-sheets.js';
 const palettes = [
   { sky: '#10101e', glow: '#42304d', stone: '#34323a', mortar: '#1d1b26', trim: '#847461', light: '#c9ad7b', accent: '#a24043' },
   { sky: '#111b20', glow: '#314039', stone: '#2c3030', mortar: '#1a2225', trim: '#84754e', light: '#c4aa66', accent: '#567a73' },
@@ -387,9 +388,54 @@ export function drawScene(ctx, { camera = 0, width = 960, height = 540, time = 0
 }
 function shadow(c, x, y, w = 32) { c.fillStyle = '#05061177'; c.beginPath(); c.ellipse(x, y - 1, w / 2, 3, 0, 0, Math.PI * 2); c.fill(); }
 function boot(c, x, y, color = '#303340') { rect(c, '#090e19', x - 3, y - 13, 8, 14); rect(c, color, x - 2, y - 12, 5, 9); rect(c, '#999990', x - 2, y - 12, 2, 8); rect(c, '#111923', x - 3, y - 4, 11, 4); rect(c, '#6d7379', x - 2, y - 2, 10, 2); }
-export function drawHero(ctx, p = {}, time = 0) {
+const HERO_DEATH = 1.1, HERO_LAND = .14, HERO_RECOVER = .22, HERO_FLINCH = .2, HERO_SLAM = .26; // seconds the collapse, the landing, an attack's follow-through, a light hit's recoil and the held plunge impact take
+export const HERO_HURT = .7; // a heavy hit's kneel, up again included
+const heroSheet = heroSheets.base, heroImages = {};
+export const heroSheetFor = (weapon, name) => (heroSheets[weapon]?.anims[name] || !name && heroSheets[weapon] ? heroSheets[weapon] : heroSheet); // with a name, a row the weapon sheet lacks comes from the base sheet
+export function heroImageFor(sheet) { // loaded on first use, so only the weapon in hand is downloaded
+  if (!heroImages[sheet.src] && typeof Image !== 'undefined') heroImages[sheet.src] = Object.assign(new Image(), { src: new URL(sheet.src, import.meta.url).href });
+  return heroImages[sheet.src];
+}
+// Which sheet row the hero shows and which frame of it. Presentation only: no rule ever reads this.
+// A swing's hit box is live from its first instant, so an attack row starts in motion: `strike` frames play during p.attack, the rest as a follow-through.
+export function heroPose(p, time, react = {}, anims = heroSheetFor(p.weapon).anims) {
+  const row = name => anims[name] ?? heroSheet.anims[name];
+  const once = (name, k, count = row(name).frames) => ({ name, frame: Math.min(count - 1, Math.floor(Math.max(0, k) * count)) });
+  const loop = name => ({ name, frame: Math.floor(time * row(name).fps) % row(name).frames });
+  const moving = Math.abs(p.vx || 0) > 12, air = p.grounded === false;
+  const swing = p.move === 'thrust' ? 'thrust' : `slash${p.combo === 2 || p.combo === 3 ? p.combo : 1}`;
+  if (react.dead >= 0) return once('death', react.dead / HERO_DEATH);
+  if (p.plunge === 3) return once('plunge', 1);
+  if (p.plunge === 1 || p.plunge === 2) return once('plunge', p.plunge === 1 ? 0 : .5, row('plunge').frames - 1);
+  if (p.attack > 0) { // the wind-up frames open the row and last as long as the rule's wind-up; `strike` counts them too
+    const { strike, windup: raised = 0 } = row(swing), held = p.windup || 0;
+    if (p.windupT > 0) return once(swing, 1 - p.windupT / held, raised);
+    const { frame } = once(swing, 1 - p.attack / ((p.attackLen || .24) - held), strike - raised);
+    return { name: swing, frame: frame + raised };
+  }
+  if (p.magicCd > p.magicCdMax - .45) return once('cast', (p.magicCdMax - p.magicCd) / .45);
+  if (react.heavy && react.hurt < HERO_HURT && !air && !moving && !(p.dash > 0)) return once('hurt', react.hurt / HERO_HURT); // a light hit has no pose of its own: drawHero leans whatever is showing
+  if (p.dash > 0) return once('dash', 1 - p.dash / .18);
+  if (air) return p.vy < 0 ? (p.jumps === 2 ? once('flip', 1 + p.vy / 520) : once('jump', 1 + p.vy / 575)) : once('fall', p.vy / 500);
+  const after = react.swing - ((p.attackLen || .24) - (p.windup || 0)); // react.swing counts from the blow, after any wind-up
+  if (!moving && after >= 0 && after < HERO_RECOVER) { const { strike, frames } = row(swing); if (frames > strike) return { name: swing, frame: strike + Math.floor(after / HERO_RECOVER * (frames - strike)) }; }
+  if (!moving && react.slam < HERO_SLAM) return once('plunge', 1);
+  if (!moving && react.land < HERO_LAND) return once('land', react.land / HERO_LAND);
+  return loop(moving ? 'run' : 'idle');
+}
+export function drawHero(ctx, p = {}, time = 0, react = {}) {
   const x = Math.round(p.x || 0), y = Math.round(p.y ?? FLOOR), dir = p.dir === -1 ? -1 : 1, moving = Math.abs(p.vx || 0) > 12, phase = time * 13, stride = moving && p.grounded !== false ? Math.sin(phase) * 5 : 0;
   shadow(ctx, x, y, p.dash > 0 ? 44 : 33);
+  const { name, frame } = heroPose(p, time, react), sheet = heroSheetFor(p.weapon, name), heroImage = heroImageFor(sheet);
+  if (heroImage?.complete && heroImage.naturalWidth) { // falls through to the code-drawn hero if the sheet failed to load
+    const [w, h] = sheet.cell;
+    ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1); ctx.imageSmoothingEnabled = false;
+    if (p.plunge === 2) ctx.scale(.9, 1.12); else if (react.slam < .1) ctx.scale(1.14, .86); // stretch into the fall, squash on the floor
+    if (react.hurt < HERO_FLINCH && name !== 'hurt') ctx.transform(1, 0, .26 * (1 - react.hurt / HERO_FLINCH), 1, 0, 0); // recoil: the head snaps back, the feet stay planted
+    if (p.invulnerable > 0 && Math.floor(time * 18) % 3 === 0) ctx.globalAlpha *= .64;
+    ctx.drawImage(heroImage, frame * w, sheet.anims[name].row * h, w, h, -sheet.origin[0], -sheet.origin[1], w, h);
+    ctx.restore(); return;
+  }
   ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1);
   if (p.invulnerable > 0 && Math.floor(time * 18) % 3 === 0) ctx.globalAlpha = .64;
   const bob = moving && p.grounded !== false ? Math.round(Math.cos(phase * 2)) : 0;
@@ -439,6 +485,60 @@ export function drawHero(ctx, p = {}, time = 0) {
   poly(ctx, '#bbc2c5', [[-7, -60], [2, -62], [7, -59], [4, -57], [-1, -57], [-3, -50], [-5, -43], [-9 - wind / 2, -36], [-7, -47], [-9, -52]]);
   poly(ctx, '#e6e4d2', [[-5, -60], [2, -61], [5, -59], [-2, -58], [-5, -51], [-6, -45], [-7, -50]]);
   rect(ctx, '#e9e4d1', -3, -56, 2, 9); rect(ctx, '#949da9', -9, -41, 2, 6);
+  ctx.restore();
+}
+export const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // placeholder trail tints per Vigil weapon
+function drawSweep(ctx, x, y, dir, progress, from, to, radius, tint) { // a band that follows the blade from one angle to another (0 ahead, positive down)
+  const way = Math.sign(to - from), head = from + (to - from) * Math.min(1, progress * 1.5), tail = way > 0 ? Math.max(from, head - 1.7) : Math.min(from, head + 1.7);
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1); ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
+  ctx.beginPath(); ctx.arc(7, -3, radius, tail, head, way < 0); ctx.arc(3, -4, radius * .7, head, tail, way > 0); ctx.closePath(); ctx.fillStyle = tint + 'aa'; ctx.fill(); ctx.restore();
+}
+export function drawSlash(ctx, x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
+  ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
+  const radius = weapon === 'heavy' ? 118 : weapon === 'spear' ? (heavy ? 140 : 124) : weapon === 'twin' ? 86 : big ? 135 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
+  if (weapon === 'twin') { // two crossed arcs; `big` crosses them on both sides, `heavy` is the flat spin ring of the third cut
+    ctx.strokeStyle = tint; ctx.lineWidth = heavy ? 5 : 3;
+    if (heavy) { ctx.save(); ctx.scale(1, .3); ctx.beginPath(); ctx.arc(0, 0, 112, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); ctx.restore(); return; }
+    for (const side of big ? [1, -1] : [1]) for (const f of [1, -1]) { ctx.save(); ctx.scale(side, f); ctx.beginPath(); ctx.arc(7, -3, radius, -.95, .6); ctx.stroke(); ctx.restore(); }
+    ctx.restore(); return;
+  }
+  ctx.beginPath(); ctx.arc(7, -3, radius, -.95, 1.1); ctx.arc(3, -4, radius * .74, 1.1, -.95, true); ctx.closePath();
+  ctx.fillStyle = tint ? tint + '88' : enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
+  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = weapon === 'heavy' ? 8 : weapon === 'spear' ? (heavy ? 8 : 5) : heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : tint || '#f6e7be'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(5, -4, radius * .84, -.5, .75); ctx.lineWidth = 2; ctx.strokeStyle = enemy ? '#fc9da4' : '#fffbee'; ctx.stroke();
+  ctx.restore();
+}
+export function drawThrust(ctx, x, y, dir, progress, weapon = null, reach = weapon === 'spear' ? 190 : 155) { // long thin trail covering the thrust reach
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
+  const spear = weapon === 'spear', len = Math.round(reach * Math.min(1, progress * 4 + .3));
+  ctx.globalAlpha = Math.max(0, 1 - progress);
+  ctx.fillStyle = spear ? WEAPON_TINT.spear + '88' : '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
+  ctx.fillStyle = '#fffbee'; ctx.fillRect(12, -1, len - 12, 2);
+  ctx.restore();
+}
+export function drawSwing(ctx, p) { // the hero's own swing trail, once any wind-up is over
+  if (!(p.attack > 0) || p.windupT > 0) return;
+  const prog = 1 - p.attack / (p.attackLen - p.windup);
+  if (p.move === 'thrust') drawThrust(ctx, p.x, p.y - 33, p.dir, prog, p.weapon);
+  else if (p.weapon === 'spear' && p.combo === 1) drawThrust(ctx, p.x, p.y - 36, p.dir, prog, p.weapon, p.reach);
+  else if (p.weapon === 'heavy' && p.combo < 3) drawSweep(ctx, p.x, p.y - 33, p.dir, prog, p.combo === 2 ? 2.4 : -1.6, p.combo === 2 ? -1.6 : 2.4, 118, WEAPON_TINT.heavy); // down past the front to behind the feet, then back up
+  else drawSlash(ctx, p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon, p.combo === 2 && p.weapon === 'twin');
+}
+export function drawDive(ctx, p) { // falling streaks above a plunging hero
+  if (p.plunge !== 2) return;
+  const tint = WEAPON_TINT[p.weapon] ?? '#c7e2df', x = Math.round(p.x), y = Math.round(p.y), g = ctx.createLinearGradient(0, y - 190, 0, y - 30); g.addColorStop(0, tint + '00'); g.addColorStop(1, tint + 'cc');
+  ctx.fillStyle = g; for (const [dx, w, top] of [[-17, 2, 150], [-8, 4, 190], [6, 3, 170], [16, 2, 130]]) ctx.fillRect(x + dx, y - top, w, top - 30);
+}
+export function drawSlam(ctx, x, y, k, radius, weapon) { // a plunge's impact, k from 0 to 1: shaft of light, floor cracks, shockwave ring
+  const tint = WEAPON_TINT[weapon] ?? '#e4dccb', r = radius * Math.sin(k * Math.PI / 2), fade = 1 - k;
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y));
+  if (k < .35) { const q = 1 - k / .35; ctx.globalAlpha = q; ctx.fillStyle = '#fff5cd'; ctx.fillRect(-Math.round(16 * q) - 2, -170, Math.round(32 * q) + 4, 170); ctx.fillStyle = tint; ctx.fillRect(-Math.round(5 * q) - 1, -210, Math.round(10 * q) + 2, 210); }
+  ctx.globalAlpha = Math.min(1, fade * 1.6); ctx.strokeStyle = '#17131f'; ctx.lineWidth = 2; ctx.beginPath();
+  for (const side of [-1, 1]) { const q = Math.min(1, k * 5); ctx.moveTo(0, 1); ctx.lineTo(side * 26 * q, 3); ctx.lineTo(side * 44 * q, 1); ctx.lineTo(side * 74 * q, 5); ctx.moveTo(side * 26 * q, 3); ctx.lineTo(side * 40 * q, 8); }
+  ctx.stroke();
+  ctx.globalAlpha = fade * .85; ctx.strokeStyle = '#b3a68f'; ctx.lineWidth = 6 * fade + 1; ctx.beginPath(); ctx.ellipse(0, -3, r, 12 * (1 - k * .5), 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = tint; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, -3, r * .92, 9 * (1 - k * .5), 0, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 function skeleton(c, e, time, white) {

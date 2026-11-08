@@ -8,7 +8,7 @@ For agents taking over development. Goal: **keep adding fun, good-feeling gamepl
 - Every asset uses a relative path (GitHub Pages serves the game under `/nocturne-blood-moon-castle/`).
 - `core.js` never touches the DOM, Canvas, Audio or `localStorage`, so it can run in Node tests.
 - Game-logic randomness always goes through `game.rand()` (seeded and reproducible), never `Math.random()`. Purely visual effects may use `Math.random()`.
-- **Art is generated with `/chatgpt-image-gen`** following [`docs/art-pipeline.md`](docs/art-pipeline.md) and [`docs/art-bible.md`](docs/art-bible.md): attach the approved anchors to every generation so assets stay consistent, normalize the results, and ship them from `assets/`. Particles, trails, flashes and other per-frame effects stay in Canvas code, and existing code-drawn art is replaced only through approved art conversion proposals. Audio stays synthesized in code. Never use external or commercial game assets.
+- **Animation and its sound effects are generated as video with `/merlin-video-art`**, which is credit-limited, so reuse clips first. Still art is generated with `/chatgpt-image-gen`. Both follow [`docs/art-pipeline.md`](docs/art-pipeline.md) and [`docs/art-bible.md`](docs/art-bible.md): attach the approved anchors to every generation so assets stay consistent, normalize the results, and ship them from `assets/`. Particles, trails, flashes and other per-frame effects stay in Canvas code, and existing code-drawn art is replaced only through approved art conversion proposals. Music and non-hero sounds stay synthesized in code; a recording in `assets/` replaces the synthesized sound of the same name. Never use external or commercial game assets.
 - `docs/references/` holds original AI-generated concept art used only to align mood and palette. It never goes into the game and is not deployed. The concept art is far more detailed than the in-game pixel art: take the atmosphere and colors, not the resolution.
   - `library-mobile-ui.jpg`: layering of the library scene (warm wooden platforms over a cold green background) and the mobile layout (d-pad, round skill buttons on the right).
   - `castle-rooftop-night.jpg`: castle roof, night rain, violet-blue sky and moon, cold rim light on stone plus warm torchlight.
@@ -29,10 +29,10 @@ input (game.js) → Game.update(dt, input) (core.js) → emit(event) → game.js
 | `core.js` | State machine `title/playing/paused/upgrade/dead/won`, physics, combat, enemy AI, `STAGES`, `RELICS` | Any rule or number |
 | `game.js` | Keyboard and touch input, turning events into feedback (`handleEvent`'s `switch`), modal UI, saving, game loop, camera | Feedback for new events, new UI |
 | `i18n.js` | `STRINGS` per language, `t()`, language detection | Any player-visible text |
-| `art.js` | `drawScene/drawHero/drawEnemy/drawPortal`, with static scene caching; draws generated images from `assets/` as they replace code-drawn art | New enemy or scene visuals |
-| `assets/` | Normalized runtime images generated through the art pipeline | New art |
+| `art.js` | `drawScene/drawHero/drawEnemy/drawPortal`, with static scene caching; draws generated images from `assets/` as they replace code-drawn art. `heroPose` maps hero state to a sheet frame | New enemy or scene visuals |
+| `assets/` | Runtime sheets and sounds generated through the art pipeline. `hero*.png`, `hero*-sheet.js` and `sfx-*.m4a` are built by `tools/video-to-assets.mjs` from `tools/hero*-clips.json`, one sheet per weapon, registered in `assets/hero-sheets.js`; never edit them by hand | New art |
 | `spectacle.js` | Situational slow motion (#53): which answers earn a slow-motion moment, the budget, crisis and curve; pure, random injected | Slow-motion rules; game.js runs the clock |
-| `audio.js` | `AudioSystem.play(name, intensity)`: synthesized sounds plus vibration patterns | New sounds |
+| `audio.js` | `AudioSystem.play(name, intensity)`: synthesized sounds, recorded overrides and vibration patterns | New sounds |
 | `index.html` / `style.css` | HUD, touch buttons, SVG icons (`#i-<name>`) | New buttons, new icons |
 
 Logic and presentation talk only through events: core calls `this.emit('type', data)` and game.js decides how to present it. Follow this pattern for new mechanics.
@@ -55,6 +55,7 @@ Logic and presentation talk only through events: core calls `this.emit('type', d
 - Browser test (optional): run `python3 -m http.server 8080`, then `node tests/browser-smoke.mjs`. Needs Playwright; `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` and `BASE_URL` override the paths. `node tests/cursed-ui.mjs` is a second optional browser check (cursed-relic UI and room banners) run the same way.
 - Test bot (#52): `bot.js` plays the hero under human limits (0.18 s reaction, 8 presses/s). `node tools/bot-run.mjs --seeds 20 --floors 1-9` prints per-floor clear rate, deaths and blood stats for a build (use it to check enemy changes). With `?test`, key B or the on-screen AI button hands the hero to the bot and ignores all other player input.
 - Adding `?test` to the URL exposes `window.__nocturne` (`game`, `settings`, `startRun`, `clearInput`) for changing state from the browser console, for example `__nocturne.game.loadStage(4)` to jump to the boss stage.
+- Animation review: serve the repo root, then open `/tools/anim-review.html`. It runs the real `Game` with scripted inputs, so reach, jump height and timing match the game. Pick the weapon and the scenarios to loop, and review every animation change here. The page is not deployed.
 - Vibration, volume and feel must be checked on real devices; automated tests only verify rules.
 
 ## Team and process

@@ -1,0 +1,29 @@
+{
+ "name": "hero-spear", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 68, "colors": 32,
+ "clips": {
+  "combat": { "file": "hero-spear-combat.mp4", "size": 640, "heroHeight": 307, "feet": [252, 486] },
+  "loco": { "file": "hero-spear-loco.mp4", "size": 640, "heroHeight": 307, "feet": [252, 486] },
+  "fall": { "file": "hero-spear-fall.mp4", "size": 640, "heroHeight": 307, "feet": [252, 486] }
+ },
+ "anims": {
+  "idle": { "clip": "combat", "times": [0.0, 0.08, 0.16, 0.08], "fps": 5 },
+  "run": { "clip": "loco", "from": 0.5, "to": 2.25, "frames": 6, "fps": 12, "loop": true, "minGap": 8 },
+  "jump": { "clip": "loco", "times": [2.542, 2.583], "dy": [-60, -100], "dx": [50, 60], "fps": 10 },
+  "flip": { "clip": "loco", "times": [2.583, 2.625, 2.583], "dy": [-100, -100, -100], "dx": [60, 60, 60], "fps": 12 },
+  "fall": { "clip": "loco", "times": [3.417, 3.5], "dy": [-10, -10], "dx": [196, 196], "fps": 10 },
+  "land": { "clip": "loco", "times": [3.625, 3.875, 4.25], "dx": 196, "fps": 12 },
+  "dash": { "clip": "fall", "times": [0.375, ["loco", 2.333], ["loco", 2.458]], "clear": [0, 420, 225, 520], "fps": 16 },
+  "plunge": { "clip": "combat", "times": [3.875, 4.125, 4.25], "dy": [-100, -100, 0], "fps": 8 },
+  "slash1": { "clip": "combat", "times": [2.625, 2.75, ["fall", 1.083], ["fall", 1.083], ["fall", 1.125]], "strike": 3, "fps": 20 },
+  "slash2": { "clip": "combat", "times": [0.875, 0.917, 0.958, 1.0, 1.75], "strike": 3, "fps": 20 },
+  "slash3": { "clip": "combat", "times": [3.875, 4.125, 4.25, 4.375, 4.5, 4.75], "strike": 3, "fps": 20 },
+  "thrust": { "clip": "combat", "times": [2.833, 2.875, ["loco", 2.375], ["loco", 2.458], ["loco", 2.5]], "strike": 3, "fps": 16 },
+  "cast": { "clip": "fall", "times": [0.25, 0.333, 1.125, 1.25, 1.5], "fps": 12 },
+  "hurt": { "clip": "fall", "times": [3.0, 3.125, 3.375, 3.375, 3.375, 3.125], "fps": 10 },
+  "death": { "clip": "fall", "times": [3.0, 3.125, 3.625, 3.75, 3.875, 4.0, 4.25, 4.5], "fps": 8 }
+ },
+ "sfx": {
+  "swing_spear": { "clip": "combat", "from": 0.26, "to": 0.52 },
+  "lunge_spear": { "clip": "combat", "from": 2.85, "to": 3.21 }
+ }
+}
