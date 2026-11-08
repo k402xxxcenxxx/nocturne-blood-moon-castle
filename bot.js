@@ -174,7 +174,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player, W = game.worldWidth;
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const fw = game.mode === 'castle' && p.frenzy ? p.weapon : ''; // twin frenzy: no dash at all; spear frenzy: a dash is an assault with no i-frames, so it never dodges
-    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), dashReady = p.dashCd <= 0 && !p.plunge && fw !== 'twin' && fw !== 'spear', ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
+    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? p.swingMove : 1), dashReady = p.dashCd <= 0 && !p.plunge && fw !== 'twin' && fw !== 'spear', ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
     const lock = Math.min(.14, Math.max(0, p.attack - p.attackLen * .26)); // the core refuses a dash until 74% of a swing has played (it buffers 0.16 s): press early enough to fire on time
     const toward = Math.sign(w.x - p.x) || p.dir, away = -toward, held = prev.right ? 1 : prev.left ? -1 : 0;
     let danger = Infinity;
@@ -291,7 +291,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
     const p = game.player, W = game.worldWidth, castle = game.mode === 'castle';
     const o = { dir: 0, jump: false, attack: false, dash: false, magic: false, urgent: false };
     const fw = castle && p.frenzy ? p.weapon : ''; // see decideWarden
-    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? .65 : 1), foes = game.enemies.filter(e => e.hp > 0);
+    const speed = p.speed * (p.attack > 0 && fw !== 'twin' ? p.swingMove : 1), foes = game.enemies.filter(e => e.hp > 0);
     const canCast = p.magicCd <= 0 && (castle ? p.blood >= SKILL_MIN : p.lunatic || p.mp >= p.magicCost);
     const dashReady = p.dashCd <= 0 && !p.plunge && fw !== 'twin' && fw !== 'spear', ready = p.grounded && p.attackCd <= .03 && p.dash <= 0 && !p.plunge;
     const trapHot = (tr, extra = .8) => !tr.disabled && (tr.state !== 'idle' || tr.period - tr.t < extra);

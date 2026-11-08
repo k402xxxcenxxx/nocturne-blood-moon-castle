@@ -187,7 +187,7 @@ test('castle: dying returns to the Vigil at 100 blood with no relics, then floor
   game.setWeapon('heavy');
   game.descend();
   assert.equal(game.floor, 1);
-  assert.equal(player.damage, 30, 'relic damage is gone');
+  assert.equal(player.damage, 34, 'relic damage is gone');
 });
 
 test('castle: normal mode is untouched by blood rules', () => {

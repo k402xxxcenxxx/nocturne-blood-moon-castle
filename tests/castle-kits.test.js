@@ -940,3 +940,21 @@ test('apex review: a forced cleave judges the hero by its snapshot; a guard cut 
   assert.ok(holders >= 2 && holders <= 3 && heavy <= 1, `${holders} holders, ${heavy} heavy`);
   assert.equal(off.game.snaps.length, 0, 'no snapshots with apex off');
 });
+
+test('greatsword: a combo swing winds up before it can hit, sound and blow come together; a thrust does not', () => {
+  const { game, player, events } = castle(); game.setWeapon('heavy'); game.enemies = []; game.traps = []; game.obstacles = [];
+  const target = enemy(game, player.x + 80), hp = target.hp; player.dir = 1;
+  game.attack();
+  assert.ok(player.windupT > 0); assert.equal(target.hp, hp, 'nothing lands at the press'); assert.ok(!events.some(e => e.type === 'swing'));
+  advance(game, .2); assert.equal(target.hp, hp, 'still raised');
+  advance(game, .1); assert.ok(target.hp < hp, 'the blow lands'); assert.ok(events.some(e => e.type === 'swing'));
+  const counter = castle(); counter.game.setWeapon('heavy'); counter.player.thrustWindow = .5; counter.game.attack();
+  assert.equal(counter.player.windupT, 0); assert.equal(counter.player.move, 'thrust');
+});
+
+test('twin blades: the spread-arm second and third cuts hit both sides, the first and a thrust only the front', () => {
+  const { game, player } = castle(); game.setWeapon('twin'); game.enemies = []; game.traps = []; game.obstacles = [];
+  const behind = enemy(game, player.x - 70), hp = behind.hp; player.dir = 1;
+  game.attack(); assert.equal(behind.hp, hp, 'the first cut is in front');
+  player.attackCd = 0; game.attack(); assert.ok(behind.hp < hp, 'the second reaches behind');
+});

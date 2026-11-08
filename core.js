@@ -159,7 +159,7 @@ const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell fro
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
 const DELAY_CHANCE = floor => floor >= 8 ? .5 : floor >= 5 ? .3 : 0;
-export const WEAPONS = { heavy: { damage: 30, cd: 1.25, reach: 112 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 120 } };
+export const WEAPONS = { heavy: { damage: 34, cd: 1.25, reach: 112, windup: .26, swingMove: .3 }, twin: { damage: 17, cd: .75, reach: 88 }, spear: { damage: 22, cd: 1, reach: 120 } };
 const SLICE_EXCLUDED = ['vital', 'leech', 'mana', 'arcane', 'lunaticMoon', 'nightwalk']; // relics that only touch HP, MP or magic cost
 export const SLICE_POOL = RELICS.filter(r => !SLICE_EXCLUDED.includes(r.id)).map(r => r.id);
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -177,7 +177,7 @@ const basePlayer = () => ({
       speed: 245, attackSpeed: 1, crit: .12, reach: 100, leech: 0, armor: 1, swordMul: 1, takenMul: 1, lunatic: false, magicCdMax: .65, mpRegen: 8,
       knockback: 180, dashCooldown: .85, dashShield: 0, attack: 0, attackCd: 0,
       dash: 0, dashCd: 0, magicCd: 0, invulnerable: 0, combo: 0, comboWindow: 0,
-      attackLen: .24, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90, whiff: 0, blood: BLOOD_HALF, frenzy: false, weapon: null, debt: 0,
+      attackLen: .24, windup: 0, windupT: 0, swingMove: .65, move: '', buffer: 0, thrustWindow: 0, thrustMul: 1.35, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, perfectMp: 10, plunge: 0, plungeT: 0, plungeY: 0, plungeRadius: 90, whiff: 0, blood: BLOOD_HALF, frenzy: false, weapon: null, debt: 0,
 });
 
 export class Game {
@@ -275,7 +275,7 @@ export class Game {
     }
     this.totalEnemies = this.enemies.length;
     if (!fight) this.placeHazards(index);
-    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
+    Object.assign(this.player, { x: 150, y: FLOOR, vx: 0, vy: 0, grounded: true, on: null, jumps: 0, attack: 0, windupT: 0, attackCd: 0, dash: 0, dashCd: 0, invulnerable: .8, combo: 0, move: '', buffer: 0, thrustWindow: 0, perfect: 0, otherInv: 0, dashBuf: 0, perfectUsed: false, plunge: 0, plungeT: 0 });
   }
   // Castle floor table (#50, #69): floors 1-3 are fixed mixes (5 enemies), 4-7 roll 6, 8-9 roll 7 (the Belfry placeholder: floors 11-16 roll 6, 17-19 roll 7, same cast and elite rules as 8-9). Floor 4 teaches the bat with two bat slots (1 and 3, never a gate guard), floors 5-9 keep slot 1 a bat,
   // floor 7 previews one knight, floors 8-9 roll knights. The priest is taught on floor 5 and the mage on floor 6 (never gate guards); later floors roll them in with the caps below.
@@ -323,7 +323,7 @@ export class Game {
   setWeapon(id) {
     const w = WEAPONS[id], p = this.player;
     if (!w) return false;
-    Object.assign(p, basePlayer(), { blood: p.blood, weapon: id, damage: w.damage, attackSpeed: w.cd, reach: w.reach });
+    Object.assign(p, basePlayer(), { blood: p.blood, weapon: id, damage: w.damage, attackSpeed: w.cd, reach: w.reach, swingMove: w.swingMove ?? .65 });
     for (const r of this.relics) RELICS.find(x => x.id === r).apply(p);
     return true;
   }
@@ -537,7 +537,7 @@ export class Game {
     if (!stopped) this.gaps = this.gaps.map(g => g - dt).filter(g => g > 0);
     if (p.frenzy && !this.bossDown()) { p.blood = Math.max(BLOOD_HALF, p.blood - FRENZY_BURN * dt); this.checkFrenzy(); } // frozen by pause, picks and hit-stop (all return above)
     if (stopped) for (const pl of this.platforms) pl.dx = pl.dy = 0; else this.updatePlatforms(dt);
-    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && (key === 'buffer' || key === 'dashBuf'))) p[key] = Math.max(0, p[key] - dt); // buffered input waits out a plunge
+    for (const key of ['attack', 'attackCd', 'dash', 'dashCd', 'magicCd', 'invulnerable', 'comboWindow', 'buffer', 'thrustWindow', 'perfect', 'otherInv', 'dashBuf', 'whiff']) if (!(p.plunge && key === 'dashBuf') && !(p.plunge === 3 && key === 'buffer')) p[key] = Math.max(0, p[key] - dt); // a buffered dash waits out a plunge; an attack lasts through the fall only if pressed within its 0.16 s of landing
     p.mp = Math.min(p.maxMp, p.mp + dt * p.mpRegen);
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction && p.dash <= 0 && !this.frenzyOf('twin')) p.dir = direction; // twin frenzy: movement never turns the facing (only the swing-start seek does), so you can walk backwards while attacking
@@ -558,7 +558,7 @@ export class Game {
     if (p.plunge === 3) p.vx = 0;
     else if (p.dash > 0) p.vx = p.dir * 730;
     else if (p.attack > .035 && p.move === 'thrust') p.vx = p.dir * 420;
-    else p.vx = direction * p.speed * (p.attack > 0 && !this.frenzyOf('twin') ? .65 : 1);
+    else p.vx = direction * p.speed * (p.attack > 0 && !this.frenzyOf('twin') ? p.swingMove : 1);
     if (p.on && p.grounded && this.platforms.includes(p.on)) { p.x += p.on.dx || 0; p.y = p.on.y; } // a moving platform carries its rider
     const oldX = p.x;
     p.x = clamp(p.x + p.vx * dt, 25, this.worldWidth - 30);
@@ -575,7 +575,8 @@ export class Game {
       if (p.y >= floor) { p.y = floor; p.vy = 0; p.grounded = true; p.on = on; p.jumps = 0; }
     }
     if (p.plunge === 2) this.plungeHit(oldY);
-    if (p.attack > .035) this.hitTargets();
+    if (p.windupT > 0 && (p.windupT -= dt) <= 0) this.strike();
+    else if (p.attack > .035 && p.windupT <= 0) this.hitTargets();
     if (this.mode === 'castle' && this.apex && !stopped) { this.snaps.push(this.heroSnap()); while (this.snaps.length > 1 && this.snaps[0].t < this.time - APEX_REACT - .1) this.snaps.shift(); }
     if (p.frenzy && !this.wasFrenzy) this.frenzyAt = this.time;
     this.wasFrenzy = p.frenzy;
@@ -642,7 +643,9 @@ export class Game {
     this.echo.list.push({ kind, off: h.elapsed, x: p.x, y: p.y, dir: p.dir, boxes, dur, state: 0, hit: false });
     this.emit('echo', { state: 'record', x: p.x, y: p.y, box: boxes[0], boxes });
   }
-  sweepBox(reach, y0, y1) { const p = this.player; return { x0: Math.min(p.x, p.x + p.dir * reach), x1: Math.max(p.x, p.x + p.dir * reach), y0: p.y + y0, y1: p.y + y1 }; }
+  sweepBox(reach, y0, y1, dir = this.player.dir) { const p = this.player; return { x0: Math.min(p.x, p.x + dir * reach), x1: Math.max(p.x, p.x + dir * reach), y0: p.y + y0, y1: p.y + y1 }; }
+  // The twin blades' second and third cuts are drawn with both arms spread, so they reach both sides.
+  twoSided() { const p = this.player; return p.weapon === 'twin' && p.move !== 'thrust' && p.combo >= 2; }
   stepEcho(dt) {
     const ec = this.echo, p = this.player;
     if (!ec.armed) return;
@@ -735,10 +738,17 @@ export class Game {
     p.move = thrust ? 'thrust' : '';
     p.whiff = HEAVY_WHIFF; // cleared by the first enemy the swing hits
     const quick = twin ? TWIN_FRENZY_CD : 1; // the swing itself speeds up too, or the 0.24 s floor would swallow the cooldown
-    p.attack = p.attackLen = .24 * quick; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed * quick); // never shorter than the swing animation
+    p.windup = p.windupT = thrust ? 0 : WEAPONS[p.weapon]?.windup ?? 0; // a thrust is a counter: it never winds up
+    p.attack = p.attackLen = (.24 + p.windup) * quick; p.attackCd = Math.max(p.attackLen, (thrust ? .34 : p.combo === 3 ? .39 : .29) * p.attackSpeed * quick); // never shorter than the swing animation
     this.hitSet = new Set(); this.swingShields = new Set(); this.flameUsed = this.chainUsed = false;
-    this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo', cost });
-    this.recordEcho(thrust ? 'thrust' : 'combo', [thrust ? this.sweepBox(155 + Math.min(60, 20 * this.stacks('pierce')), -48, -18) : this.sweepBox(p.reach + (p.combo === 3 ? 24 : 0), -88, -4)], Math.max(.1, p.attackLen - .035));
+    this.swingCost = cost;
+    if (!p.windup) this.strike();
+  }
+  // The blow itself, at the end of any wind-up: sound, echo, projectiles and the first hit check all belong here.
+  strike() {
+    const p = this.player, thrust = p.move === 'thrust', reach = p.reach + (p.combo === 3 ? 24 : 0);
+    this.emit('swing', { x: p.x, y: p.y - 30, dir: p.dir, combo: p.combo, move: thrust ? 'thrust' : 'combo', cost: this.swingCost });
+    this.recordEcho(thrust ? 'thrust' : 'combo', thrust ? [this.sweepBox(155 + Math.min(60, 20 * this.stacks('pierce')), -48, -18)] : [this.sweepBox(reach, -88, -4), ...(this.twoSided() ? [this.sweepBox(reach, -88, -4, -p.dir)] : [])], Math.max(.1, p.attackLen - p.windup - .035));
     if (!thrust && p.combo === 3 && this.stacks('wave')) this.launchShot('wave', .85 + .45 * (this.stacks('wave') - 1), 540, 4, 16);
     if ((thrust || p.combo === 3) && this.stacks('pierce')) this.launchShot('beam', .55 * this.stacks('pierce'), 780, BEAM_REACH / 780, 10);
     this.hitTargets();
@@ -780,8 +790,9 @@ export class Game {
     const reach = thrust ? 155 + Math.min(60, 20 * this.stacks('pierce')) : p.reach + (p.combo === 3 ? 24 : 0);
     const mul = thrust ? p.thrustMul : [1, 1, 1.15, 1.8][p.combo];
     this.shieldDone = this.swingShields; // lives for the whole swing, like hitSet
+    const both = this.twoSided();
     for (const e of this.enemies.concat(this.obstacles)) {
-      const dx = (e.x - p.x) * p.dir;
+      const dx = both ? Math.abs(e.x - p.x) : (e.x - p.x) * p.dir;
       if (e.hp <= 0 || this.hitSet?.has(e) || dx < -e.w / 2 || dx > reach + e.w / 2 || (thrust ? e.y < p.y - 48 || e.y - e.h > p.y - 18 : e.y < p.y - 88 || e.y - e.h > p.y - 4)) continue;
       this.hitSet?.add(e);
       if (e.kind) { this.damageObstacle(e, Math.round(p.damage * p.swordMul * mul)); continue; }
@@ -794,7 +805,7 @@ export class Game {
       const blocked = own || !!this.cover;
       const punish = this.punishing(e);
       p.whiff = 0;
-      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
+      this.damageEnemy(e, blocked ? Math.max(1, Math.round(amount * .15)) : amount, both ? Math.sign(e.x - p.x) || p.dir : p.dir, crit, thrust || p.combo === 3, blocked, thrust ? POISE_DAMAGE.thrust : POISE_DAMAGE.combo[p.combo]);
       this.cover = null;
       if (!this.deflected) p.mp = Math.min(p.maxMp, p.mp + 2);
       if (this.bloodOk(e)) this.gainBlood((blocked || this.guardedHit ? 1 : !thrust && p.combo === 3 ? 5 : 3) + (punish && !blocked ? 2 : 0) + (rip ? RIPOSTE_BLOOD : 0));

@@ -1,0 +1,29 @@
+{
+ "name": "hero-twin", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 68, "colors": 32,
+ "clips": {
+  "combat": { "file": "hero-twin-combat.mp4", "size": 640, "heroHeight": 307, "feet": [333, 486] },
+  "loco": { "file": "hero-twin-loco.mp4", "size": 640, "heroHeight": 307, "feet": [333, 486] },
+  "fall": { "file": "hero-twin-fall.mp4", "size": 640, "heroHeight": 307, "feet": [333, 486] }
+ },
+ "anims": {
+  "idle": { "clip": "combat", "times": [0.0, 0.08, 0.16, 0.08], "fps": 5 },
+  "run": { "clip": "loco", "from": 0.75, "to": 2.1, "frames": 6, "fps": 14, "loop": true, "minGap": 8, "clear": [0, 420, 225, 520] },
+  "jump": { "clip": "loco", "times": [2.625], "dy": [-70], "clear": [0, 440, 300, 520], "fps": 10 },
+  "flip": { "clip": "loco", "times": [2.75, 2.875, 3.0, 3.125], "dy": [-150, -170, -200, -200], "fps": 14 },
+  "fall": { "clip": "loco", "times": [3.375, 3.5], "dy": [-134, -54], "fps": 10 },
+  "land": { "clip": "loco", "times": [3.625, 3.875, 4.25], "fps": 14 },
+  "dash": { "clip": "fall", "times": [0.375, 0.5, 0.625], "clear": [0, 420, 215, 520], "fps": 16 },
+  "plunge": { "clip": "combat", "times": [4.042, 4.333, 4.375], "dy": [-134, -134, 0], "fps": 8 },
+  "slash1": { "clip": "combat", "times": [0.375, 0.5, 0.625, 0.75, 0.875], "strike": 3, "fps": 20 },
+  "slash2": { "clip": "combat", "times": [2.125, 2.25, 2.375, 2.5], "strike": 2, "fps": 20 },
+  "slash3": { "clip": "combat", "times": [2.625, 2.75, 3.0, 3.125, 3.25, 3.5], "strike": 4, "fps": 24 },
+  "thrust": { "clip": "combat", "times": [3.75, 3.875, 3.875, 3.625], "strike": 3, "fps": 16 },
+  "cast": { "clip": "fall", "times": [1.0, 1.375, 1.5, 1.625, 1.75], "fps": 12 },
+  "hurt": { "clip": "fall", "times": [3.0, 3.125, 3.375, 3.375, 3.375, 3.125], "fps": 10 },
+  "death": { "clip": "fall", "times": [3.125, 3.25, 3.875, 4.0, 4.125, 4.25, 4.5, 4.75], "fps": 8 }
+ },
+ "sfx": {
+  "swing_twin": { "clip": "combat", "from": 0.42, "to": 0.61 },
+  "lunge_twin": { "clip": "combat", "from": 2.59, "to": 2.88 }
+ }
+}

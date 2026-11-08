@@ -54,7 +54,7 @@ test('threatIn ignores a single-hit attack whose contact is over (struck), but s
 
 // --- The Timeless Belfry frame (#69 PR 1) ---
 test('belfry frame: castle floors 1-10 replay bit-for-bit (the golden is from main before #69)', () => {
-  assert.equal(castleFloorsHash(), 'a7b2567624cfce15');
+  assert.equal(castleFloorsHash(), '271f98ecc1bfcfce'); // re-recorded when the greatsword got its wind-up: the hash replays one heavy run
 });
 
 test('belfry frame: floors 1-20 in order, rooms, required guards, portals, relic picks, the Vigils and the slice end', () => {

@@ -1,4 +1,5 @@
-// Original procedural sound: no downloads, samples, or autoplay dependency.
+// Procedural sound, plus optional recorded effects from assets/ that replace a synthesized sound of the same name.
+import { heroSheets } from './assets/hero-sheets.js';
 // Enemy warning cues that do not start with 'tell': they must stay clear and unpitched during slow motion.
 const DRY = new Set(['batWing', 'kingTitheStart', 'heavyWarn', 'trapWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
   'kingTellSlash', 'kingTellString', 'kingTellTurn', 'kingTellSlam', 'kingTellCharge', 'kingTellDescent', 'kingTellVolley', 'kingTellRitual',
@@ -18,6 +19,8 @@ export class AudioSystem {
     this._beating = false; // frenzy heartbeat wanted; the timer only runs while audible
     this._beatTimer = null;
     this._lethal = false; // lethal-debt warning wanted
+    this._samples = new Map(); // name -> decoded recording
+    this.weapon = null; // a recording named swing_heavy wins over swing while that weapon is in hand
   }
 
   async unlock() {
@@ -46,6 +49,7 @@ export class AudioSystem {
         this._noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
         const samples = this._noiseBuffer.getChannelData(0);
         for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+        for (const name of Object.values(heroSheets).flatMap(sheet => sheet.sfx)) fetch(new URL(`assets/sfx-${name}.m4a`, import.meta.url)).then(r => r.arrayBuffer()).then(data => ctx.decodeAudioData(data)).then(buffer => this._samples.set(name, buffer)).catch(() => {}); // best effort: a sound that fails to load stays synthesized
       } catch {
         this.context?.close().catch(() => {});
         this.context = null;
@@ -226,6 +230,17 @@ export class AudioSystem {
     source.stop(at + duration + 0.02);
   }
 
+  _sample(buffer, gain, at, dry) {
+    const source = this.context.createBufferSource(), level = this.context.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = 0.95 + Math.random() * 0.1; // small pitch spread so repeats do not sound mechanical
+    level.gain.value = gain;
+    source.connect(level);
+    level.connect(dry ? this._master : this._bus);
+    source.onended = () => { source.disconnect(); level.disconnect(); };
+    source.start(at);
+  }
+
   play(name, intensity = 1) {
     if (this._paused) return;
     const patterns = { hit: 20, crit: [30, 15, 45], hurt: [35, 20, 65], dash: 10,
@@ -244,6 +259,8 @@ export class AudioSystem {
     if (!amount) return;
     const at = ctx.currentTime + 0.005;
     const dry = /^(tell|glint|slow|accent)/.test(name) || DRY.has(name); // never filtered or pitched by slow motion
+    const recording = this._samples.get(`${name}_${this.weapon}`) ?? this._samples.get(name);
+    if (recording) { this._sample(recording, amount * 0.8, at, dry); return; }
     const tone = (type, frequency, duration, gain, slide, delay = 0) =>
       this._voice(type, frequency, duration, gain * amount, at + delay, slide, false, dry);
     const notes = (frequencies, speed = 0.09, gain = 0.12) => frequencies.forEach((f, i) => {
@@ -289,6 +306,10 @@ export class AudioSystem {
         tone('noise', 5000, 0.06, 0.16, 900, 0.02);
         break;
       }
+      case 'slam': // sub-bass under the plunge landing, recorded or not
+        tone('sine', 62, 0.5, 0.6, 24);
+        tone('noise', 420, 0.3, 0.3, 90);
+        break;
       case 'thrust': // enemy spear: short piercing hiss, narrower and higher than swing; no vibration
         tone('noise', 5200, 0.09, 0.2, 1400);
         tone('triangle', 1250, 0.08, 0.07, 520);

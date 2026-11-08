@@ -1,5 +1,5 @@
 import { HOUR_PERIOD, Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
-import { drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
+import { WEAPON_TINT, drawSlash, drawSwing, drawDive, drawSlam, drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -15,7 +15,7 @@ function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value
 const storedSettings = readSaved('nocturne-settings', {});
 const settings = { sound: true, music: true, haptics: true, shake: !matchMedia('(prefers-reduced-motion: reduce)').matches, lang: detectLanguage(navigator.language), ...storedSettings };
 const records = { runs: 0, wins: 0, best: 0, bestFloor: 0, ...readSaved('nocturne-records', {}) };
-let realDt = 0, game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
+let heroHurtAt = -9, heroHurtHeavy = false, heroDeadAt = -9, heroSwingAt = -9, heroLandAt = -9, heroSlamAt = -9, heroGrounded = true, realDt = 0, game, camera = 0, viewWidth = 960, worldTime = 0, lastTime = 0, particles = [], effects = [], numbers = [], trails = [];
 // Situational slow motion (#53): spectacle.js decides, this file runs the clock. `slow` is the running one (curve, real time into it, tint, point, fast exit), `slowK` its 0..1 strength for the zoom, tint and audio.
 const spectacle = createSpectacle(); let slow = null, slowK = 0, pendingSlow = null, realTime = 0, lastFrenzyEnd = -99, slowTintK = 0;
 let phaseTime = 0, dustTimer = 0, shakeTime = 0, shakePower = 0, damageFlash = 0, whiteFlash = 0, silverFlash = 0, hitCount = 0, comboTime = 0;
@@ -128,7 +128,8 @@ function handleEvent(e) {
       audio.setIntensity(1); audio.play(e.stage ? 'portal' : 'ui');
       break;
     }
-    case 'swing': if (game.frenzyOf('twin')) { trails.push({ ...game.player, life: .16, invulnerable: 0 }); burst(e.x, e.y - 30, '#b6e8ff', 3, 90, game.player.dir, 2); }
+    case 'swing': if (e.move !== 'plunge') heroSwingAt = worldTime; audio.weapon = game.player.weapon; if (game.frenzyOf('twin')) { trails.push({ ...game.player, life: .16, invulnerable: 0 }); burst(e.x, e.y - 30, '#b6e8ff', 3, 90, game.player.dir, 2); }
+      if (e.move === 'combo' && (game.player.weapon === 'heavy' || game.player.weapon === 'spear' && e.combo === 3)) { rumble(e.combo === 3 ? game.player.weapon === 'heavy' ? 11 : 7 : 5, e.combo === 3 ? .24 : .14); if (e.combo === 3 && game.player.weapon === 'heavy') { audio.play('slam', 1.1); effects.push({ type: 'slam', x: e.x + e.dir * 72, y: e.y + 30, radius: 112, weapon: 'heavy', life: .42, max: .42 }); if (settings.shake) whiteFlash = .04; } if (e.combo !== 2) burst(e.x + e.dir * 72, e.y + 28, '#9a8c77', e.combo === 3 ? 16 : 9, 130); } // the blow lands in the floor, hit or miss; the second cut rises off it
       if (e.cost > 0 && settings.shake) $('blood-meter').animate([{ filter: 'brightness(2.2)' }, { filter: 'none' }], 200); // swing cost tick
       if (e.move === 'plunge') audio.play('dive', .9); else if (e.move === 'thrust') audio.play('lunge'); else audio.play(game.frenzyOf('twin') ? 'twinTick' : 'swing', e.combo === 3 ? 1.2 : .75); break;
     case 'hit':
@@ -152,6 +153,7 @@ function handleEvent(e) {
       effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .5, max: .5, color: '#b48cf0', r: 150 }); break;
     case 'curse': burst(e.x, e.y - 30, '#6a3a9a', 16, 120, 0, 2); burst(e.x, e.y - 30, '#1c1424', 10, 80); effects.push({ type: 'wardBreak', x: e.x, y: e.y - 30, life: .45, max: .45, color: '#8a5cc0', r: 70 }); if (!curseHinted) { curseHinted = true; pendingToast = t('hint.curse'); } break; // hex/ash burst, then the first-time hint
     case 'hurt':
+      heroHurtAt = worldTime; heroHurtHeavy = !!e.heavy;
       audio.play(e.echo ? 'echoHit' : e.debt > 0 ? 'numbHit' : 'hurt'); if (e.heavy) audio.play('heavyHit'); hitCount = 0; comboTime = 0;
       if (e.debt > 0) { // numb: a cold grey flash, no shake and no knockback; the number is debt, not blood
         if (settings.shake) silverFlash = .05; trails.push({ ...game.player, life: .25, invulnerable: 0, silver: true }); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#aab4c8', r: 60 });
@@ -181,10 +183,11 @@ function handleEvent(e) {
       break;
     case 'shot': if (e.kind !== 'ground' || e.dir > 0) audio.play(e.kind === 'beam' ? 'beam' : e.kind === 'ground' ? 'groundWave' : 'crescent'); break; // both ground waves launch together: sound once, for the right-hand one
     case 'plunge':
+      heroSlamAt = worldTime;
       if (!e.radius) { audio.play('plunge', .5); burst(e.x, e.y - 2, '#b8adcf', 4, 70); break; } // short fall: no shockwave, so no ring
-      audio.play('plunge', 1.1); rumble(5, .14);
-      effects.push({ type: 'dust', x: e.x, y: e.y, radius: e.radius, life: .35, max: .35 });
-      burst(e.x - e.radius * .8, e.y - 2, '#9a8c77', 5, 90, -1, 3); burst(e.x + e.radius * .8, e.y - 2, '#9a8c77', 5, 90, 1, 3); burst(e.x, e.y - 2, '#b8adcf', 8, 110);
+      audio.play('plunge', 1.1); audio.play('slam', game.player.weapon === 'heavy' ? 1.25 : 1); rumble(game.player.weapon === 'heavy' ? 11 : 8, game.player.weapon === 'heavy' ? .28 : .2); if (settings.shake) whiteFlash = .04;
+      effects.push({ type: 'slam', x: e.x, y: e.y, radius: e.radius, weapon: game.player.weapon, life: .42, max: .42 });
+      burst(e.x - e.radius * .8, e.y - 2, '#9a8c77', 9, 130, -1, 3); burst(e.x + e.radius * .8, e.y - 2, '#9a8c77', 9, 130, 1, 3); burst(e.x, e.y - 2, '#b8adcf', 16, 200, 0, 3);
       break;
     case 'stagger':
       audio.play('stagger', e.boss ? 1.3 : 1); flashNumber({ ...e, amount: t('float.stagger') }, '#ffd36e'); rumble(e.boss ? 7 : 5, .18);
@@ -383,7 +386,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: eliteLabel(e) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathEcho = e.cause === 'echo'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': heroDeadAt = worldTime; deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathEcho = e.cause === 'echo'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -606,7 +609,6 @@ function updateHud() {
   $('combo-display').classList.toggle('show', hitCount > 1 && comboTime > 0 && game.state === 'playing');
   $('combo-display').querySelector('strong').textContent = hitCount;
 }
-const WEAPON_TINT = { heavy: '#ff9a6a', twin: '#b6e8ff', spear: '#e6d4ff' }; // placeholder trail tints per Vigil weapon
 let vigW = 0; // frenzy gradients are built once; strength fades via globalAlpha
 const FRENZY_TINT = { heavy: { aura: '170,180,200', vig: '90,100,130', ring: '#aab4c8' }, twin: { aura: '110,210,255', vig: '40,110,170', ring: '#b6e8ff' }, spear: { aura: '200,150,255', vig: '110,50,170', ring: '#e6d4ff' } }, FRENZY_RED = { aura: '255,70,70', vig: '160,10,30' }; // per-weapon frenzy colours; red is the shared default
 const auraCache = {}, vigCache = {};
@@ -622,29 +624,6 @@ function drawHeroTinted(hero, color) {
 let curseGrad; function curseAura() { if (!curseGrad) { curseGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, 60); curseGrad.addColorStop(0, 'rgba(60,20,100,.7)'); curseGrad.addColorStop(1, 'rgba(60,20,100,0)'); } return curseGrad; }
 function auraGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (!auraCache[w]) { const g = ctx.createRadialGradient(0, 0, 8, 0, 0, 70); g.addColorStop(0, `rgba(${k.aura},.45)`); g.addColorStop(1, `rgba(${k.aura},0)`); auraCache[w] = g; } return auraCache[w]; }
 function vignetteGradient(w) { const k = FRENZY_TINT[w] || FRENZY_RED; if (vigW !== viewWidth) { vigW = viewWidth; for (const o in vigCache) delete vigCache[o]; } if (!vigCache[w]) { const g = ctx.createRadialGradient(viewWidth / 2, 270, 170, viewWidth / 2, 270, Math.hypot(viewWidth, 540) / 2); g.addColorStop(0, `rgba(${k.vig},0)`); g.addColorStop(1, `rgba(${k.vig},.55)`); vigCache[w] = g; } return vigCache[w]; }
-function drawSlash(x, y, dir, progress, heavy = false, enemy = false, weapon = null, big = false) {
-  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
-  ctx.globalAlpha = Math.max(0, Math.sin(progress * Math.PI));
-  const radius = weapon === 'heavy' ? 118 : weapon === 'twin' ? 62 : big ? 135 : heavy ? 105 : 82, tint = WEAPON_TINT[weapon];
-  if (weapon === 'twin') { // two short crossed arcs
-    ctx.strokeStyle = tint; ctx.lineWidth = 3;
-    for (const f of [1, -1]) { ctx.save(); ctx.scale(1, f); ctx.beginPath(); ctx.arc(7, -3, radius, -.95, .6); ctx.stroke(); ctx.restore(); }
-    ctx.restore(); return;
-  }
-  ctx.beginPath(); ctx.arc(7, -3, radius, -.95, 1.1); ctx.arc(3, -4, radius * .74, 1.1, -.95, true); ctx.closePath();
-  ctx.fillStyle = tint ? tint + '88' : enemy ? '#e7657577' : heavy ? '#d7c8ef99' : '#c7e2df88'; ctx.fill();
-  ctx.beginPath(); ctx.arc(7, -3, radius - 2, -.75, .88); ctx.lineWidth = weapon === 'heavy' ? 8 : heavy ? 5 : 3; ctx.strokeStyle = enemy ? '#ef8990' : tint || '#f6e7be'; ctx.stroke();
-  ctx.beginPath(); ctx.arc(5, -4, radius * .84, -.5, .75); ctx.lineWidth = 2; ctx.strokeStyle = enemy ? '#fc9da4' : '#fffbee'; ctx.stroke();
-  ctx.restore();
-}
-function drawThrust(x, y, dir, progress, weapon = null) { // long thin trail covering the 155 px thrust reach
-  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1);
-  const spear = weapon === 'spear', len = Math.round((spear ? 190 : 155) * Math.min(1, progress * 4 + .3));
-  ctx.globalAlpha = Math.max(0, 1 - progress);
-  ctx.fillStyle = spear ? WEAPON_TINT.spear + '88' : '#c7e2df88'; ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(len, 0); ctx.lineTo(8, 3); ctx.fill();
-  ctx.fillStyle = '#fffbee'; ctx.fillRect(12, -1, len - 12, 2);
-  ctx.restore();
-}
 function drawGroundWave(b) { // low floor ripple: rising crest at the front, trailing tail; the faint circle is the exact r hit area
   const d = Math.sign(b.vx) || 1, x = Math.round(b.x), y = Math.round(b.y), r = b.r, f = Math.sin(worldTime * 30) * 2;
   ctx.save(); ctx.translate(x, y); ctx.scale(d, 1);
@@ -714,11 +693,7 @@ function drawEffects(dt) {
       ctx.save(); ctx.globalAlpha = (1 - progress) * .8; drawGate(ctx, fx.x, FLOOR, 44, 150, progress * progress * 190); ctx.restore();
     } else if (fx.type === 'wardenWake') { // floor 10 entrance: a portcullis falls shut at the arena mouth, holds, then fades (the real wall is already there)
       const q = Math.min(1, progress * 6), k = progress < .75 ? 1 : (1 - progress) * 4; ctx.save(); ctx.globalAlpha = Math.max(0, k) * .9; drawGate(ctx, fx.x, FLOOR, fx.w, fx.h, (1 - q * q) * (fx.h + 60)); ctx.restore();
-    } else if (fx.type === 'dust') { // ring of dust expanding along the floor to the plunge radius
-      const r = fx.radius * Math.sin(progress * Math.PI / 2);
-      ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = (1 - progress) * .8;
-      ctx.strokeStyle = '#b3a68f'; ctx.lineWidth = 4 * (1 - progress) + 1; ctx.beginPath(); ctx.ellipse(0, -3, r, 9 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = '#e4dccb'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, -3, r * .92, 7 * (1 - progress * .5), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'slam') { drawSlam(ctx, fx.x, fx.y, progress, fx.radius, fx.weapon);
     } else if (fx.type === 'impact') {
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.globalAlpha = fx.life / fx.max; if (fx.s) ctx.scale(fx.s, fx.s);
       ctx.fillStyle = fx.color || '#fff5cd'; ctx.beginPath(); ctx.moveTo(-24, -3); ctx.lineTo(-4,-6); ctx.lineTo(-2,-25); ctx.lineTo(3,-5); ctx.lineTo(28,0); ctx.lineTo(4,4); ctx.lineTo(0,21); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill(); ctx.restore();
@@ -807,7 +782,7 @@ function drawEffects(dt) {
     } else if (fx.type === 'claw') { // bat swoop contact: three short rakes
       ctx.save(); ctx.translate(Math.round(fx.x), Math.round(fx.y)); ctx.scale(fx.dir, 1); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = '#f5d8e4'; ctx.lineWidth = 3; ctx.lineCap = 'round';
       for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(14 + i * 7, -22 + i * 9); ctx.lineTo(34 + i * 7 + progress * 10, 4 + i * 9); ctx.stroke(); } ctx.restore();
-    } else drawSlash(fx.x, fx.y, fx.dir, progress, fx.boss, true, null, fx.big);
+    } else drawSlash(ctx, fx.x, fx.y, fx.dir, progress, fx.boss, true, null, fx.big);
     fx.life -= fx.type === 'impact' ? realDt : dt; // the 2-frame impact burst must stay 2 frames, however slow the world
   }
   effects = effects.filter(e => e.life > 0);
@@ -933,10 +908,7 @@ function render(dt) {
       if (e.elite && e.hp > 0 && e.affix) drawAffixIcon(ctx, e.affix, e.x + (e.type === 'boss' ? 36 : 25), e.y - e.h - 14); // right of the head, clear of the "!", crest (left), HP bar and stun stars
       if (e.tell > 0) { /* "!" slides clear of the hero and lifts above the 0.1 s glint star */ ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; const pdx = e.x - game.player.x; let bx = Math.round(Math.abs(pdx) < 26 ? game.player.x + (pdx < 0 || (pdx === 0 && e.dir === 1) ? -26 : 26) : e.x), by2 = Math.round(e.y - e.h - (e.type === 'shield' ? 25 : 15) - (e.glint > 0 ? 26 : 0)); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const hv = e.heavy && (e.type !== 'boss' || e.warden), mark = hv ? '!!' : '!'; if (hv) ctx.font = 'bold 27px Georgia'; ctx.strokeText(mark, bx, by2); ctx.fillStyle = hv ? '#ff3b30' : e.punishable ? '#ffd36e' : '#f4ae84'; ctx.fillText(mark, bx, by2); ctx.lineWidth = 1; }
     }
-    if (p.plunge === 2) { // short vertical streak above the falling hero
-      const g = ctx.createLinearGradient(0, p.y - 130, 0, p.y - 40); g.addColorStop(0, '#c7e2df00'); g.addColorStop(1, '#c7e2dfaa');
-      ctx.fillStyle = g; ctx.fillRect(Math.round(p.x) - 7, Math.round(p.y) - 130, 3, 90); ctx.fillRect(Math.round(p.x) + 5, Math.round(p.y) - 110, 2, 70);
-    }
+    drawDive(ctx, p);
     if (frenzyK > 0) { ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y - 32)); ctx.globalAlpha = frenzyK * (settings.shake ? .75 + .25 * Math.sin(worldTime * 9) : .85); ctx.fillStyle = auraGradient(p.weapon); ctx.fillRect(-70, -80, 140, 160); ctx.restore(); }
     if (game.curseT > 0 && game.mode === 'castle') { // blood curse: dark-violet aura and a hex sigil over the head, fading with curseT; still when calm
       const k = Math.min(1, game.curseT / 1.5), spin = settings.shake ? worldTime * 1.5 : 0, cx = Math.round(p.x), cy = Math.round(p.y - 96);
@@ -947,11 +919,13 @@ function render(dt) {
     }
     const numb = frenzyK > 0 && p.weapon === 'heavy', assault = frenzyK > 0 && p.weapon === 'spear' && p.dash > 0;
     if (assault) { ctx.save(); ctx.fillStyle = WEAPON_TINT.spear; for (let i = 0; i < 5; i++) { ctx.globalAlpha = .5 - i * .09; ctx.fillRect(Math.round(p.x - p.dir * (30 + i * 22)) - (p.dir > 0 ? 26 : 0), Math.round(p.y - 42 + i * 3), 26, 3 + (i & 1)); } ctx.restore(); }
-    if (game.state !== 'dead' || Math.sin(worldTime * 7) > 0) { if (numb) drawHeroTinted(p, 'rgba(112,118,126,.8)'); else drawHero(ctx, p, worldTime); }
+    if (p.grounded && !heroGrounded) heroLandAt = worldTime;
+    heroGrounded = p.grounded;
+    if (numb) drawHeroTinted(p, 'rgba(112,118,126,.8)'); else drawHero(ctx, p, worldTime, { hurt: worldTime - heroHurtAt, heavy: heroHurtHeavy, dead: game.state === 'dead' ? worldTime - heroDeadAt : -1, swing: worldTime - heroSwingAt, land: worldTime - heroLandAt, slam: worldTime - heroSlamAt });
     if (floodFx && !game.flood && floodFx.state !== 'end') floodFx = null; else if (floodFx && floodFx.state === 'end' && worldTime - floodFx.t0 > .5) floodFx = null;
     if (floodFx) drawFlood(ctx, floodFx, game.platforms, worldTime, !settings.shake, camera, camera + viewWidth); // over the hero's feet: the tide
     if (numb && p.debt > 0) { const lethal = game.debtLethal(); ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 15px Georgia'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#13111b'; const dy = Math.round(p.y - 92 - (lethal && settings.shake ? Math.abs(Math.sin(worldTime * 10)) * 3 : 0)); ctx.strokeText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.fillStyle = lethal ? '#ff3a4d' : '#cfd6e6'; ctx.fillText(`+${Math.round(p.debt)}`, Math.round(p.x), dy); ctx.restore(); }
-    if (p.attack > 0) { const prog = 1 - p.attack / p.attackLen; if (p.move === 'thrust') drawThrust(p.x, p.y - 33, p.dir, prog, p.weapon); else drawSlash(p.x, p.y - 33, p.dir, prog, p.combo === 3, false, p.weapon); }
+    drawSwing(ctx, p);
     if (game.hour.on && game.echo.list.length) { drawEchoBoxes(ctx, game.echo, performance.now() / 1000, !settings.shake); for (const g of game.echo.list) if (g.state < 2) { ctx.save(); ctx.globalAlpha = g.state ? .5 : .32; drawHeroTinted({ x: g.x, y: g.y, dir: g.dir, vx: 0, grounded: true, invulnerable: 0 }, 'rgba(150,170,205,.8)'); ctx.restore(); } } // #69: the Echo, a pale cold ghost of the hero
     for (const s of game.shots) if (s.x > camera - 60 && s.x < camera + viewWidth + 60) drawShot(s);
     for (const b of game.projectiles) {

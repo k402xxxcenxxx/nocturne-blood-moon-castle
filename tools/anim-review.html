@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOCTURNE 動畫審查</title>
+<style>
+  :root { color-scheme: dark; --bg: #14141c; --panel: #1f1f2b; --line: #3a3a4c; --text: #e8e4d8; --dim: #9a96a8; --accent: #d4a35c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, "Noto Sans TC", sans-serif; display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; max-height: 100vh; }
+  main { padding: 14px; min-width: 0; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  h2 { font-size: 12px; margin: 14px 0 6px; color: var(--dim); font-weight: 600; }
+  label.row { display: flex; gap: 8px; align-items: center; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+  label.row.on { background: #d4a35c33; color: var(--accent); }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select { background: #2b2b3a; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #1a1208; border-color: var(--accent); font-weight: 600; }
+  canvas { display: block; max-width: 100%; image-rendering: pixelated; background: #000; }
+  #stage { border: 1px solid var(--line); }
+  #strip { margin-top: 10px; border: 1px solid var(--line); }
+  #info { margin-top: 10px; font: 13px/1.6 ui-monospace, Consolas, monospace; color: var(--dim); white-space: pre-wrap; }
+  #info b { color: var(--accent); }
+  kbd { background: #2b2b3a; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 12px; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 12px; }
+  @media (max-width: 760px) { body { grid-template-columns: 1fr; } aside { max-height: none; border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>NOCTURNE 動畫審查</h1>
+  <h2>武器</h2>
+  <select id="weapon"></select>
+  <h2>輪播項目</h2>
+  <div class="btns"><button id="all">全選</button><button id="none">全不選</button></div>
+  <div id="list"></div>
+  <h2>播放</h2>
+  <div class="btns">
+    <button id="play" class="primary">暫停</button>
+    <button id="step">下一格</button>
+    <button id="next">下一段</button>
+    <select id="speed" aria-label="速度"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option><option value="0.1">0.1×</option></select>
+    <select id="zoom" aria-label="縮放"><option value="1">畫面 1×</option><option value="2" selected>畫面 2×</option><option value="3">畫面 3×</option></select>
+  </div>
+  <h2>顯示</h2>
+  <label class="row"><input type="checkbox" id="fx" checked>斬擊特效（與遊戲相同）</label>
+  <label class="row"><input type="checkbox" id="box">碰撞框與腳底線</label>
+  <label class="row"><input type="checkbox" id="sound">音效</label>
+  <p class="hint"><kbd>空白</kbd> 暫停　<kbd>.</kbd> 下一格　<kbd>N</kbd> 下一段<br>用的是遊戲本身的物理與判定，位移、跳躍高度、攻擊時間都與實機相同。</p>
+</aside>
+<main>
+  <canvas id="stage"></canvas>
+  <canvas id="strip" height="150"></canvas>
+  <div id="info"></div>
+</main>
+<script type="module">
+import { Game, FLOOR, WEAPONS } from '../core.js';
+import { drawHero, drawSwing, drawDive, drawSlam, heroPose, heroSheetFor, heroImageFor } from '../art.js';
+import { AudioSystem } from '../audio.js';
+
+const $ = id => document.getElementById(id), stage = $('stage'), ctx = stage.getContext('2d', { alpha: false }), strip = $('strip'), sc = strip.getContext('2d');
+const VIEW_W = 480, VIEW_H = 270, DT = 1 / 120;
+const SETTINGS_KEY = 'nocturne-anim-review';
+const dummy = { x: 620, label: '假人' }; // only a marker: shows where the reach ends, nothing hits it
+
+// Each scenario scripts real inputs against the real Game. A key: [seconds, input]; `hold` keeps an input down for a span.
+const press = (t, key) => [t, { [key]: true }], hold = (t, end, key) => [t, { [key]: true }, end];
+const SCENARIOS = [
+  { id: 'idle', name: '待機', len: 1.6, x: 500, keys: [] },
+  { id: 'run', name: '跑步', len: 1.8, x: 300, keys: [hold(.15, 1.5, 'right')] },
+  { id: 'turn', name: '跑步折返', len: 2.2, x: 400, keys: [hold(.1, .9, 'right'), hold(.9, 1.8, 'left')] },
+  { id: 'jump', name: '跳上平台', len: 2.2, x: 340, platforms: [{ x: 500, y: FLOOR - 90, w: 150, h: 14 }], keys: [hold(.15, .95, 'right'), press(.32, 'jump')] },
+  { id: 'double', name: '二段跳上高台', len: 2.4, x: 330, platforms: [{ x: 520, y: FLOOR - 170, w: 150, h: 14 }], keys: [hold(.15, 1.05, 'right'), press(.3, 'jump'), press(.62, 'jump')] },
+  { id: 'drop', name: '走下平台落地', len: 1.8, x: 380, y: FLOOR - 110, platforms: [{ x: 320, y: FLOOR - 110, w: 120, h: 14 }], keys: [hold(.2, .9, 'right')] },
+  { id: 'dash', name: '閃避衝刺', len: 1.4, x: 340, keys: [press(.3, 'dash')] },
+  { id: 'runDash', name: '跑步接衝刺', len: 1.6, x: 280, keys: [hold(.1, 1.2, 'right'), press(.6, 'dash')] },
+  { id: 'slash1', name: '第一斬', len: 1.2, x: 460, target: true, keys: [press(.3, 'attack')] },
+  { id: 'combo', name: '三連斬', len: 2, x: 460, target: true, keys: [press(.3, 'attack'), press(.72, 'attack'), press(1.14, 'attack')] },
+  { id: 'walkSlash', name: '移動中揮劍', len: 1.8, x: 300, keys: [hold(.1, 1.4, 'right'), press(.5, 'attack'), press(1, 'attack')] },
+  { id: 'thrust', name: '衝刺接突刺', len: 1.6, x: 300, target: true, keys: [press(.3, 'dash'), press(.52, 'attack')] },
+  { id: 'plunge', name: '空中下劈', len: 1.8, x: 460, keys: [press(.25, 'jump'), press(.62, 'attack')] },
+  { id: 'cast', name: '施放 Eclipse', len: 1.6, x: 460, keys: [press(.3, 'magic')] },
+  { id: 'hurt', name: '輕傷（後仰）', len: 1.2, x: 460, keys: [[.3, { hurt: 5 }]] },
+  { id: 'heavyHurt', name: '重擊（跪地）', len: 1.8, x: 460, keys: [[.3, { hurt: 5, heavy: true }]] },
+  { id: 'death', name: '死亡', len: 2.4, x: 460, keys: [[.3, { hurt: 99999 }]] },
+];
+
+const saved = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {}; } catch { return {}; } })();
+const on = new Set(saved.on ?? SCENARIOS.map(s => s.id));
+const audio = new AudioSystem();
+let game, current, clock, sceneIndex = -1, paused = false, last = 0, carry = 0, wall = 0, hurtHeavy = false, hurtAt = -9, deadAt = -9, landAt = -9, swingAt = -9, slamAt = -9, slam = null, wasGrounded = true;
+
+for (const [value, text] of [['', '預設細劍'], ...Object.keys(WEAPONS).map(id => [id, { heavy: '大劍', twin: '雙刃', spear: '長槍' }[id] ?? id])]) $('weapon').append(new Option(text, value));
+$('weapon').value = saved.weapon ?? '';
+for (const s of SCENARIOS) {
+  const label = document.createElement('label'); label.className = 'row'; label.id = `row-${s.id}`;
+  const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: on.has(s.id) });
+  box.onchange = () => { box.checked ? on.add(s.id) : on.delete(s.id); persist(); if (!box.checked && current?.id === s.id) nextScene(); };
+  label.append(box, s.name); $('list').append(label);
+}
+const persist = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ on: [...on], weapon: $('weapon').value })); } catch { /* the page works without saved choices */ } };
+const setAll = value => { for (const box of $('list').querySelectorAll('input')) box.checked = value; on.clear(); if (value) SCENARIOS.forEach(s => on.add(s.id)); persist(); };
+
+function onEvent(e) {
+  if (e.type === 'hurt') { hurtAt = wall; hurtHeavy = !!e.heavy; }
+  if (e.type === 'death') deadAt = wall;
+  if (e.type === 'swing' && e.move !== 'plunge') swingAt = wall;
+  if (e.type === 'plunge') { slamAt = wall; slam = { ...e, at: wall }; }
+  if (e.type === 'swing' && e.move === 'combo' && e.combo === 3 && game.player.weapon === 'heavy') { slam = { x: e.x + e.dir * 72, y: e.y + 30, radius: 112, at: wall }; if ($('sound').checked) audio.play('slam', 1.1); }
+  audio.weapon = game?.player.weapon;
+  if (!$('sound').checked) return;
+  const swing = e.move === 'plunge' ? 'dive' : e.move === 'thrust' ? 'lunge' : 'swing';
+  const name = { swing, jump: 'jump', dash: 'dash', magic: 'magic', hurt: 'hurt', plunge: 'plunge' }[e.type];
+  if (name) audio.play(name, e.type === 'swing' && e.combo === 3 ? 1.2 : 1);
+  if (e.type === 'plunge' && e.radius) audio.play('slam', game.player.weapon === 'heavy' ? 1.25 : 1);
+}
+
+function load(scene) {
+  current = scene; clock = 0; hurtAt = deadAt = landAt = swingAt = slamAt = -9; wasGrounded = true;
+  game = new Game(onEvent, 42, 'normal'); game.start(); game.state = 'playing';
+  Object.assign(game, { enemies: [], traps: [], obstacles: [], platforms: (scene.platforms ?? []).map(p => ({ ...p, dx: 0, dy: 0 })), portal: null, chests: [], worldWidth: 2000 });
+  if ($('weapon').value) game.setWeapon($('weapon').value);
+  Object.assign(game.player, { x: scene.x, y: scene.y ?? FLOOR, dir: 1, hp: 1000, maxHp: 1000, invulnerable: 0, mp: 999 });
+  for (const row of document.querySelectorAll('#list label')) row.classList.toggle('on', row.id === `row-${scene.id}`);
+}
+function nextScene() {
+  const list = SCENARIOS.filter(s => on.has(s.id));
+  if (!list.length) { current = null; return; }
+  sceneIndex = (list.indexOf(current) + 1) % list.length;
+  load(list[sceneIndex]);
+}
+function tick() {
+  if (!current) return;
+  const before = clock, input = {}; clock += DT; wall += DT;
+  for (const [t, keys, end] of current.keys) {
+    const held = end !== undefined && clock >= t && clock < end, pulse = end === undefined && before < t && clock >= t;
+    if (held || pulse) { if (keys.hurt) { game.player.invulnerable = 0; game.hurt(keys.hurt, -1, false, !!keys.heavy); } else Object.assign(input, keys); }
+  }
+  game.update(DT, input);
+  if (game.player.grounded && !wasGrounded) landAt = wall;
+  wasGrounded = game.player.grounded;
+  if (clock >= current.len) nextScene();
+}
+
+function draw() {
+  const zoom = +$('zoom').value, w = VIEW_W * zoom, h = VIEW_H * zoom;
+  if (stage.width !== w) { stage.width = w; stage.height = h; }
+  ctx.fillStyle = '#23202e'; ctx.fillRect(0, 0, w, h);
+  if (!current) return;
+  const p = game.player, react = { hurt: wall - hurtAt, heavy: hurtHeavy, dead: game.state === 'dead' ? wall - deadAt : -1, land: wall - landAt, swing: wall - swingAt, slam: wall - slamAt };
+  const cam = 480 - VIEW_W / 2, ground = VIEW_H - 40; // the floor stays at the same screen height for every scenario
+  ctx.save(); ctx.scale(zoom, zoom); ctx.translate(-cam, ground - FLOOR); ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#3b3644'; ctx.fillRect(cam, FLOOR, VIEW_W, 60); ctx.fillStyle = '#6e6578'; ctx.fillRect(cam, FLOOR, VIEW_W, 2);
+  ctx.fillStyle = '#ffffff14'; for (let x = 0; x < 1000; x += 50) ctx.fillRect(x, FLOOR + 2, 1, 6);
+  for (const pl of game.platforms) { ctx.fillStyle = '#8a7a5e'; ctx.fillRect(pl.x, pl.y, pl.w, pl.h); ctx.fillStyle = '#c9b48a'; ctx.fillRect(pl.x, pl.y, pl.w, 2); }
+  if (current.target) { const x = p.x + p.dir * p.reach; ctx.strokeStyle = '#ffffff33'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, FLOOR - 90); ctx.lineTo(x, FLOOR); ctx.stroke(); ctx.setLineDash([]); }
+  if ($('fx').checked) { drawDive(ctx, p); if (slam?.radius && wall - slam.at < .42) drawSlam(ctx, slam.x, slam.y, (wall - slam.at) / .42, slam.radius, p.weapon); }
+  drawHero(ctx, p, wall, react);
+  if ($('fx').checked) drawSwing(ctx, p);
+  if ($('box').checked) { ctx.strokeStyle = '#6ef0a0'; ctx.lineWidth = 1; ctx.strokeRect(Math.round(p.x - p.w / 2) + .5, Math.round(p.y - p.h) + .5, p.w, p.h); ctx.strokeStyle = '#ff6e6e'; ctx.beginPath(); ctx.moveTo(p.x - 40, p.y + .5); ctx.lineTo(p.x + 40, p.y + .5); ctx.stroke(); }
+  ctx.restore();
+  drawStrip(p, react);
+}
+
+function drawStrip(p, react) {
+  const pose = heroPose(p, wall, react), sheet = heroSheetFor(p.weapon, pose.name), image = heroImageFor(sheet), a = sheet.anims[pose.name], [cw, ch] = sheet.cell;
+  const scale = Math.min(1, Math.max(.4, (strip.parentElement.clientWidth - 8) / (a.frames * cw)));
+  strip.width = Math.min(strip.parentElement.clientWidth, Math.ceil(a.frames * cw * scale)); strip.height = Math.ceil(ch * scale);
+  sc.fillStyle = '#23202e'; sc.fillRect(0, 0, strip.width, strip.height); sc.imageSmoothingEnabled = false;
+  for (let n = 0; n < a.frames; n++) {
+    sc.drawImage(image, n * cw, a.row * ch, cw, ch, n * cw * scale, 0, cw * scale, ch * scale);
+    if (n === pose.frame) { sc.strokeStyle = '#d4a35c'; sc.lineWidth = 2; sc.strokeRect(n * cw * scale + 1, 1, cw * scale - 2, ch * scale - 2); }
+  }
+  $('info').innerHTML = `<b>${current.name}</b>　${clock.toFixed(2)} / ${current.len.toFixed(2)} 秒\n動畫 <b>${pose.name}</b>　第 ${pose.frame + 1} / ${a.frames} 格\nx ${p.x.toFixed(0)}　y ${(FLOOR - p.y).toFixed(0)}　vx ${p.vx.toFixed(0)}　vy ${p.vy.toFixed(0)}　attack ${p.attack.toFixed(2)}　attackCd ${p.attackCd.toFixed(2)}　dash ${p.dash.toFixed(2)}`;
+}
+
+function loop(now) {
+  const elapsed = Math.min(.1, (now - last) / 1000); last = now;
+  if (!paused) { carry += elapsed * +$('speed').value; while (carry >= DT) { carry -= DT; tick(); } }
+  draw();
+  requestAnimationFrame(loop);
+}
+const togglePause = () => { paused = !paused; $('play').textContent = paused ? '播放' : '暫停'; };
+const stepFrame = () => { paused = true; $('play').textContent = '播放'; for (let n = 0; n < 2; n++) tick(); }; // one 60 fps game frame
+$('play').onclick = togglePause; $('step').onclick = stepFrame; $('next').onclick = nextScene;
+$('all').onclick = () => { setAll(true); if (!current) nextScene(); }; $('none').onclick = () => { setAll(false); current = null; };
+$('weapon').onchange = () => { persist(); if (current) load(current); };
+$('sound').onchange = () => { if ($('sound').checked) audio.unlock(); };
+addEventListener('keydown', e => { if (e.target.tagName === 'SELECT') return; if (e.code === 'Space') { e.preventDefault(); togglePause(); } else if (e.key === '.') stepFrame(); else if (e.key.toLowerCase() === 'n') nextScene(); });
+window.__review = { tick, load, draw, SCENARIOS, pause() { paused = true; }, get game() { return game; } }; // lets automated checks step the page
+nextScene();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

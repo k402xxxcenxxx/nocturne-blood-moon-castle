@@ -1,6 +1,6 @@
 # Art pipeline
 
-How NOCTURNE produces its art: images are generated in ChatGPT through the `/chatgpt-image-gen` skill, kept consistent by always feeding approved reference images back in, then normalized into game-ready assets. The Technical Artist runs this pipeline; other roles request art through the Issue's feedback needs.
+How NOCTURNE produces its art: **animation and its sound effects come from short chroma-key videos made on Merlin through the `/merlin-video-art` skill**, and still images come from ChatGPT through the `/chatgpt-image-gen` skill. Both stay consistent by feeding approved reference images back in, then get normalized into game-ready assets. The Technical Artist runs this pipeline; other roles request art through the Issue's feedback needs.
 
 The visual rules (style, palette, sizes, the anchor set) live in [`docs/art-bible.md`](art-bible.md). This document is the process.
 
@@ -31,9 +31,26 @@ The visual rules (style, palette, sizes, the anchor set) live in [`docs/art-bibl
 8. **Retry, don't argue.** If a result swaps limbs, drifts in style or ignores a pose, rerun the same prompt 2–3 times before rewriting it. Asking ChatGPT to "fix" an image usually makes it worse.
 9. **Anything approved becomes an anchor.** Add every accepted asset that others should match to the art bible's anchor index.
 
-## Animation frames
+## Animation from video
 
-Tested on the hero's run cycle. A whole sheet in one image keeps the character consistent but ignores the poses (legs never alternate, "down" frames turn into squats). Generating frame by frame follows the poses, but ChatGPT cannot reliably choose which leg is the near one: asking for the opposite leg forward failed twice and also drifted the costume. So:
+This is the default for every animation. Generating frames one at a time (next section) lost continuity and moved the wrong limbs; a video carries the motion, and its soundtrack is timed to it. The hero's whole set came from one 480p clip each for locomotion, combat, mobility and casting plus falling.
+
+- **480p is enough.** The canvas is 960×540 logical pixels and the hero is about 68 px tall, so a clip supplies about four source pixels per sprite pixel. Higher resolutions only cost credits.
+- **Start every clip from the same first frame.** `docs/art-bible/anchors/hero-video-first-frame.png` shrinks the character inside a wide chroma margin. That margin keeps the sword and cape in the frame, and because all clips share it they share scale and ground position, so no per-frame alignment is needed.
+- **Chain moves in one clip.** Five seconds fits four or five moves, each with clean in-between frames. A reversed sequence makes a new move: the overhead slash is the wind-up played backward.
+- **Airborne poses need a `dy`.** Video shows the jump height, the game supplies it, so the sprite offset cancels it.
+
+- **A swing's hit box is live from its first instant.** An attack row must start in motion, not from the idle pose. `strike` frames play during the 0.24 s swing, the rest as a follow-through while the hero stands still; running or dashing cuts the follow-through.
+- **A hit reaction is sized to the hit.** A light hit has no sheet row: `drawHero` leans the current pose back for 0.2 s. The `hurt` row is the kneel, shown only for a `heavy` hit while the hero stands still; it is presentation, and any input gets the hero up.
+- **A wind-up belongs to the rule.** `windup` on an attack row counts its opening frames, played during the weapon's `windup` seconds; `strike` counts them too.
+- **One sheet per weapon.** Each weapon has its own first frame, made by editing the hero's anchor with an image model, and three clips: combat, locomotion, and dash plus cast plus death. A row missing from a weapon sheet falls back to the base sheet.
+- **Review in `tools/anim-review.html`,** not on the sheet: it plays the real physics, so a jump visibly lands on a platform.
+
+The skill has the steps; `tools/video-to-assets.mjs` does the normalization below.
+
+## Animation frames (legacy image method)
+
+Use this only if video cannot be used. Tested on the hero's run cycle. A whole sheet in one image keeps the character consistent but ignores the poses (legs never alternate, "down" frames turn into squats). Generating frame by frame follows the poses, but ChatGPT cannot reliably choose which leg is the near one: asking for the opposite leg forward failed twice and also drifted the costume. So:
 
 1. Generate or reuse the character's **identity anchor**: a neutral, right-facing idle frame at the art bible's size.
 2. **Generate every animation frame by frame.** Each request attaches the identity anchor (Image 1) and a single-frame **mannequin pose guide** (Image 2): a stick figure drawn in code at the frame's exact joint angles, with the near limbs in bright colors, the far limbs darker, and the ground line dashed. Once the first frames are accepted, also attach them as references for the next frames. Ask for the far-side limbs to be shaded one step darker so the legs stay readable.
@@ -57,7 +74,7 @@ Raw generated images are not game assets. Before an image enters `assets/`:
 7. **Pack** the frames into the runtime sheet (one row per animation, frame order left to right).
 8. **Verify** with a contact sheet and an animated preview at real size: no drift, no scale jump between animations.
 
-Normalization must not add dependencies or a build step. The tool for it is a dependency-free browser page, `tools/sprite-normalizer.html` (Canvas only; not deployed). The mannequin pose guides come from a second page, `tools/pose-guide.html`, which draws a frame's stick figure from joint angles. Until they exist, building both is part of the first art bible Issue.
+Normalization must not add dependencies or a build step to the game. `tools/video-to-assets.mjs` covers chroma removal, scale, re-padding, downscaling, the shared palette and packing for video sources; it runs by hand, needs only Node and ffmpeg, and is not deployed. The legacy image method would still need a pose guide page, `tools/pose-guide.html`.
 
 ## Files
 
@@ -67,7 +84,9 @@ Normalization must not add dependencies or a build step. The tool for it is a de
 | `docs/art-bible/anchors/` | Approved anchor images | No |
 | `docs/art-bible/guides/` | Mannequin pose guides per animation frame, pixel grids | No |
 | `docs/art-bible/raw/` | Raw generations kept for re-normalization | No |
-| `docs/art-log.md` | One row per generated asset: prompt, anchors attached, ChatGPT conversation title, result | No |
+| `docs/art-log.md` | One row per generated asset: prompt, anchors attached, conversation, credits, result | No |
+| `tools/hero*-clips.json` | Which seconds of which clip become each animation and sound, per weapon | No |
+| `tools/anim-review.html` | Animation review page: real physics, scenario playlist, per weapon | No |
 | `assets/` | Normalized runtime images only | Yes |
 
 Downloaded files land in Chrome's download folder named after the ChatGPT conversation title (see the skill). Move them into the repo with a clear kebab-case name, and log the generation in `docs/art-log.md` with the full prompt so it can be reproduced.

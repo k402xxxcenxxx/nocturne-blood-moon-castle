@@ -83,3 +83,14 @@ Full runs (floors 1-10, one life, 100 seeds): expert clear 48 / 48 / 51% (heavy 
 
 ## Brains: the Fallen King (#62 PR 5)
 **Measured** (100 seeds, heavy / twin / spear, 100 blood, floor 50): expert 86 / 100 / 93% (audit 0 of 55 / 116 / 208; seed 1 wins heavy and twin, seed 2 spear: `node tools/bot-run.mjs --duel 1 --type king --seeds 1 --weapon heavy|twin|spear`), average 12 / 40 / 3%; mash bot 0% with every weapon at 100 and 200 blood. Before this PR the expert was 100 / 100 / 70%. The King is not part of the floor 1-10 runs, so the full-run numbers are the PR 4 ones (expert 48 / 48 / 51%, average 0 / 0 / 0%).
+
+## Greatsword wind-up and two-sided twin cuts (2026-11-07)
+
+`--seeds 12 --floors 1-9`, expert bot, floors with clears below 100% (before → after). Twelve seeds is noisy: one death moves a floor by about 8%.
+
+| Weapon | Floors 3-5 | Floor 7 | Floor 8 | Floor 9 |
+| --- | --- | --- | --- | --- |
+| heavy (30 dmg → 34, 0.26 s wind-up) | 100/100/83 → 92/91/100 | 100 → 100 | 80 → 70 | 75 → 71 |
+| twin (cuts 2-3 hit both sides) | 100/100/91 → 100/100/100 | 100 → 82 | 80 → 89 | 75 → 63 |
+
+Heavy clears floors 1-7 about 4-6 s slower. No weapon became a walkover or a wall.

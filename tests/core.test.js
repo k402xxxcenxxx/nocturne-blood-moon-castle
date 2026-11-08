@@ -944,15 +944,21 @@ test('plunge QA: a dash tapped during a long fall (300 px) is buffered and fires
   assert.equal(events.filter(e => e.type === 'dash').length, 1, 'dash pressed mid-fall fires after landing');
 });
 
-test('plunge QA: an attack tapped during a long fall (300 px) is buffered and fires on landing', () => {
-  const { game, events } = arena();
-  airborne(game, FLOOR - 300);
-  game.attack();
-  advance(game, .08, { attack: true }); // a short tap, still held in game.js for a few frames
-  let guard = 0;
-  while (game.player.plunge && guard++ < 600) advance(game, 1 / 120);
-  advance(game, .2);
-  assert.ok(events.some(e => e.type === 'swing' && e.move === 'combo'), 'attack pressed mid-fall swings after landing');
+test('plunge: an attack pressed early in a long fall is dropped, one pressed within 0.16 s of landing swings after it', () => {
+  const swingAfter = untilLanding => {
+    const { game, player, events } = arena();
+    airborne(game, FLOOR - 300);
+    game.attack();
+    const fall = 1 / 120; let guard = 0;
+    while (player.plunge !== 2 && guard++ < 60) advance(game, fall);
+    while (FLOOR - player.y > 800 * untilLanding && guard++ < 600) advance(game, fall);
+    game.attack();
+    guard = 0; while (player.plunge && guard++ < 600) advance(game, fall);
+    advance(game, .2);
+    return events.some(e => e.type === 'swing' && e.move === 'combo');
+  };
+  assert.equal(swingAfter(.3), false, 'mashing in the fall adds no swing');
+  assert.equal(swingAfter(.12), true, 'a press just before the floor links');
 });
 
 test('plunge: a drop under 40 px still hits on the way down but emits radius 0 and no shockwave', () => {
