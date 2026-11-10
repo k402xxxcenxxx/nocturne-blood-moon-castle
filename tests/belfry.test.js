@@ -295,7 +295,9 @@ test('gargoyle rake: no tell starts whose earliest contact (0.55 s) falls inside
   advance(short.game, .05); assert.equal(short.e.move, 'rake', 'control: i-frames that end before the earliest contact let the rake start');
   const long = bel('gargoyle', 500, 700); perch(long.game, long.e); long.game.platforms.push(long.game.makePlatform(100, FLOOR - 100, 200, 'x', 'y'));
   long.e.cd = 0; long.player.dir = -1; long.game.snaps = []; long.player.invulnerable = .6;
-  advance(long.game, .04); // 0.6 s of i-frames minus the elapsed time still outlasts 0.55 s only until 0.05 s, so the window is checked early assert.notEqual(long.e.move, 'rake', 'i-frames that outlast the earliest contact (0.55 s) stop the rake from starting');
+  let t = 0; while (long.e.move !== 'rake' && t < 1) { advance(long.game, 1 / 120); t += 1 / 120; } // step frame by frame: the rake must start only once the i-frames are down to its earliest contact
+  assert.equal(long.e.move, 'rake', 'the rake starts once its earliest contact is clear of i-frames');
+  assert.ok(long.player.invulnerable <= .55 + 1 / 60, `i-frames still ${long.player.invulnerable.toFixed(3)} s at the rake start, past its 0.55 s earliest contact`);
 });
 
 test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
