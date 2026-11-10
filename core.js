@@ -540,10 +540,10 @@ export class Game {
     if (!(this.hour.still > 0)) this.time += dt; // the Stopped Hour freezes game time, so every absolute-time enemy timer waits too
     this.elapsed += dt;
     if (this.eliteBeat > 0) { // frozen beat after an elite dies: nothing updates, then the reward pick opens
-      if ((this.eliteBeat -= dt) <= 0) this.rollChoices('elite');
+      this.holdBeat(dt); if ((this.eliteBeat -= dt) <= 0) this.rollChoices('elite');
       return;
     }
-    if (this.freeze > 0) { this.freeze -= dt; return; }
+    if (this.freeze > 0) { this.holdBeat(dt); this.freeze -= dt; return; }
     const p = this.player;
     this.step = dt;
     this.tickHour(dt);
@@ -634,6 +634,8 @@ export class Game {
     if (!this.portalOpen && !(this.mode === 'castle' && (this.floor === WARDEN_FLOOR || this.floor === KEEPER_FLOOR || this.floor === KING_FLOOR)) && this.enemies.every(e => !e.required || e.hp <= 0)) { this.portalOpen = true; this.emit('clear'); }
     if (this.state === 'playing' && this.portalOpen && !this.echo.armed && Math.abs(p.x - this.portalX) < 46 && p.y > FLOOR - 80) this.finishStage();
   }
+  // Hit-stop and the elite kill beat advance game time but pause every tell, so each pendulum's whole beat clock shifts by the lost time: the rhythm stays steady and every contact still lands on a tick.
+  holdBeat(dt) { if (!(this.hour.still > 0)) for (const e of this.enemies) if (e.bt0 !== undefined) e.bt0 += dt; }
   // The Stopped Hour clock (castle floors 11-19): warn HOUR_WARN s before the toll, freeze for STILL s, then resume. Runs on dt, so pause, picks, hit-stop and the elite beat (all return before it) stop it.
   tickHour(dt) {
     const h = this.hour, p = this.player;

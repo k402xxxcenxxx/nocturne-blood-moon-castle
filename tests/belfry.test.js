@@ -311,6 +311,17 @@ test('pendulum: a stun during a swingout tell keeps its contact on a tick (#85 Q
   assert.ok(off < 1 / 60, `the contact is ${off.toFixed(3)} s from a tick`);
 });
 
+test('pendulum: hit-stop during a swingout tell keeps its contact on a tick (#85 QA: two 0.06 s hit-stops moved the contact 0.13 s off the beat)', () => {
+  const { game, e } = bel('pendulum', 800, 700, 13); // hero 100 px in front of the pendulum
+  e.bt0 = game.time - (1.2 - .9); // the next tick is 0.9 s away
+  Object.assign(e, { heavy: true, heavyKind: 'swingout', tell: .9, dir: 1, warn: { kind: 'swingout', box: { x: e.x + 70, y: e.y - 150, w: 130, h: 150 }, pivot: { x: e.x, y: e.y - 130 }, inner: 70, outer: 200 }, recover: 0, punishable: false, glinted: false, delayed: false });
+  advance(game, .2); game.freeze = .06; advance(game, .3); game.freeze = .06; // two hits land (hit-stop) during the tell
+  let t = 0; while (e.tell > 0 && t < 3) { advance(game, 1 / 120); t += 1 / 120; } // up to the contact frame
+  assert.ok(t < 3 && e.recover > 0, 'the swingout resolves');
+  const off = Math.min(((game.time - e.bt0) % 1.2 + 1.2) % 1.2, 1.2 - ((game.time - e.bt0) % 1.2 + 1.2) % 1.2);
+  assert.ok(off < 1 / 60, `the contact is ${off.toFixed(3)} s from a tick`);
+});
+
 test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
   const run = step => {
     const { game, player, events, e } = bel('gargoyle', 700, 700); perch(game, e); e.cd = 0; player.dir = 1; player.x = 700; game.snaps = [];
