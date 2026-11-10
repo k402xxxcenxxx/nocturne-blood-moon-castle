@@ -992,6 +992,9 @@ kbd {
 .armor-gauge.broken em { background:#ffd36e; width:100% !important; animation:armor-pulse .5s steps(2) infinite; }
 @media (prefers-reduced-motion:reduce) { .armor-gauge.broken em { animation:none; } }
 @keyframes armor-pulse { 50% { background:#fff0b0; } }
+.death-replay { margin:10px auto 0; max-width:420px; }
+.death-replay canvas { display:block; width:100%; max-height:30vh; object-fit:contain; border:1px solid #4a3b52; background:#0b0a10; }
+.death-replay figcaption { font-size:11px; color:#b9a9c4; margin-top:4px; }
 .fight-line {
   font-size:12px;
   color:#b9a9c4;

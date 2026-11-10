@@ -1,5 +1,7 @@
 // Procedural sound, plus optional recorded effects from assets/ that replace a synthesized sound of the same name.
 import { heroSheets } from './assets/hero-sheets.js';
+import wardenSheet from './assets/warden-sheet.js';
+import kingSheet from './assets/king-sheet.js';
 // Enemy warning cues that do not start with 'tell': they must stay clear and unpitched during slow motion.
 const DRY = new Set(['batWing', 'kingTitheStart', 'heavyWarn', 'trapWarn', 'ringLow', 'ringHigh', 'ringNearLow', 'ringNearHigh', 'floodTell', 'crownGuardStart',
   'kingTellSlash', 'kingTellString', 'kingTellTurn', 'kingTellSlam', 'kingTellCharge', 'kingTellDescent', 'kingTellVolley', 'kingTellRitual',
@@ -49,7 +51,7 @@ export class AudioSystem {
         this._noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
         const samples = this._noiseBuffer.getChannelData(0);
         for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-        for (const name of Object.values(heroSheets).flatMap(sheet => sheet.sfx)) fetch(new URL(`assets/sfx-${name}.m4a`, import.meta.url)).then(r => r.arrayBuffer()).then(data => ctx.decodeAudioData(data)).then(buffer => this._samples.set(name, buffer)).catch(() => {}); // best effort: a sound that fails to load stays synthesized
+        for (const name of [...Object.values(heroSheets), wardenSheet, kingSheet].flatMap(sheet => sheet.sfx)) fetch(new URL(`assets/sfx-${name}.m4a`, import.meta.url)).then(r => r.arrayBuffer()).then(data => ctx.decodeAudioData(data)).then(buffer => this._samples.set(name, buffer)).catch(() => {}); // best effort: a sound that fails to load stays synthesized
       } catch {
         this.context?.close().catch(() => {});
         this.context = null;

@@ -1,0 +1,31 @@
+{
+ "name": "king", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 128, "colors": 32,
+ "clips": {
+  "loco": { "file": "king-loco.mp4", "size": 640, "heroHeight": 280, "feet": [312, 456] },
+  "combat": { "file": "king-combat.mp4", "size": 640, "heroHeight": 280, "feet": [312, 456] },
+  "magic": { "file": "king-magic.mp4", "size": 640, "heroHeight": 280, "feet": [312, 456] },
+  "air": { "file": "king-air.mp4", "size": 640, "heroHeight": 280, "feet": [312, 456] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5, 0.75], "fps": 4 },
+  "walk": { "clip": "loco", "from": 1.0, "to": 1.9, "frames": 6, "fps": 8, "loop": true, "minGap": 8 },
+  "stun": { "clip": "loco", "times": [2.75, 2.875, 3.125, 3.375], "fps": 8 },
+  "roar": { "clip": "loco", "times": [3.75, 3.875, 4.125, 4.5], "fps": 8 },
+  "guard": { "clip": "magic", "times": [3.375, 3.5], "fps": 6 },
+  "slash": { "clip": "combat", "times": [0.25, 0.375, 0.5, 1.75, 0.0], "windup": 3, "strike": 4, "fps": 12 },
+  "turnslash": { "clip": "combat", "times": [1.875, 2.0, 2.125, 2.25], "windup": 1, "strike": 3, "fps": 12 },
+  "slam": { "clip": "combat", "times": [2.75, 2.875, 3.0, 3.25, 3.375, 3.5, 4.0, 4.375], "windup": 3, "strike": 5, "fps": 12 },
+  "charge": { "clip": "magic", "times": [0.375, 0.625, 0.875, 1.0, 1.083, 1.625, 1.75], "windup": 3, "strike": 5, "fps": 12 },
+  "volley": { "clip": "magic", "times": [2.0, 2.125, 2.375, 2.625, 2.875], "windup": 3, "strike": 5, "fps": 12 },
+  "ritual": { "clip": "magic", "times": [3.25, 3.75, 3.875, 4.0, 4.25], "windup": 3, "strike": 5, "fps": 12 },
+  "raise": { "clip": "magic", "times": [4.5, 4.625, 4.75, 4.875], "windup": 4, "strike": 4, "fps": 12 },
+  "descent": { "clip": "air", "times": [0.25, 0.5, 0.625, 1.5, 1.625, 1.75, 2.0], "windup": 3, "strike": 5, "fps": 12 },
+  "leap": { "clip": "air", "times": [0.875, 1.0, 1.125, 1.25], "dy": [-90, -123, -143, -148], "dx": [-44, -29, -28, -34], "fps": 10 },
+  "death": { "clip": "air", "times": [2.5, 2.75, 3.0, 3.375, 3.75, 4.25, 4.5, 4.75], "fps": 8 }
+ },
+ "sfx": {
+  "kingRoar": { "clip": "loco", "from": 3.76, "to": 4.98 },
+  "kingCharge": { "clip": "magic", "from": 1.0, "to": 1.41 },
+  "kingLand": { "clip": "air", "from": 1.36, "to": 1.93 }
+ }
+}
