@@ -289,6 +289,15 @@ test('gargoyle rake: a tell of 0.55 s, no contact before it, a glide along the l
   advance(game, 1); assert.ok(e.plat && e.y === e.plat.y && !e.plat.moving, 'perched again');
 });
 
+test('gargoyle rake: no tell starts whose earliest contact (0.55 s) falls inside the hero i-frames (#69 QA: contacts landed up to 0.05 s into i-frames)', () => {
+  const short = bel('gargoyle', 500, 700); perch(short.game, short.e); short.game.platforms.push(short.game.makePlatform(100, FLOOR - 100, 200, 'x', 'y'));
+  short.e.cd = 0; short.player.dir = -1; short.game.snaps = []; short.player.invulnerable = .1;
+  advance(short.game, .05); assert.equal(short.e.move, 'rake', 'control: i-frames that end before the earliest contact let the rake start');
+  const long = bel('gargoyle', 500, 700); perch(long.game, long.e); long.game.platforms.push(long.game.makePlatform(100, FLOOR - 100, 200, 'x', 'y'));
+  long.e.cd = 0; long.player.dir = -1; long.game.snaps = []; long.player.invulnerable = .6;
+  advance(long.game, .05); assert.notEqual(long.e.move, 'rake', 'i-frames that outlast the earliest contact (0.55 s) stop the rake from starting');
+});
+
 test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
   const run = step => {
     const { game, player, events, e } = bel('gargoyle', 700, 700); perch(game, e); e.cd = 0; player.dir = 1; player.x = 700; game.snaps = [];
