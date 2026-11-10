@@ -1400,6 +1400,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? (e.king ? 84 : 70) : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
   if (e.tell > 0 && e.poiseHit > 0 && !e.warn && !e.thrustBox && !heavy && !boss && (e.type === 'skeleton' || e.type === 'shield')) { const rx = x + (e.dir === -1 ? -1 : 1) * (e.type === 'shield' ? 70 : 82); ctx.save(); ctx.fillStyle = '#ff6a5c'; ctx.fillRect(Math.min(x, rx), y - 3, Math.abs(rx - x), 3); ctx.fillRect(rx - 1, y - 16, 3, 16); ctx.restore(); } // provoked poke from afar: the slash's real reach on the floor, so a whiff reads as out of range
   if (boss) drawBossWarn(ctx, e, time);
+  if (e.type === 'gargoyle' || e.type === 'pendulum') belfryWarn(ctx, e, time);
   if (e.add && !boss && e.hp > 0) { ctx.save(); ctx.fillStyle = '#13111b'; ctx.fillRect(x - 7, y + 6, 14, 9); ctx.fillStyle = '#8d93a2'; for (let i = 0; i < 4; i++) ctx.fillRect(x - 5 + i * 3, y + 7, 1, 7); ctx.fillRect(x - 6, y + 9, 12, 1); ctx.restore(); } // gate guard: a small portcullis mark under the feet
   if (!boss && e.tell > 0 && e.warn?.lines) { // Prism: the three real bolt paths (band = orb width 14, dashed core, tip dot)
     const wl = e.warn, pp = Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(wl) || e.tell))); ctx.save();
@@ -1473,6 +1474,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.type === 'spear') spearman(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
   else if (e.type === 'priest') priest(ctx, e, time, white);
+  else if (e.type === 'gargoyle' || e.type === 'pendulum') belfryBody(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
   if (e.riposte && e.stun > 0) { // posture broken: gold crack down the body and a pulsing outline until the riposte lands
@@ -1703,6 +1705,36 @@ export function drawEchoBoxes(ctx, echo, time, calm) {
     const act = g.state === 1;
     ctx.strokeStyle = act ? '#e6f0ff' : '#9fb4d8'; ctx.globalAlpha = act ? .9 : .5; ctx.setLineDash(act ? [] : [6, 5]); ctx.lineDashOffset = calm ? 0 : -time * 20;
     for (const b of g.boxes) ctx.strokeRect(Math.round(b.x0), Math.round(b.y0), Math.round(b.x1 - b.x0), Math.round(b.y1 - b.y0));
+  }
+  ctx.restore();
+}
+
+// --- Belfry cast (#69 PR 3): code-drawn placeholders for the Gargoyle and the Pendulum Blade; the technical artist may replace them. ---
+function belfryBody(ctx, e, time, white) {
+  const k = e.type === 'gargoyle' ? 0 : 1; ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#13111b';
+  if (k === 0) { // winged stone figure: grey and cracked while it is stone, warm eyes when it moves
+    const stone = e.stone, body = white || (stone ? '#9a9da6' : '#5d6068'), flap = e.rpT > 0 || e.strikeT > 0 ? Math.sin(time * 30) * 6 : 0;
+    ctx.fillStyle = white || (stone ? '#80838c' : '#484a52'); ctx.beginPath(); ctx.moveTo(-4, -40); ctx.lineTo(-26, -58 - flap); ctx.lineTo(-18, -26); ctx.closePath(); ctx.fill(); ctx.stroke(); // wing
+    ctx.fillStyle = body; ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-12, -30); ctx.lineTo(-6, -46); ctx.lineTo(8, -46); ctx.lineTo(13, -30); ctx.lineTo(10, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-5, -46); ctx.lineTo(-8, -56); ctx.lineTo(-1, -48); ctx.moveTo(4, -48); ctx.lineTo(10, -56); ctx.lineTo(9, -45); ctx.fill(); ctx.stroke(); // horns
+    ctx.fillStyle = stone ? '#2a2a30' : '#ffb347'; ctx.fillRect(1, -40, 4, 3); ctx.fillRect(7, -40, 3, 3); // eyes
+    if (stone) { ctx.strokeStyle = '#4a4c54'; ctx.beginPath(); ctx.moveTo(-2, -30); ctx.lineTo(2, -22); ctx.lineTo(-1, -14); ctx.stroke(); }
+  } else { // robed swordsman with a ticking bob on its back
+    ctx.fillStyle = white || '#4b4a5e'; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-10, -34); ctx.lineTo(-4, -44); ctx.lineTo(8, -44); ctx.lineTo(12, -34); ctx.lineTo(14, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = white || '#c9b27a'; ctx.beginPath(); ctx.arc(1, -52, 8, 0, 7); ctx.fill(); ctx.stroke(); // head
+    const sw = Math.sin(time * Math.PI / .6 + (e.bt0 || 0)) * .5; ctx.save(); ctx.translate(-12, -46); ctx.rotate(sw); ctx.strokeStyle = '#8d8a7a'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke(); ctx.fillStyle = '#d4a93c'; ctx.beginPath(); ctx.arc(0, 24, 5, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); // pendulum bob
+    const high = e.move === 'tock' || (e.heavy && e.heavyKind === 'swingout'); ctx.strokeStyle = '#d9dfe8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(10, -26); ctx.lineTo(40, high ? -58 : -14); ctx.stroke(); // blade
+  }
+  ctx.restore();
+}
+function belfryWarn(ctx, e, time) {
+  const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0; if (!w || !(tl || strike)) return;
+  const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(w) || e.tell))) : 1, hot = .18 + .4 * p; ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; ctx.fillStyle = `rgba(255,74,60,${hot})`;
+  if (w.kind === 'plummet') { warnCircles(ctx, w.circles, '255,74,60', '#ff4a3c', p, time); ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2); ctx.stroke(); }
+  else if (w.kind === 'rake') { ctx.save(); ctx.globalAlpha = .1 + .15 * p; ctx.lineWidth = 40; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); ctx.restore(); /* the swept body, 40 px wide */ ctx.setLineDash(WARN_DASH); ctx.globalAlpha = .6 + .4 * p; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); }
+  else if (w.box) {
+    const inset = w.kind === 'swingout' ? 14 : 0, b = { x: w.box.x + inset, y: w.box.y, w: w.box.w - 2 * inset, h: w.box.h }; // the swingout is decided by the hero's centre: the drawn edge is inset by the hero half-width, so a hero sprite touching the box is hit
+    ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
   }
   ctx.restore();
 }

@@ -305,8 +305,8 @@ Floor table (skeleton; the cast rows land in the later PRs, see the proposal):
 | Floor | Rooms | Cast today | Lesson planned |
 | --- | --- | --- | --- |
 | 11 | Belfry, 6 enemies | slot 1 bat, rolled skeleton / shield / spear / knight / priest / mage | the Stopped Hour (PR 2) |
-| 12 | 6 | as 11 | Gargoyle (PR 3) |
-| 13 | 6, relic pick after | as 11 | Pendulum Blade (PR 3) |
+| 12 | 6 | slots 1 and 3 Gargoyles (perched, never guards), others skeleton / shield / spear / bat; no elites | Gargoyle (PR 3) |
+| 13 | 6, relic pick after | two Pendulum Blades (at most one a guard), slot 1 a Gargoyle, others skeleton / shield / spear; no elites | Pendulum Blade (PR 3) |
 | 14 | 6 | as 11 | Clockwork Sentinel (PR 4) |
 | 15 | 6 | as 11 | Chime Acolyte preview (PR 4) |
 | 16 | 6, relic pick after | as 11 | Carillon Cantor preview (PR 5) |
@@ -314,6 +314,31 @@ Floor table (skeleton; the cast rows land in the later PRs, see the proposal):
 | 18 | 7 | as 11 | test (PR 5) |
 | 19 | 7, relic pick after | as 11 | test (PR 5) |
 | 20 | boss arena, Belfry art | the Gate Warden (stub) | the Keeper of the Hour (PR 6) |
+
+### The Belfry cast, part 1: Gargoyle and Pendulum Blade (#69 PR 3, floors 12-13)
+
+Both run on the #62 brain framework (`BRAINS`, `snap()`, `canStrike`, `landing`, `habit`; a brain needs `apex` on). Castle light damage 12 (+2 per tier), HP 50 / 60 base (+12 per tier, x5.3 like every castle regular), posture 50 / 60, re-face 0.15 / 0.3 s. No stat lever beyond that (D3). Floors 12-13 roll their rows in `belfryPlan`; they skip the placeholder elites (the final table has none on floors 11-16). Delayed heavies exist only for the Pendulum, from floor 15 (`PENDULUM.delayFrom`).
+
+**Gargoyle** (speed 90, spawns perched on a static platform, never a gate guard, flies and has no gravity). Stone: it stays still while the snapshot hero faces it from 40-420 px (a hero straight overhead cannot look at it); it is stone 0.15 s after it is watched and wakes 0.25 s after the hero looks away (the brain sees the hero 0.12 s late). Sword hits and shots on stone deal x0.2 damage and x0.25 posture, give 1 blood, and the swing recoils (+0.15 s attack cooldown, `stoneClink`). Hit 3, any plunge or Eclipse crack the shell (`shellBreak`): full damage but no posture damage on that hit, then a 0.8 s punishable recovery with stone off (posture x2 for the following hits). A watched gargoyle within 140 px flies to the nearest free static perch (`reperch`, 0.8 s, hittable, no attack).
+
+| Move | Kind | Tell | Area | Recovery |
+| --- | --- | --- | --- | --- |
+| `rake` | light | 0.55 s | a glide (0.18 s) along a line fixed at tell start, from its spot to 20 px past the aim point (at most 260 px, never upward more than 20 px); body 40 px wide, hits once | lands on the surface below, 0.5 s punishable, then `reperch` |
+| `plummet` | heavy (100) | 0.95 s + glint | ring r 60 on the surface under the snapshot hero's x, only while perched with the hero below within 120 px; it drops onto the ring at contact (a high jump clears it) | 1.1 s embedded, punishable |
+
+Reads: unwatched and in range (the hero looks away or fights another enemy) -> `rake` at the hero; a spent dash -> aimed at `landing()`; two jumped rakes of the last three -> aimed at the predicted jump apex; a hero under the perch -> `plummet`. Moving platforms are never perches. Events: `brainStep` kinds `petrify`, `wake`, `reperch`; `stoneClink` {x, y}; `shellBreak` {x, y}; `enemyTell` kind `rake`; `enemyHeavy` kind `plummet` (area has `circles` and `line`).
+
+**Pendulum Blade** (speed 65, HP 60). A beat clock (`bt0`, `BEAT` 1.2 s) on the enemy: every tick, tock and swingout contact lands on a tick (the tell is the time to the next tick, so a light starts when it is 0.45-0.65 s away, the heavy when it is 0.85-1.1 s away). It holds at snapshot reach + 50 px (at least 170), backing off at x1.2 speed.
+
+| Move | Kind | Tell | Area | Recovery |
+| --- | --- | --- | --- | --- |
+| `tick` | light | 0.45-0.65 s | low sweep 10-150 px in front, 40 px tall (jump it) | 0.5 s |
+| `tock` | follow-up | 0.6 s | at tick contact with the hero airborne within 150 px (180 after jumped ticks): high sweep 10-150 px, 60-140 px above its feet | 0.5 s |
+| `swingout` | heavy (100) | 0.85-1.1 s + glint | front band 70-200 px from the pendulum, 150 px tall, tested against the hero's centre (a hero whose centre is within 70 px, under the pivot, or beyond 200 px is safe; the drawn box is inset by 14 px, the hero half-width, so a hero sprite touching it is hit). The issue's annulus around a pivot 130 px up did not match its own safe distances, so this band replaces it | 1.1 s punishable |
+
+Reads: a hero inside 70 px -> a 60 px backstep on the next tick (`brainStep` `backstep`, no token); a hero walking in at 80-200 px -> `swingout`; a Spear frenzy hero (the assault dash has no i-frames) whose predicted spot at the next tick lies inside the band 75-195 px (within 360 px) draws the `swingout` timed to the dash line (`enemyHeavy` variant `assault`; the contact still lands on a tick and `canStrike` checks the i-frames at contact); the hero jumping ticks -> tock. If two of the last three contacts met a dash inside its first 0.15 s, the next swingout is delayed +0.4 s from floor 15. Stopped Hour: nothing changes while frozen; when the resume grace pushes a tick or swingout tell back, the beat clock shifts with it so the contact still lands on a tick (a tock is off the beat by design and does not shift it).
+
+Other changes in this PR: `bot.js` knows the tick, tock and rake boxes and lures a perched gargoyle (it walks into rake range and turns its back); the duel harness perches gargoyles (`game.perchOn`). Measurements are in `docs/balance-log.md`.
 
 ### The Gate Warden (floor 10)
 
