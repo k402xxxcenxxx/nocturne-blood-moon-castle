@@ -649,7 +649,7 @@ export class Game {
   // Resume: an attack whose contact is under STILL_GRACE s away is pushed back to it (a heavy glints again), then the Echo's replay clock starts.
   resumeHour(dt) {
     this.hour.still = 0; this.hour.grace = STILL_GRACE - 1.5 * dt; // enemy hits wait STILL_GRACE s; the resume frame already steps enemies by dt, so the grace starts 1.5 frames short and a pushed tell ends after it (that strike lands)
-    for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; if (e.bt0 !== undefined) e.bt0 = this.time - (PENDULUM.beat - (STILL_GRACE - dt)); } // a pushed pendulum tell keeps its contact on a tick: the beat clock shifts with it
+    for (const e of this.enemies) if (e.hp > 0 && e.tell > 0 && e.tell < STILL_GRACE) { e.tell = STILL_GRACE; if (e.heavy) e.glinted = false; if (e.bt0 !== undefined && e.move !== 'tock') e.bt0 = this.time - (PENDULUM.beat - (STILL_GRACE - dt)); } // a pushed pendulum tell keeps its contact on a tick: the beat clock shifts with it
     this.echo.armed = this.echo.list.length > 0; this.echo.t = 0;
     const o0 = this.echo.list.length ? this.echo.list[0].off : 0; for (const g of this.echo.list) g.off -= o0; // first replay ECHO_DELAY after the resume, recorded spacing kept
     this.emit('hour', { state: 'resume' });
@@ -1308,7 +1308,7 @@ export class Game {
     e.turn = Math.max(0, e.turn - dt); e.rollT = Math.max(0, e.rollT - dt); e.heavyCd = Math.max(0, e.heavyCd - dt);
     const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
     // a guard cut short by a stun still starts its cooldown (gCd below)
-    if (e.stun > 0) { if (e.stone) Object.assign(e, { stone: false, look: 0, away: 0 }); /* a stunned gargoyle (posture break) is no longer stone: the riposte must land */ if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0 || e.bmT > 0 || e.braceT > 0 || e.parryT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0, bmT: 0, braceT: 0, parryT: 0, parried: false }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gCd: e.gT > 0 ? APEX.guardCd : e.gCd, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); return; }
+    if (e.stun > 0) { if (e.stone) Object.assign(e, { stone: false, look: 0, away: 0 }); /* a stunned gargoyle (posture break) is no longer stone: the riposte must land */ if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0 || e.bmT > 0 || e.braceT > 0 || e.parryT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0, bmT: 0, braceT: 0, parryT: 0, parried: false }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gCd: e.gT > 0 ? APEX.guardCd : e.gCd, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); if (e.type === 'gargoyle' && e.plat) e.x = clamp(e.x, e.plat.x + 14, e.plat.x + e.plat.w - 14); /* knockback never carries a perched gargoyle off its edge */ return; }
     if (e.strikeT > 0) { if (e.move === 'rake') this.rakeTravel(e, dt); else this.heavyTravel(e, dt); return; }
     if (e.rpT > 0) { this.reperching(e, dt); return; }
     if (e.plantT > 0) { this.planting(e, dt); return; }
@@ -2068,7 +2068,7 @@ export class Game {
     const lo = e.plat ? e.plat.x + 14 : 30, hi = e.plat ? e.plat.x + e.plat.w - 14 : W - 40;
     // plummet: a hero walking under its perch draws the drop onto the surface below its x (ring fixed now)
     if (e.plat && d <= GARGOYLE.plummetNear && s.y > e.y + 20 && e.heavyCd <= 0) {
-      const sp = s.grounded ? null : this.surfaceAt(s.x, s.y), sy = s.grounded ? s.y : sp ? sp.y : FLOOR;
+      const sp = this.surfaceAt(s.x, s.y), sy = sp ? sp.y : FLOOR; // solid ground only: a moving gear platform is no surface for the drop
       if (this.startBrainHeavy(e, 'plummet', { x: s.x - GARGOYLE.ring, y: sy - GARGOYLE.ring, w: GARGOYLE.ring * 2, h: GARGOYLE.ring }, HEAVY.gargoyle.tell, { circles: [{ x: s.x, y: sy, r: GARGOYLE.ring }], line: { x1: e.x, y1: e.y, x2: s.x, y2: sy } })) { e.cd = Math.max(e.cd, 1.2); e.vx = 0; return true; }
     }
     // rake: at the back of a hero who looks away (or fights another enemy); aimed at the landing after a spent dash, at the jump apex after jumped rakes
@@ -2115,11 +2115,13 @@ export class Game {
     const hold = clamp(s.reach + PENDULUM.hold, PENDULUM.holdMin, 260), ready = e.cd <= 0;
     // swingout (heavy): a hero walking in on the beat (80-200 px); the contact lands on a tick, so it starts when the next tick is 0.85-1.1 s away. Delayed (+0.4 s) from floor 15 against a hero who dodges on the beat.
     const [hLo, hHi] = PENDULUM.swingTell;
-    if (near && d >= 80 && d <= PENDULUM.outer && s.vx * (e.x - s.x) > PENDULUM.walkIn && e.heavyCd <= 0 && tickIn >= hLo && tickIn <= hHi) {
+    // Spear frenzy (no i-frames on the assault dash): the swingout is timed to the dash line, i.e. the hero's predicted spot at the tick lies inside the band. canStrike (inside startBrainHeavy) checks the i-frames at contact; the contact still lands on a tick.
+    const lx = this.landing(s, tickIn), assault = s.frenzy && s.weapon === 'spear' && d <= 360 && (lx - e.x) * toward > PENDULUM.inner + 5 && Math.abs(lx - e.x) < PENDULUM.outer - 5;
+    if (near && e.heavyCd <= 0 && tickIn >= hLo && tickIn <= hHi && ((d >= 80 && d <= PENDULUM.outer && s.vx * (e.x - s.x) > PENDULUM.walkIn) || assault)) {
       const f = toward, delay = this.floor >= PENDULUM.delayFrom && e.beats.reduce((a, b) => a + b, 0) >= 2;
       e.dir = f;
       const box = { x: Math.min(e.x + f * PENDULUM.inner, e.x + f * PENDULUM.outer), y: e.y - PENDULUM.swingHigh, w: PENDULUM.outer - PENDULUM.inner, h: PENDULUM.swingHigh };
-      if (this.startBrainHeavy(e, 'swingout', box, tickIn, { pivot: { x: e.x, y: e.y - PENDULUM.pivot }, inner: PENDULUM.inner, outer: PENDULUM.outer, ...(delay ? { delay: true } : {}) })) { e.vx = 0; e.cd = Math.max(e.cd, 1.2); return true; }
+      if (this.startBrainHeavy(e, 'swingout', box, tickIn, { pivot: { x: e.x, y: e.y - PENDULUM.pivot }, inner: PENDULUM.inner, outer: PENDULUM.outer, ...(delay ? { delay: true } : {}), ...(assault ? { variant: 'assault' } : {}) })) { e.vx = 0; e.cd = Math.max(e.cd, 1.2); return true; }
     }
     // tick: a low sweep (jump it) on the beat; the tell is the time to the next tick when that is 0.45-0.65 s
     const front = dxs * e.dir > 0;
@@ -3187,7 +3189,7 @@ export class Game {
     }
     if (e.heavyKind === 'plummet') { // the gargoyle drops onto the drawn ring: a grounded hero inside it is hit, a high jump clears it; it ends embedded where the ring was
       const c = w.circles[0];
-      Object.assign(e, { x: c.x, y: c.y, plat: this.surfaceAt(c.x, c.y - 1) });
+      const sp = this.surfaceAt(c.x, c.y - 1); Object.assign(e, { x: c.x, y: sp ? sp.y : FLOOR, plat: sp });
       if (Math.hypot(c.x - clamp(c.x, p.x - p.w / 2, p.x + p.w / 2), c.y - clamp(c.y, p.y - p.h, p.y)) < c.r) this.hurt(dmg, Math.sign(p.x - e.x) || e.dir, false, true);
       this.heavyEnd(e);
       return;

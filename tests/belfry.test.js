@@ -307,7 +307,7 @@ test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s t
     assert.ok(heavy && heavy.area.circles[0].r === 60, 'the ring is announced'); const hp0 = player.blood; step(player); advance(game, 1.2);
     return { game, player, e, lost: hp0 - player.blood, events };
   };
-  const stood = run(() => {}); assert.equal(stood.lost, 100); assert.ok(stood.e.recover > 0 || stood.e.heavy === false); assert.equal(stood.e.y, FLOOR); assert.ok(evs(stood.events, 'enemyGlint').length >= 1);
+  const stood = run(() => {}); assert.equal(stood.lost, 100); assert.ok(stood.e.recover > 0 && stood.e.punishable, 'embedded and punishable'); assert.equal(stood.e.y, FLOOR); assert.ok(evs(stood.events, 'enemyGlint').length >= 1);
   const moved = run(p => { p.x = 500; }); assert.equal(moved.lost, 0, 'walked out of the ring');
 });
 
@@ -354,6 +354,7 @@ test('Stopped Hour: a pendulum tell pushed back by the resume grace keeps its co
   const { game, player, e } = bel('pendulum', 550, 650, 13); e.tell = .1; e.move = 'tick'; e.warn = { kind: 'tick', box: { x: 500, y: e.y - 40, w: 140, h: 40 } }; e.cd = 99; game.hour.on = true;
   toll(game, 60); while (game.hour.still > 0) game.update(1 / 120, {});
   assert.ok(e.tell >= STILL_GRACE - .03, 'pushed to the grace'); assert.ok(Math.abs(game.tickIn(e) - e.tell) < 1e-6, 'the next tick is the contact');
+  const tk = bel('pendulum', 550, 650, 13); tk.e.tell = .1; tk.e.move = 'tock'; tk.e.cd = 99; tk.game.hour.on = true; const bt = tk.e.bt0; toll(tk.game, 60); while (tk.game.hour.still > 0) tk.game.update(1 / 120, {}); assert.equal(tk.e.bt0, bt, 'a tock keeps its own offset from the beat');
   const g = bel('gargoyle', 500, 640, 12), pl = perch(g.game, g.e); g.game.hour.on = true; Object.assign(g.e, { tell: .05, move: 'rake', cd: 99, warn: { kind: 'rake', box: { x: 480, y: g.e.y - 58, w: 200, h: 160 }, line: { x1: g.e.x, y1: g.e.y, x2: 500, y2: FLOOR } } });
   const x0 = g.e.x; toll(g.game, 60); advance(g.game, .8); assert.equal(g.e.x, x0, 'frozen in the Hour'); assert.equal(g.player.blood, 60);
 });
@@ -378,4 +379,31 @@ test('a stone gargoyle that takes a posture break is no longer stone while stunn
   const { game, e } = bel('gargoyle', 400, 700); advance(game, .4); assert.equal(e.stone, true);
   e.poise = 1; game.damageEnemy(e, 10, 1, false, false, false, 17); assert.ok(e.stun > 0, 'posture broke');
   advance(game, .1); assert.ok(e.stun > 0); assert.equal(e.stone, false, 'stone is off during the stun'); const hp0 = e.hp; game.damageEnemy(e, 100, 1, false, false, false, 17); assert.ok(hp0 - e.hp > 20, 'no x0.2 clink on a staggered gargoyle');
+});
+
+test('pendulum row 5: a Spear frenzy hero standing in the band draws a swingout on a tick (variant assault); the same hero without frenzy does not', () => {
+  const go = frenzy => {
+    const { game, player, events, e } = bel('pendulum', 490, 650, 13); e.cd = 0; e.bsCd = 99; game.snaps = []; advance(game, .2);
+    game.time += game.tickIn(e) - .95 + 1e-3; Object.assign(player, { x: e.x - 130, dir: 1, vx: 0, frenzy, blood: 200 }); game.snaps.forEach(s => { s.x = e.x - 130; s.vx = 0; s.dir = 1; s.frenzy = frenzy; s.weapon = 'spear'; });
+    game.wasFrenzy = frenzy; // a frenzy that began long ago: no cower step in the first moments
+    for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {});
+    return { e, events, game };
+  };
+  const f = go(true); assert.equal(f.e.heavyKind, 'swingout'); assert.equal(evs(f.events, 'enemyHeavy').find(h => h.kind === 'swingout').variant, 'assault');
+  const t = f.e.tell; advance(f.game, t + .02); const B = 1.2, ph = ((f.game.time - f.e.bt0) % B + B) % B; assert.ok(ph < .1 || B - ph < .1, 'on a tick');
+  assert.equal(go(false).e.heavy, false, 'no frenzy, no walk-in: no swingout');
+});
+
+test('plummet onto a hero standing on a moving gear platform lands on solid ground, not in the air', () => {
+  const { game, player, e } = bel('gargoyle', 700, 700); perch(game, e, 260);
+  const mover = game.makePlatform(560, FLOOR - 100, 300, 'x', 'y', 'x'); game.platforms.push(mover);
+  Object.assign(player, { x: 700, y: mover.y, grounded: true, on: mover, dir: 1 }); e.cd = 0; game.snaps = [];
+  for (let i = 0; i < 240 && !e.heavy; i++) game.update(1 / 120, {}); assert.equal(e.heavyKind, 'plummet');
+  advance(game, 1.2); assert.equal(e.y, FLOOR, 'on the floor'); assert.equal(e.plat, null);
+});
+
+test('a stunned perched gargoyle is not knocked off its platform edge', () => {
+  const { game, e } = bel('gargoyle', 400, 700), pl = perch(game, e); e.x = pl.x + pl.w - 14; e.poise = 1;
+  game.damageEnemy(e, 10, 1, false, false, false, 17); assert.ok(e.stun > 0); advance(game, .4);
+  assert.ok(e.x <= pl.x + pl.w - 14 + 1e-6, `x ${e.x} stays on the perch`); assert.equal(e.y, pl.y);
 });

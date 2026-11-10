@@ -109,3 +109,15 @@ Heavy clears floors 1-7 about 4-6 s slower. No weapon became a walkover or a wal
 Floors 12-13 full floors (`--floors 12-13 --seeds 30`, expert, floor 12 started cold at 100 blood): clear 73 / 83 / 93% on floor 12 (heavy / twin / spear), floor 13 reached by 22 / 25 / 28 runs and cleared 73 / 88 / 100%; no timeouts beyond 0-2, deaths are guards' rushes and lights. Floor 11 (placeholder cast) clears 65% with heavy, so the new floors do not stand out.
 
 Findings: (1) the first cell showed 25-35% plummet deaths and 11-23 stalled runs. Cause 1, a core bug: the rake left `e.struck` true and `bot.js` skips a heavy whose `struck` is set, so the bot never saw a plummet; fixed in core (`struck: false` at the glide end, with a test). Cause 2, bot side: the bot stood under a stone gargoyle it could not reach; it now lures (walks into rake range and turns its back), as a player would. (2) Matchup intent is only weakly visible: Greatsword vs gargoyle 99 against Twin 100 (expert) and average 76 / 74 / 85, so "Twin countered" shows in the average bot only as a slower win (31-33 s against 28 s). The bot never uses stone-cracking on purpose. (3) The Pendulum Blade deals no damage to either bot alone; it is a pressure piece for pairs, and its heavy needs a hero who walks in. Not tuned: D3 asks for a trait reason, and the pair cells (pendulum,spear average 76-94%) keep it in play. Weakest cell: gargoyle+skeleton average 25-45%, in line with the existing mix cells of the apex skeleton. `--skill mash` is not a skill of this harness version, so no mash row.
+
+**Re-measure after the review round (#69 PR 3: Spear-frenzy swingout, plummet onto solid ground, perch clamp, rake into i-frames, stone off while stunned).** Same cells, 100 seeds, floor 12 (gargoyle) / 13 (pendulum and mixes), tier 4, heavy / twin / spear. Every fairness audit is 0.
+
+| Cell | Expert | Average |
+| --- | --- | --- |
+| Gargoyle 1v1 | 100 / 100 / 100 | 97 / 100 / 100 |
+| Pendulum 1v1 | 100 / 100 / 100 | 100 / 100 / 100 |
+| mix gargoyle,pendulum | 99 / 100 / 100 | 91 / 99 / 100 |
+| mix gargoyle,skeleton | 99 / 95 / 100 | 43 / 40 / 49 |
+| mix pendulum,spear | 100 / 100 / 100 | 76 / 92 / 94 |
+
+Full floors 12-13 (expert, 30 seeds): floor 12 clears 70 / 87 / 90%, floor 13 (reached by 21 / 26 / 27 runs) clears 81 / 88 / 100%. The gargoyle average cells rose from 76 / 74 / 85 to 97 / 100 / 100: the old plummet ring could sit on a moving platform's height and the gargoyle's rake started into i-frames; both now follow the rules, which removed hits the bot could not read. The spear column of the pendulum is unchanged (the bot rarely has a frenzy in a 1v1, so the new frenzy swingout is only covered by its test); the pair `pendulum,spear` with the Greatsword (76%) is the weakest pendulum cell. Weakest cell overall remains gargoyle+skeleton on the average bot (40-49%).
