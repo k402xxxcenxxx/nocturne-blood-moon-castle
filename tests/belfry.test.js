@@ -300,6 +300,17 @@ test('gargoyle rake: no tell starts whose earliest contact (0.55 s) falls inside
   assert.ok(long.player.invulnerable <= .55 + 1 / 60, `i-frames still ${long.player.invulnerable.toFixed(3)} s at the rake start, past its 0.55 s earliest contact`);
 });
 
+test('pendulum: a stun during a swingout tell keeps its contact on a tick (#85 QA: a 0.3 s stun moved the contact 0.3 s off the beat)', () => {
+  const { game, e } = bel('pendulum', 800, 700, 13); // hero 100 px in front of the pendulum
+  e.bt0 = game.time - (1.2 - .9); // the next tick is 0.9 s away
+  Object.assign(e, { heavy: true, heavyKind: 'swingout', tell: .9, dir: 1, warn: { kind: 'swingout', box: { x: e.x + 70, y: e.y - 150, w: 130, h: 150 }, pivot: { x: e.x, y: e.y - 130 }, inner: 70, outer: 200 }, recover: 0, punishable: false, glinted: false, delayed: false });
+  advance(game, .2); e.stun = .3; // a posture break during the tell
+  let t = 0; while (e.tell > 0 && t < 3) { advance(game, 1 / 120); t += 1 / 120; } // up to the contact frame (the heavy flag stays set through the recovery, so it cannot mark the contact)
+  assert.ok(t < 3 && e.recover > 0, 'the swingout resolves');
+  const off = Math.min(((game.time - e.bt0) % 1.2 + 1.2) % 1.2, 1.2 - ((game.time - e.bt0) % 1.2 + 1.2) % 1.2);
+  assert.ok(off < 1 / 60, `the contact is ${off.toFixed(3)} s from a tick`);
+});
+
 test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
   const run = step => {
     const { game, player, events, e } = bel('gargoyle', 700, 700); perch(game, e); e.cd = 0; player.dir = 1; player.x = 700; game.snaps = [];
@@ -406,4 +417,9 @@ test('a stunned perched gargoyle is not knocked off its platform edge', () => {
   const { game, e } = bel('gargoyle', 400, 700), pl = perch(game, e); e.x = pl.x + pl.w - 14; e.poise = 1;
   game.damageEnemy(e, 10, 1, false, false, false, 17); assert.ok(e.stun > 0); advance(game, .4);
   assert.ok(e.x <= pl.x + pl.w - 14 + 1e-6, `x ${e.x} stays on the perch`); assert.equal(e.y, pl.y);
+});
+
+test('pendulum: a stunned pendulum drops a held tell whose contact would now land inside the hero i-frames', () => {
+  const { game, player, e } = bel('pendulum', 800, 700, 13); e.bt0 = game.time - .7; Object.assign(e, { tell: .5, move: 'tick', dir: 1, warn: { kind: 'tick', box: { x: 710, y: e.y - 40, w: 140, h: 40 } }, cd: 99 });
+  player.invulnerable = 1.5; e.stun = .3; advance(game, .05); assert.equal(e.tell, 0, 'cancelled'); assert.equal(e.warn, null);
 });
