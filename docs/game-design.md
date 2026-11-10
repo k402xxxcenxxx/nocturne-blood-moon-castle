@@ -334,7 +334,7 @@ Reads: unwatched and in range (the hero looks away or fights another enemy) -> `
 | --- | --- | --- | --- | --- |
 | `tick` | light | 0.45-0.65 s | low sweep 10-150 px in front, 40 px tall (jump it) | 0.5 s |
 | `tock` | follow-up | 0.6 s | at tick contact with the hero airborne within 150 px (180 after jumped ticks): high sweep 10-150 px, 60-140 px above its feet | 0.5 s |
-| `swingout` | heavy (100) | 0.85-1.1 s + glint | front band 70-200 px, 150 px tall (a hero inside 70 px, under the pivot, or beyond 200 is safe; the drawn pivot arcs show both edges) | 1.1 s punishable |
+| `swingout` | heavy (100) | 0.85-1.1 s + glint | front band 70-200 px from the pendulum, 150 px tall, tested against the hero's centre (a hero whose centre is within 70 px, under the pivot, or beyond 200 px is safe; the drawn box is the exact hit shape). The issue's annulus around a pivot 130 px up did not match its own safe distances, so this band replaces it | 1.1 s punishable |
 
 Reads: a hero inside 70 px -> a 60 px backstep on the next tick (`brainStep` `backstep`, no token); a hero walking in at 80-200 px -> `swingout`; the hero jumping ticks -> tock. If two of the last three contacts met a dash inside its first 0.15 s, the next swingout is delayed +0.4 s from floor 15. Stopped Hour: nothing changes while frozen; when the resume grace pushes a tell back, the beat clock shifts with it so the contact still lands on a tick.
 

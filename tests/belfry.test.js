@@ -295,7 +295,7 @@ test('gargoyle rake: no tell starts whose earliest contact (0.55 s) falls inside
   advance(short.game, .05); assert.equal(short.e.move, 'rake', 'control: i-frames that end before the earliest contact let the rake start');
   const long = bel('gargoyle', 500, 700); perch(long.game, long.e); long.game.platforms.push(long.game.makePlatform(100, FLOOR - 100, 200, 'x', 'y'));
   long.e.cd = 0; long.player.dir = -1; long.game.snaps = []; long.player.invulnerable = .6;
-  advance(long.game, .05); assert.notEqual(long.e.move, 'rake', 'i-frames that outlast the earliest contact (0.55 s) stop the rake from starting');
+  advance(long.game, .04); // 0.6 s of i-frames minus the elapsed time still outlasts 0.55 s only until 0.05 s, so the window is checked early assert.notEqual(long.e.move, 'rake', 'i-frames that outlast the earliest contact (0.55 s) stop the rake from starting');
 });
 
 test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
@@ -360,4 +360,14 @@ test('pendulum: the dodge-on-the-beat habit delays the next swingout by 0.4 s on
   const heavyTell = floor => { const { game, player, events, e } = bel('pendulum', 490, 650, floor); e.beats = [1, 1, 0]; e.cd = 0; e.bsCd = 99; game.snaps = []; advance(game, .2); game.time += game.tickIn(e) - .95 + 1e-3; Object.assign(player, { x: e.x - 160, dir: 1, vx: 200 }); game.snaps.forEach(s => { s.x = e.x - 160; s.vx = 200; s.dir = 1; }); for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {}); return { tell: e.tell, delayed: e.delayed, ev: evs(events, 'enemyHeavy').find(h => h.kind === 'swingout') }; };
   const a = heavyTell(13), b = heavyTell(15);
   assert.equal(a.delayed, false); assert.equal(b.delayed, true); assert.ok(b.tell - a.tell > .35 && b.tell - a.tell < .45); assert.equal(b.ev.delayed, true);
+});
+
+test('pendulum swingout geometry is exact: the hero centre at 69 and 201 px is safe, at 71 and 199 px is hit', () => {
+  const lost = off => {
+    const { game, player, e } = bel('pendulum', 490, 650, 13); e.cd = 0; e.bsCd = 99; game.snaps = []; advance(game, .2);
+    game.time += game.tickIn(e) - .95 + 1e-3; Object.assign(player, { x: e.x - 160, dir: 1, vx: 200 }); game.snaps.forEach(s => { s.x = e.x - 160; s.vx = 200; s.dir = 1; });
+    for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {});
+    assert.equal(e.heavyKind, 'swingout'); const x = e.x + Math.sign(e.warn.box.x + 1 - e.x) * off; player.x = x; player.vx = 0; const b0 = player.blood; advance(game, e.tell + .1); return b0 - player.blood;
+  };
+  assert.equal(lost(69), 0); assert.equal(lost(201), 0); assert.ok(lost(71) > 0); assert.ok(lost(199) > 0);
 });

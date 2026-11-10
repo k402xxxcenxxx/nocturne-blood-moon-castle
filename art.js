@@ -1731,10 +1731,9 @@ function belfryWarn(ctx, e, time) {
   const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0; if (!w || !(tl || strike)) return;
   const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(w) || e.tell))) : 1, hot = .18 + .4 * p; ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; ctx.fillStyle = `rgba(255,74,60,${hot})`;
   if (w.kind === 'plummet') { warnCircles(ctx, w.circles, '255,74,60', '#ff4a3c', p, time); ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2); ctx.stroke(); }
-  else if (w.kind === 'rake') { ctx.setLineDash(WARN_DASH); ctx.globalAlpha = .6 + .4 * p; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); }
+  else if (w.kind === 'rake') { ctx.save(); ctx.globalAlpha = .1 + .15 * p; ctx.lineWidth = 40; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); ctx.restore(); /* the swept body, 40 px wide */ ctx.setLineDash(WARN_DASH); ctx.globalAlpha = .6 + .4 * p; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); }
   else if (w.box) {
     const b = w.box; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
-    if (w.kind === 'swingout' && w.pivot) { ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.arc(w.pivot.x, w.pivot.y, w.outer, 0, Math.PI); ctx.stroke(); ctx.beginPath(); ctx.arc(w.pivot.x, w.pivot.y, w.inner, 0, Math.PI); ctx.stroke(); } // the safe inner and outer edges
   }
   ctx.restore();
 }

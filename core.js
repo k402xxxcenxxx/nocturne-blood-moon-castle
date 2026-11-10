@@ -2072,7 +2072,7 @@ export class Game {
       if (this.startBrainHeavy(e, 'plummet', { x: s.x - GARGOYLE.ring, y: sy - GARGOYLE.ring, w: GARGOYLE.ring * 2, h: GARGOYLE.ring }, HEAVY.gargoyle.tell, { circles: [{ x: s.x, y: sy, r: GARGOYLE.ring }], line: { x1: e.x, y1: e.y, x2: s.x, y2: sy } })) { e.cd = Math.max(e.cd, 1.2); e.vx = 0; return true; }
     }
     // rake: at the back of a hero who looks away (or fights another enemy); aimed at the landing after a spent dash, at the jump apex after jumped rakes
-    const tell = GARGOYLE.rakeTell + GARGOYLE.rakeGlide / 2;
+    const tell = GARGOYLE.rakeTell; // the earliest contact: the glide may touch the hero from the end of the tell
     if (e.cd <= 0 && s.y >= e.y - 20 && Math.hypot(dxs, s.y - e.y) <= GARGOYLE.rakeMax - GARGOYLE.rakeOver && this.canStrike(e, tell)) {
       let ax = s.x, ay = s.y;
       if (s.dash > 0 || s.dashCd > 0) ax = this.landing(s, tell);
@@ -3177,6 +3177,12 @@ export class Game {
     this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: e.heavyKind, heavy: true, area: w });
     if (e.heavyKind === 'ray') { // a 0.15 s contact window along the line fixed at tell start (heavyTravel checks it each frame)
       Object.assign(e, { strikeT: RAY.contact, strikeMax: RAY.contact, struck: false, from: { x: e.x, y: e.y }, dmg });
+      return;
+    }
+    if (e.heavyKind === 'swingout') { // the hero's centre decides: inside 70 px or beyond 200 px of the pendulum is safe
+      const b = w.box;
+      if (p.x >= b.x && p.x <= b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir, false, true);
+      this.heavyEnd(e);
       return;
     }
     if (e.heavyKind === 'plummet') { // the gargoyle drops onto the drawn ring: a grounded hero inside it is hit, a high jump clears it; it ends embedded where the ring was
