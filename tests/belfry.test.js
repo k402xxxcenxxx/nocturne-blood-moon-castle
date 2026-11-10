@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Game, KEEPER_FLOOR, SLICE_FLOORS, BELFRY_FROM, CASTLE_PICKS, clamp, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
 import { HOUR_PERIOD, HOUR_WARN, STILL, STILL_GRACE, ECHO_DELAY, ECHO_DAMAGE } from '../core.js';
-import { advance, boss, castle, castleFloorsHash, enemy, evs, hit, hourTypes, hp, kingBrainArena, modesHash, ranged, toll, until, warden, wardenBrainArena } from './helpers.js';
+import { SEEDS, advance, boss, castle, castleFloorsHash, enemy, evs, hit, hourTypes, hp, kingBrainArena, modesHash, ranged, toll, until, warden, wardenBrainArena } from './helpers.js';
 
 // --- Situational slow motion (#53): the events and the read-only threat query ---
 test('slow motion events: stagger.cancelled is true only when a tell or a contact was cancelled (not in a walk or a recovery)', () => {
@@ -74,7 +74,7 @@ test('belfry frame: floors 1-20 in order, rooms, required guards, portals, relic
     }
     const belfry = f >= BELFRY_FROM; assert.equal(game.stage, belfry ? 2 : 0, `stage index on ${f}`);
     assert.equal(game.enemies.filter(e => e.required).length, 2, 'the last two are the required guards'); assert.equal(game.chests.length, 0, 'no chests');
-    const expected = f <= 3 ? 5 : f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6; assert.equal(game.enemies.length, expected + (f >= 8 ? 1 : 0), `floor ${f}: the plan plus the bonus elite from floor 8`);
+    const expected = f <= 3 ? 5 : f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6; assert.equal(game.enemies.length, expected + (f >= 8 && f !== 12 && f !== 13 ? 1 : 0), `floor ${f}: the plan plus the bonus elite from floor 8 (none on the Gargoyle and Pendulum teaching floors 12-13)`);
     assert.equal(game.portalOpen, false); clear(); assert.equal(game.portalOpen, true, `the portal opens on ${f}`);
     game.finishStage();
     if (CASTLE_PICKS.includes(f)) { assert.equal(game.state, 'upgrade', `a relic pick after ${f}`); picks.push(f); game.chooseRelic(game.choices[0].id); } else assert.equal(game.state, 'playing', `no pick after ${f}`);
@@ -246,4 +246,109 @@ test('the first Echo replay comes ECHO_DELAY after the resume, however late in t
   assert.ok(resumeAt >= 0);
   assert.equal(game.echo.list[0].off, 0, 'the first recorded swing is rebased to the resume');
   assert.ok(game.echo.list.every((g, i, a) => i === 0 || g.off >= a[i - 1].off), 'recorded order and spacing kept');
+});
+
+// --- Gargoyle and Pendulum Blade (#69 PR 3) ---
+const bel = (type, hx, ex, floor = 12, o = {}) => { const t = castle(42, floor, true); const e = enemy(t.game, ex, { type, hp: 5000, ...o }); Object.assign(t.player, { x: hx, dir: 1, hp: 1e5, maxHp: 1e5, blood: 150 }); e.cd = 99; t.game.snaps = []; return { ...t, e }; };
+const perch = (game, e, rise = 100) => { const pl = game.makePlatform(e.x - 100, FLOOR - rise, 200, 'x', 'y'); game.platforms.push(pl); Object.assign(e, { plat: pl, y: pl.y }); return pl; };
+
+test('floors 12-13: the Gargoyle and Pendulum rows, perches on static platforms, never a gate guard, no elites', () => {
+  for (const seed of SEEDS) {
+    const mk = f => { const g = new Game(() => {}, seed, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(f); return g; }, g12 = mk(12), g13 = mk(13);
+    for (const g of [g12, g13]) { assert.equal(g.enemies.length, 6); assert.ok(!g.enemies.some(e => e.elite)); assert.ok(g.enemies.filter(e => e.required).every(e => e.type !== 'gargoyle'), 'never a guard'); }
+    assert.equal(g12.enemies.filter(e => e.type === 'gargoyle').length, 2); assert.equal(g12.enemies[1].type, 'gargoyle'); assert.equal(g12.enemies[3].type, 'gargoyle');
+    assert.equal(g13.enemies.filter(e => e.type === 'pendulum').length, 2); assert.equal(g13.enemies[1].type, 'gargoyle'); assert.ok(g13.enemies.filter(e => e.type === 'pendulum' && e.required).length <= 1);
+    for (const e of [...g12.enemies, ...g13.enemies].filter(e => e.type === 'gargoyle')) assert.ok(e.plat && !e.plat.moving && e.y === e.plat.y, 'perched on a static platform');
+    assert.equal(new Set(g12.enemies.filter(e => e.type === 'gargoyle').map(e => e.plat)).size, 2, 'one gargoyle per perch');
+    assert.ok(![...g12.enemies, ...g13.enemies].some(e => e.type === 'priest' || e.type === 'mage' || e.type === 'knight'));
+  }
+});
+
+test('gargoyle: stone while watched (0.15 s), hits clink (x0.2, 1 blood, recoil), hit 3 and a plunge crack the shell, it wakes 0.25 s after the hero looks away', () => {
+  const { game, player, events, e } = bel('gargoyle', 400, 700);
+  advance(game, .1); assert.equal(e.stone, false, 'not yet'); advance(game, .2); assert.equal(e.stone, true, 'watched');
+  const hp0 = e.hp, cd0 = player.attackCd; game.damageEnemy(e, 100, 1, false, false, false, 17);
+  assert.equal(hp0 - e.hp, 20, 'x0.2 damage'); assert.ok(player.attackCd >= cd0 + .15 - 1e-9, 'the swing recoils'); assert.equal(evs(events, 'stoneClink').length, 1); assert.equal(e.stone, true);
+  player.x = e.x - 60; const b0 = player.blood; game.attack(); advance(game, .4); assert.equal(player.blood, b0 - 2 + 1, 'a clink gives 1 blood (the swing costs 2)');
+  game.damageEnemy(e, 100, 1, false, true, false, 62); // hit 3
+  assert.equal(e.stone, false); assert.ok(e.recover >= .79 && e.punishable, 'a punishable stun'); assert.equal(evs(events, 'shellBreak').length, 1);
+  const p2 = bel('gargoyle', 400, 700); advance(p2.game, .4); assert.equal(p2.e.stone, true); p2.game.damageEnemy(p2.e, 10, 1, false, false, false, 45); assert.equal(p2.e.stone, false, 'a plunge cracks it');
+  const w = bel('gargoyle', 400, 700); advance(w.game, .4); assert.equal(w.e.stone, true);
+  w.player.dir = -1; advance(w.game, .2); assert.equal(w.e.stone, true, 'still stone 0.2 s after the look away (it sees it 0.12 s late, then waits 0.25 s)'); advance(w.game, .25); assert.equal(w.e.stone, false, 'awake');
+});
+
+test('gargoyle rake: a tell of 0.55 s, no contact before it, a glide along the line fixed at tell start that hits once, a punishable recovery, then a flight to a perch', () => {
+  const { game, player, events, e } = bel('gargoyle', 500, 700);
+  perch(game, e); game.platforms.push(game.makePlatform(100, FLOOR - 100, 200, 'x', 'y'));
+  e.cd = 0; player.dir = -1; game.snaps = []; const b0 = player.blood;
+  advance(game, .05); assert.ok(e.tell > .45 && e.move === 'rake', 'the tell starts'); const line = { ...e.warn.line }; assert.ok(evs(events, 'enemyTell').some(t => t.enemy === 'gargoyle' && t.kind === 'rake'));
+  player.x = 505; advance(game, .45); assert.equal(player.blood, b0, 'nothing before the tell is over'); assert.deepEqual(e.warn.line, line, 'the line is fixed');
+  advance(game, .5); assert.ok(player.blood < b0, 'the glide hits'); assert.equal(evs(events, 'hurt').length, 1, 'once');
+  assert.ok(e.recover > 0 && e.punishable && e.y === FLOOR, 'it lands on the floor with a punishable recovery'); assert.equal(e.struck, false, 'the glide leaves no stale struck flag (the bot reads it for heavies)');
+  advance(game, .6); assert.ok(evs(events, 'brainStep').some(b => b.enemy === 'gargoyle' && b.kind === 'reperch'), 'then it flies to a perch');
+  advance(game, 1); assert.ok(e.plat && e.y === e.plat.y && !e.plat.moving, 'perched again');
+});
+
+test('gargoyle plummet: a hero under the perch draws a ring r 60 with a 0.95 s tell and glint; 100 damage only if still inside at contact; it ends embedded and punishable', () => {
+  const run = step => {
+    const { game, player, events, e } = bel('gargoyle', 700, 700); perch(game, e); e.cd = 0; player.dir = 1; player.x = 700; game.snaps = [];
+    let heavy = null; for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {}); heavy = evs(events, 'enemyHeavy').find(h => h.kind === 'plummet');
+    assert.ok(heavy && heavy.area.circles[0].r === 60, 'the ring is announced'); const hp0 = player.blood; step(player); advance(game, 1.2);
+    return { game, player, e, lost: hp0 - player.blood, events };
+  };
+  const stood = run(() => {}); assert.equal(stood.lost, 100); assert.ok(stood.e.recover > 0 || stood.e.heavy === false); assert.equal(stood.e.y, FLOOR); assert.ok(evs(stood.events, 'enemyGlint').length >= 1);
+  const moved = run(p => { p.x = 500; }); assert.equal(moved.lost, 0, 'walked out of the ring');
+});
+
+test('pendulum: every tick lands on a beat of its own clock, tell 0.45-0.65 s, a low sweep that a jump clears, then a punishable recovery', () => {
+  const run = jump => {
+    const { game, player, e } = bel('pendulum', 550, 650, 13); e.cd = 0; const b0 = player.blood; let tell = -1;
+    for (let i = 0; i < 8 * 120 && !(e.recover > 0 || e.move === 'tock'); i++) { game.update(1 / 120, {}); if (e.tell > 0 && tell < 0) tell = e.tell; if (jump && e.tell > 0 && e.tell < .3 && player.grounded) { player.vy = -575; player.grounded = false; player.y -= 1; } } // stops at the tick's contact (a jumper then draws the tock)
+    return { game, player, e, tell, lost: b0 - player.blood };
+  };
+  const stand = run(false); assert.ok(stand.tell >= .45 - 1e-9 && stand.tell <= .65 + 1e-9, `tell ${stand.tell}`); assert.ok(stand.lost > 0, 'the tick hurts a hero who stands');
+  const B = 1.2, phase = ((stand.game.time - stand.e.bt0) % B + B) % B; assert.ok(phase < .05 || B - phase < .05, `contact on a tick (phase ${phase})`);
+  assert.ok(stand.e.recover > 0 && stand.e.punishable);
+  assert.equal(run(true).lost, 0, 'jumped');
+});
+
+test('pendulum tock: a hero in the air within 150 px at the tick contact draws the high sweep 0.6 s later; a grounded hero does not', () => {
+  const go = air => {
+    const { game, player, events, e } = bel('pendulum', 550, 650, 13); e.cd = 0;
+    for (let i = 0; i < 8 * 120 && !(e.tell > 0); i++) game.update(1 / 120, {});
+    const t0 = game.time + e.tell; while (e.tell > .02) game.update(1 / 120, {});
+    if (air) { Object.assign(player, { y: FLOOR - 80, vy: 0, grounded: false }); game.snaps.forEach(s => { s.grounded = false; s.y = FLOOR - 80; }); }
+    advance(game, .06); return { e, events, player };
+  };
+  const a = go(true); assert.equal(a.e.move, 'tock'); assert.ok(a.e.tell > .5 && a.e.tell <= .6); assert.ok(a.e.warn.box.y < a.e.y - 60, 'high sweep');
+  assert.equal(go(false).e.move, '');
+});
+
+test('pendulum swingout: a heavy on a tick with a glint; a hero under the pivot (inside 70 px) or beyond 200 px is safe, one in the band is hit for 100', () => {
+  const run = hx => {
+    const { game, player, events, e } = bel('pendulum', 490, 650, 13); e.cd = 0; e.bsCd = 99; // standing under the pivot is the safe spot: the backstep is off for the test
+    game.snaps = []; advance(game, .2);
+    const b = game.tickIn(e); game.time += b - .95 + 1e-3; // the next tick is 0.95 s away
+    Object.assign(player, { x: e.x - 160, dir: 1, vx: 200 }); game.snaps.forEach(s => { s.x = e.x - 160; s.vx = 200; s.dir = 1; });
+    for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {});
+    assert.ok(e.heavy && e.heavyKind === 'swingout', 'announced'); assert.ok(evs(events, 'enemyHeavy').some(h => h.kind === 'swingout')); const t = e.tell;
+    player.x = e.x + hx; player.vx = 0; const b0 = player.blood; advance(game, t + .1);
+    const phase = ((game.time - e.bt0) % 1.2 + 1.2) % 1.2; assert.ok(phase < .2 || 1.2 - phase < .2, 'the contact is on a tick');
+    return { lost: b0 - player.blood, e };
+  };
+  assert.equal(run(-130).lost, 100, 'in the band'); assert.equal(run(-40).lost, 0, 'under the pivot'); assert.equal(run(-230).lost, 0, 'beyond 200'); assert.ok(run(-130).e.recover > 0);
+});
+
+test('Stopped Hour: a pendulum tell pushed back by the resume grace keeps its contact on a tick; a gargoyle mid-rake waits and the hero is safe in the grace', () => {
+  const { game, player, e } = bel('pendulum', 550, 650, 13); e.tell = .1; e.move = 'tick'; e.warn = { kind: 'tick', box: { x: 500, y: e.y - 40, w: 140, h: 40 } }; e.cd = 99; game.hour.on = true;
+  toll(game, 60); while (game.hour.still > 0) game.update(1 / 120, {});
+  assert.ok(e.tell >= STILL_GRACE - .03, 'pushed to the grace'); assert.ok(Math.abs(game.tickIn(e) - e.tell) < 1e-6, 'the next tick is the contact');
+  const g = bel('gargoyle', 500, 640, 12), pl = perch(g.game, g.e); g.game.hour.on = true; Object.assign(g.e, { tell: .05, move: 'rake', cd: 99, warn: { kind: 'rake', box: { x: 480, y: g.e.y - 58, w: 200, h: 160 }, line: { x1: g.e.x, y1: g.e.y, x2: 500, y2: FLOOR } } });
+  const x0 = g.e.x; toll(g.game, 60); advance(g.game, .8); assert.equal(g.e.x, x0, 'frozen in the Hour'); assert.equal(g.player.blood, 60);
+});
+
+test('pendulum: the dodge-on-the-beat habit delays the next swingout by 0.4 s only from floor 15 (glint unchanged)', () => {
+  const heavyTell = floor => { const { game, player, events, e } = bel('pendulum', 490, 650, floor); e.beats = [1, 1, 0]; e.cd = 0; e.bsCd = 99; game.snaps = []; advance(game, .2); game.time += game.tickIn(e) - .95 + 1e-3; Object.assign(player, { x: e.x - 160, dir: 1, vx: 200 }); game.snaps.forEach(s => { s.x = e.x - 160; s.vx = 200; s.dir = 1; }); for (let i = 0; i < 120 && !e.heavy; i++) game.update(1 / 120, {}); return { tell: e.tell, delayed: e.delayed, ev: evs(events, 'enemyHeavy').find(h => h.kind === 'swingout') }; };
+  const a = heavyTell(13), b = heavyTell(15);
+  assert.equal(a.delayed, false); assert.equal(b.delayed, true); assert.ok(b.tell - a.tell > .35 && b.tell - a.tell < .45); assert.equal(b.ev.delayed, true);
 });

@@ -94,3 +94,18 @@ Full runs (floors 1-10, one life, 100 seeds): expert clear 48 / 48 / 51% (heavy 
 | twin (cuts 2-3 hit both sides) | 100/100/91 → 100/100/100 | 100 → 82 | 80 → 89 | 75 → 63 |
 
 Heavy clears floors 1-7 about 4-6 s slower. No weapon became a walkover or a wall.
+
+## Belfry cast: Gargoyle and Pendulum Blade (#69 PR 3)
+`node tools/bot-run.mjs --duel 1 --type gargoyle --floor 12 --tier 4` / `--type pendulum --floor 13 --tier 4` (100 seeds, 100 blood, perched gargoyle on the floor-1 room's static platform; heavy / twin / spear). On Windows `bot-run.mjs` needs `process.argv[1]` shaped as `/C:/...` for its entry check, so run it through a one-line shim that sets it. Stat levers: none (D3); every number is the first draft in the issue.
+
+| Cell | Expert | Average | Audit |
+| --- | --- | --- | --- |
+| Gargoyle 1v1 | 99 / 100 / 100 | 76 / 74 / 85 | 0 of 62 / 138 / 168 (expert), 0 of 91 / 82 / 44 (average) |
+| Pendulum 1v1 | 100 / 100 / 100 | 100 / 100 / 100 | 0 (the bot never takes a hit: 0.0 hits per fight) |
+| mix gargoyle,pendulum (floor 13) | 90 / 96 / 100 | 82 / 82 / 88 | 0 |
+| mix gargoyle,skeleton | 98 / 93 / 100 | 32 / 25 / 45 | 0 |
+| mix pendulum,spear | 100 / 100 / 100 | 76 / 91 / 94 | 0 |
+
+Floors 12-13 full floors (`--floors 12-13 --seeds 30`, expert, floor 12 started cold at 100 blood): clear 73 / 83 / 93% on floor 12 (heavy / twin / spear), floor 13 reached by 22 / 25 / 28 runs and cleared 73 / 88 / 100%; no timeouts beyond 0-2, deaths are guards' rushes and lights. Floor 11 (placeholder cast) clears 65% with heavy, so the new floors do not stand out.
+
+Findings: (1) the first cell showed 25-35% plummet deaths and 11-23 stalled runs. Cause 1, a core bug: the rake left `e.struck` true and `bot.js` skips a heavy whose `struck` is set, so the bot never saw a plummet; fixed in core (`struck: false` at the glide end, with a test). Cause 2, bot side: the bot stood under a stone gargoyle it could not reach; it now lures (walks into rake range and turns its back), as a player would. (2) Matchup intent is only weakly visible: Greatsword vs gargoyle 99 against Twin 100 (expert) and average 76 / 74 / 85, so "Twin countered" shows in the average bot only as a slower win (31-33 s against 28 s). The bot never uses stone-cracking on purpose. (3) The Pendulum Blade deals no damage to either bot alone; it is a pressure piece for pairs, and its heavy needs a hero who walks in. Not tuned: D3 asks for a trait reason, and the pair cells (pendulum,spear average 76-94%) keep it in play. Weakest cell: gargoyle+skeleton average 25-45%, in line with the existing mix cells of the apex skeleton. `--skill mash` is not a skill of this harness version, so no mash row.
