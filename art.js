@@ -1,5 +1,7 @@
 // Original pixel artwork, mostly drawn in code. Static stonework is painted once per stage.
 import { heroSheets } from './assets/hero-sheets.js';
+import wardenSheet from './assets/warden-sheet.js';
+import kingSheet from './assets/king-sheet.js';
 const palettes = [
   { sky: '#10101e', glow: '#42304d', stone: '#34323a', mortar: '#1d1b26', trim: '#847461', light: '#c9ad7b', accent: '#a24043' },
   { sky: '#111b20', glow: '#314039', stone: '#2c3030', mortar: '#1a2225', trim: '#84754e', light: '#c4aa66', accent: '#567a73' },
@@ -814,7 +816,52 @@ function wardenSeams(c, color, alpha, width) {
   for (const s of BODY_CRACKS) { c.beginPath(); c.moveTo(s[0][0], s[0][1]); for (let i = 1; i < s.length; i++) c.lineTo(s[i][0], s[i][1]); c.stroke(); }
   c.restore();
 }
+// Boss video sheets (#81). Which row and frame a boss shows, from the same state its code-drawn body reads. Presentation only.
+const BOSS = {
+  warden: { sheet: wardenSheet, image: null, rows: { gate: 'slam', bell: 'slam', greatToll: 'seize', call: 'roar' },
+    tip: { idle: [70, -10], walk: [70, -10], sweep: [-80, -40], backhand: [80, -60], slam: [-40, -150], charge: [60, -70], seize: [70, -80], roar: [-40, -150], stun: [70, -5] } }, // weapon point for the release glint, feet-relative
+  king: { sheet: kingSheet, image: null, rows: { string: 'idle', judgement: 'roar', judgementB: 'roar', bloodMoon: 'roar', crownGuard: 'guard', guardHold: 'guard', longNight: 'ritual' },
+    tip: { idle: [90, -10], walk: [90, -10], slash: [-60, -150], turnslash: [-110, -60], slam: [-30, -190], charge: [-120, -30], volley: [90, -90], ritual: [20, -10], raise: [40, -150], descent: [60, -20], leap: [0, -10], roar: [60, -200], guard: [20, -200], stun: [90, -5] } },
+}, bossSince = new WeakMap();
+function bossPose(e, time, pw, anims, rows) {
+  const once = (name, k, count = anims[name].frames, from = 0) => ({ name, frame: from + Math.min(count - 1, Math.floor(Math.max(0, k) * count)) });
+  const since = key => { let s = bossSince.get(e); if (!s || s.key !== key) { s = { key, t0: time }; bossSince.set(e, s); } return time - s.t0; }; // one clock per boss, restarted when the pose changes
+  const move = rows[e.move] || e.move, last = rows[e.lastMove] || e.lastMove;
+  if (e.hp <= 0) return once('death', since('death') / 1.2);
+  if (e.stun > 0 && (e.armored ? e.superArmor <= 0 : e.stun > .15)) return once('stun', since('stun') / .5); // armored bosses kneel only on a break; the normal King on a stagger, not on its 0.08 s hit stun
+  if (e.pause > 0) return once('roar', since('roar') / .5);
+  if (e.travel > 0) { const { windup, strike } = anims.charge; return once('charge', since('travel') / .5, strike - windup, windup); }
+  if (e.tell > 0 && anims[move]) return anims[move].windup ? once(move, pw, anims[move].windup) : once(move, pw);
+  if (e.recover > 0 && anims[last]?.strike) { // the blow, then the follow-through held to the end of the recovery
+    const { windup = 0, strike, frames } = anims[last], el = since('recover' + last);
+    if (el < .24 && strike > windup) return once(last, el / .24, strike - windup, windup);
+    return frames > strike ? once(last, (el - .24) / .4, frames - strike, strike) : { name: last, frame: strike - 1 };
+  }
+  if (Math.abs(e.vx || 0) > 5) return { name: 'walk', frame: Math.floor(time * anims.walk.fps) % anims.walk.frames };
+  return { name: 'idle', frame: Math.floor(time * anims.idle.fps) % anims.idle.frames };
+}
+export const wardenPose = (e, time, pw = 0, anims = wardenSheet.anims) => bossPose(e, time, pw, anims, BOSS.warden.rows);
+export function kingPose(e, time, pw = 0, leapQ = 1, anims = kingSheet.anims) { // leapQ: the descent arc's progress from kingState, 1 when grounded
+  if (e.hp > 0 && (leapQ < 1 || e.y < FLOOR - 2)) return { name: 'leap', frame: Math.min(anims.leap.frames - 1, Math.floor(Math.max(0, leapQ < 1 ? leapQ : .5) * anims.leap.frames)) };
+  return bossPose(e, time, pw, anims, BOSS.king.rows);
+}
+function bossImage(kind) { const b = BOSS[kind]; if (!b.image && typeof Image !== 'undefined') b.image = Object.assign(new Image(), { src: new URL(b.sheet.src, import.meta.url).href }); return b.image?.complete && b.image.naturalWidth ? b.image : null; }
+function bossSprite(kind, c, pose, time, white, hold, calm, turn, tipOut) { // false until the sheet has loaded: the code-drawn body stands in
+  const image = bossImage(kind); if (!image) return false;
+  const { sheet, tip } = BOSS[kind], { name, frame } = pose, [w, h] = sheet.cell, t = tip[name] || tip.idle;
+  c.save(); if (hold && !calm) c.translate(Math.round(Math.sin(time * 70) * 1.5), 0); // a held wind-up trembles
+  c.scale(turn, 1); c.imageSmoothingEnabled = false; if (white) c.filter = 'brightness(2.4)';
+  c.drawImage(image, frame * w, sheet.anims[name].row * h, w, h, -sheet.origin[0], -sheet.origin[1], w, h);
+  c.restore(); tipOut[0] = Math.round(t[0] * turn); tipOut[1] = t[1]; return true;
+}
+export function drawBossFall(ctx, kind, x, y, dir, t) { // a killed boss's collapse, played by game.js after core removes it; t: seconds since the kill
+  const image = bossImage(kind); if (!image) return;
+  const { sheet } = BOSS[kind], { frames, row } = sheet.anims.death, frame = Math.min(frames - 1, Math.floor(Math.max(0, t) / 1.2 * frames)), [w, h] = sheet.cell;
+  ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(dir, 1); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, frame * w, row * h, w, h, -sheet.origin[0], -sheet.origin[1], w, h); ctx.restore();
+}
 function wardenBody(c, e, time, white, pw, hold, calm, turn) {
+  if (bossSprite('warden', c, wardenPose(e, time, pw), time, white, hold, calm, turn, wardenTip)) return;
   const key = e.stun > 0 && e.superArmor <= 0 ? 'stun' : e.pause > 0 ? 'roar' : e.travel > 0 ? 'run' : e.tell > 0 ? e.move : e.recover > 0 ? REC[e.lastMove] : '';
   const T = WP[key] || WP.idle, I = WP.idle, k = e.tell > 0 ? 1 - (1 - pw) * (1 - pw) : 1, d = k > .3 ? T : I;
   for (let i = 0; i < 8; i++) wp[i] = I[i] + (T[i] - I[i]) * k;
@@ -954,6 +1001,7 @@ function kingSeams(c, color, alpha, width) {
 }
 function kingArm(c, white, x0, y0, x1, y1) { const mx = (x0 + x1) / 2, my = (y0 + y1) / 2 + 8; line(c, white || KC.dark, x0, y0, mx, my, 12); line(c, white || KC.dark, mx, my, x1, y1, 11); line(c, white || KC.plate, x0, y0, mx, my, 7); line(c, white || KC.plate, mx, my, x1, y1, 6); }
 function kingBody(c, e, time, white, pw, hold, calm, s) {
+  { const pose = kingPose(e, time, pw, s.q); if (bossSprite('king', c, pose, time, white, hold, calm, pose.name === 'turnslash' || s.flip >= 0 ? 1 : -1, kingTip)) return; } // the turnslash frames already face behind
   const ph = e.bossPhase || 1, mv = e.move, d = e.dir === -1 ? -1 : 1, leaping = s.q < 1, exposed = e.superArmor <= 0;
   let key = '';
   if (leaping) key = 'leap'; else if (e.stun > 0 && exposed) key = 'stun'; else if (e.pause > 0) key = 'roar'; else if (e.travel > 0) key = 'charge';
@@ -1419,7 +1467,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (e.blinkT > 0) { const bq = 1 - e.blinkT / .4; ctx.globalAlpha = calm ? .5 : .25 + .45 * Math.abs(Math.sin(time * 30)); ctx.scale(1 - .35 * bq, 1 + .1 * bq); } // mage blink: flickers and thins out
   if (wd) wardenBody(ctx, e, time, white, wpw, whold, calm, wturn ? -Math.cos(Math.PI * wk) : 1);
   else if (kg) kingBody(ctx, e, time, white, wpw, whold, calm, ks);
-  else if (boss) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); }
+  else if (boss) { if (!bossSprite('king', ctx, kingPose(e, time, e.tell > 0 ? Math.min(1, 1 - e.tell / (tellMax.get(e.warn) || e.tell || 1)) : 0), time, white, false, calm, 1, kingTip)) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); } } // the normal run's King shares the castle King's sheet
   else if (e.type === 'bat') bat(ctx, e, time, white);
   else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
   else if (e.type === 'spear') spearman(ctx, e, time, white);

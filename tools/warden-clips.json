@@ -1,0 +1,25 @@
+{
+ "name": "warden", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 112, "colors": 32,
+ "clips": {
+  "loco": { "file": "warden-loco.mp4", "size": 640, "heroHeight": 268, "feet": [312, 434] },
+  "combat": { "file": "warden-combat.mp4", "size": 640, "heroHeight": 268, "feet": [312, 434] },
+  "heavy": { "file": "warden-heavy.mp4", "size": 640, "heroHeight": 268, "feet": [312, 434] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5, 0.75], "fps": 4 },
+  "walk": { "clip": "loco", "from": 1.0, "to": 2.3, "frames": 6, "fps": 8, "loop": true, "minGap": 8 },
+  "stun": { "clip": "loco", "times": [2.375, 2.5, 2.75, 3.0], "fps": 8 },
+  "roar": { "clip": "loco", "times": [3.625, 3.75, 3.875, 4.125], "fps": 8 },
+  "sweep": { "clip": "combat", "times": [0.125, 0.25, 0.875, 1.625, 0.0], "windup": 2, "strike": 4, "fps": 12 },
+  "backhand": { "clip": "combat", "times": [1.625, 1.75, 2.0, 2.375], "windup": 1, "strike": 3, "fps": 12 },
+  "slam": { "clip": "combat", "times": [3.0, 3.125, 3.375, 3.5, 3.75, 4.0, 4.25, 4.625], "windup": 3, "strike": 5, "fps": 12 },
+  "charge": { "clip": "heavy", "times": [0.25, 0.375, 0.625, 1.125, 1.25, 1.375, 1.625], "windup": 3, "strike": 6, "clear": [0, 360, 250, 470], "fps": 12 },
+  "seize": { "clip": "heavy", "times": [1.875, 2.0, 2.125, 2.375, 2.5, 2.75], "windup": 3, "strike": 5, "fps": 12 },
+  "death": { "clip": "heavy", "times": [3.0, 3.25, 3.5, 3.75, 3.875, 4.0, 4.125, 4.5], "fps": 8 }
+ },
+ "sfx": {
+  "wardenRoar": { "clip": "loco", "from": 3.74, "to": 4.9 },
+  "wardenSlam": { "clip": "combat", "from": 3.47, "to": 4.3 },
+  "wardenSeize": { "clip": "heavy", "from": 2.3, "to": 2.62 }
+ }
+}

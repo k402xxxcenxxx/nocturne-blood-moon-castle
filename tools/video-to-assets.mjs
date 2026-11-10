@@ -82,6 +82,12 @@ export function spritePixels(frame, size, { scale, feet, minArea, minX = 0, clea
   return [...bins.values()].filter(b => b.n >= need).map(b => ({ x: b.x, y: b.y, rgb: [b.r / b.n, b.g / b.n, b.b / b.n] }));
 }
 
+// Names the video edges a frame's art runs into (top, left, right): what the video cut off there cannot be restored.
+export function cutEdges(frame, size, band = 4, limit = 60) {
+  const count = inside => { let n = 0; for (let i = 0; i < size * size; i++) if (inside(i % size, Math.floor(i / size)) && !isChroma(frame[i * 3], frame[i * 3 + 1], frame[i * 3 + 2])) n++; return n; };
+  return [['top', (x, y) => y < band], ['left', x => x < band], ['right', x => x >= size - band]].filter(([, inside]) => count(inside) > limit).map(([side]) => side);
+}
+
 function build(specFile) {
   const spec = JSON.parse(readFileSync(specFile, 'utf8')), raw = resolve(dirname(specFile), spec.raw), rows = [], colors = [], decoded = {};
   for (const [name, a] of Object.entries(spec.anims)) {
@@ -95,7 +101,9 @@ function build(specFile) {
     const options = { scale: (a.scale ?? 1) * spec.height / clip.heroHeight, minArea: 40, minX: a.minX, clear: a.clear };
     const each = (value, n) => (Array.isArray(value) ? value[n] : value ?? 0); // an array gives each frame its own offset, for airborne poses
     const feet = n => [clip.feet[0] + each(a.dx, n), clip.feet[1] + each(a.dy, n)];
-    rows.push({ name, fps: a.fps, loop: !!a.loop, strike: a.strike ?? picks.length, windup: a.windup, cells: picks.map((at, n) => spritePixels(Array.isArray(a.times?.[n]) ? (decoded[a.times[n][0]] ??= readClip(resolve(raw, spec.clips[a.times[n][0]].file), clip.size))[at] : frames[at], clip.size, { ...options, feet: feet(n) })) });
+    const source = n => Array.isArray(a.times?.[n]) ? (decoded[a.times[n][0]] ??= readClip(resolve(raw, spec.clips[a.times[n][0]].file), clip.size))[picks[n]] : frames[picks[n]];
+    picks.forEach((at, n) => { const cut = a.clear || a.minX ? [] : cutEdges(source(n), clip.size); if (cut.length) console.warn(`WARNING ${name} frame ${n} (${(at / FPS).toFixed(3)}s): art cut by the video's ${cut.join(', ')} edge; pick another frame`); });
+    rows.push({ name, fps: a.fps, loop: !!a.loop, strike: a.strike ?? picks.length, windup: a.windup, cells: picks.map((at, n) => spritePixels(source(n), clip.size, { ...options, feet: feet(n) })) });
     for (const cell of rows.at(-1).cells) for (const p of cell) colors.push(p.rgb);
     console.log(`${name}: ${picks.length} frames`);
   }

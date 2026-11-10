@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestLoop, isChroma, keepLargeShapes, medianCut, spritePixels } from '../tools/video-to-assets.mjs';
-import { heroPose, HERO_HURT } from '../art.js';
+import { bestLoop, cutEdges, isChroma, keepLargeShapes, medianCut, spritePixels } from '../tools/video-to-assets.mjs';
+import { heroPose, HERO_HURT, wardenPose, kingPose } from '../art.js';
 
 test('the chroma key removes magenta and its fringe but keeps the cape, hair and outline', () => {
   for (const bg of [[255, 0, 255], [200, 20, 220], [150, 40, 160]]) assert.ok(isChroma(...bg), bg.join());
@@ -64,4 +64,31 @@ test('hero poses follow the game state, and one-shot animations stop on their la
   assert.equal(pose({ combo: 2, attack: .4, attackLen: .5, windup: .26, windupT: .13 }).frame, 1, 'wind-up frames last as long as the wind-up');
   assert.equal(pose({ combo: 2, attack: .2, attackLen: .5, windup: .26, windupT: 0 }).frame, 3, 'the strike frames follow them');
   assert.deepEqual(pose({ attack: .1, combo: 1 }, { dead: 99 }), { name: 'death', frame: 3 });
+});
+
+test('cutEdges names the video edge a blade runs into, and ignores art with a margin', () => {
+  const size = 40, frame = Buffer.alloc(size * size * 3);
+  for (let i = 0; i < size * size; i++) frame.set([255, 0, 255], i * 3);
+  const paint = (x0, y0, x1, y1) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) frame.set([220, 225, 230], (y * size + x) * 3); };
+  paint(10, 10, 30, 30); assert.deepEqual(cutEdges(frame, size, 4, 20), []);
+  paint(30, 18, 40, 26); assert.deepEqual(cutEdges(frame, size, 4, 20), ['right']);
+});
+
+test('Warden poses follow its state: tells hold the wind-up, aliases share rows, a broken gauge kneels', () => {
+  const anims = { idle: { frames: 4, fps: 4 }, walk: { frames: 6, fps: 8 }, stun: { frames: 4 }, roar: { frames: 4 }, death: { frames: 8 }, slam: { frames: 8, windup: 3, strike: 5 }, charge: { frames: 7, windup: 3, strike: 6 } };
+  const pose = (e, t = 0, pw = 0) => wardenPose({ hp: 100, superArmor: 100, armored: true, ...e }, t, pw, anims);
+  assert.equal(pose({}).name, 'idle'); assert.equal(pose({ vx: 40 }).name, 'walk');
+  assert.deepEqual(pose({ tell: .5, move: 'slam' }, 0, .99), { name: 'slam', frame: 2 }); // the last wind-up frame, never the blow
+  assert.equal(pose({ tell: .5, move: 'gate' }).name, 'slam');
+  assert.equal(pose({ stun: 1, superArmor: 0 }).name, 'stun'); assert.equal(pose({ stun: 1, superArmor: 50 }).name, 'idle');
+  assert.ok(pose({ travel: .3 }).frame >= 3); // the charge run plays the strike frames
+  assert.equal(pose({ hp: 0 }).name, 'death');
+});
+
+test('King poses: the descent arc shows the leap, a string waits in the guard idle, judgement shares the roar', () => {
+  const anims = { idle: { frames: 4, fps: 4 }, walk: { frames: 6, fps: 8 }, stun: { frames: 4 }, roar: { frames: 4 }, guard: { frames: 2 }, leap: { frames: 4 }, death: { frames: 8 }, slash: { frames: 5, windup: 3, strike: 4 } };
+  const pose = (e, q = 1) => kingPose({ hp: 100, superArmor: 150, y: 438, ...e }, 0, .5, q, anims);
+  assert.equal(pose({}, .4).name, 'leap'); assert.equal(pose({ tell: .4, move: 'string' }).name, 'idle');
+  assert.equal(pose({ tell: .4, move: 'judgement' }).name, 'roar'); assert.equal(pose({ tell: .4, move: 'crownGuard' }).name, 'guard');
+  assert.equal(pose({ tell: .4, move: 'slash' }).name, 'slash');
 });

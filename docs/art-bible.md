@@ -47,6 +47,8 @@ Every approved image that other assets must match. Attach the relevant anchors t
 | --- | --- | --- |
 | Hero identity | `docs/art-bible/raw/hero-merlin-source.png` | Design reference for the hero |
 | Hero video first frame | `docs/art-bible/anchors/hero-video-first-frame.png` | First frame of every rapier clip |
+| Gate Warden first frame | `docs/art-bible/anchors/warden-first-frame.png` | First frame of every Warden clip (#81). Three-quarter side view facing right, body about 42% of the frame |
+| Fallen King first frame | `docs/art-bible/anchors/king-first-frame.png` | First frame of every King clip (#81). Three-quarter side view facing right, greatsword low and forward |
 | Weapon first frames | `docs/art-bible/anchors/hero-heavy-first-frame.png`, `hero-twin-first-frame.png`, `hero-spear-first-frame.png` | First frame of every clip of that weapon. Heavy and spear are shifted left so the weapon stays in frame |
 
 ## Pose guides

@@ -1,5 +1,5 @@
 import { HOUR_PERIOD, Game, RELICS, FLOOR, clamp, WEAPONS, BLOOD_MAX, BLOOD_HALF, SKILL_COST, SKILL_MIN, SWING_COST, HEAVY_DAMAGE, ECLIPSE_CHIP, WARDEN_FLOOR, KING_FLOOR, KEEPER_FLOOR, SLICE_FLOORS } from './core.js';
-import { WEAPON_TINT, drawSlash, drawSwing, drawDive, drawSlam, drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
+import { WEAPON_TINT, drawSlash, drawSwing, drawDive, drawSlam, drawBossFall, drawScene, drawHero, drawEnemy, drawAffixIcon, drawStatus, drawPortal, drawTrap, drawObstacle, drawGate, drawRing, drawRingCue, drawChest, drawPool, drawPairThread, drawFlood, drawRaiseWarn, drawHourDial, drawEchoBoxes } from './art.js';
 import { AudioSystem } from './audio.js';
 import { createBot, chooseWeapon, chooseRelic } from './bot.js';
 import { LANGUAGES, detectLanguage, setLanguage, language, t } from './i18n.js';
@@ -147,6 +147,7 @@ function handleEvent(e) {
     case 'kill':
       audio.play('kill', e.boss ? 1 : .65); burst(e.x, e.y, '#a78cc0', e.boss ? 42 : 20, e.boss ? 260 : 160);
       if (e.boss) { rumble(9, .4); toast(t(e.warden ? 'toast.wardenDown' : e.king ? 'toast.kingDown' : 'toast.bossDown')); }
+      if (e.boss) { const b = game.enemies.find(x => x.type === 'boss') || {}; effects.push({ type: 'bossFall', kind: e.warden ? 'warden' : 'king', x: b.x ?? e.x, y: b.y ?? FLOOR, dir: b.dir === -1 ? -1 : 1, life: 2.4, max: 2.4 }); } // core drops the body at once; its collapse plays here
       break;
     case 'eliteKill': lastEliteAffix = eliteLabel(e).split(/[:：]/)[0]; // big purple burst, ring and shake
       audio.play('eliteKill', 1); burst(e.x, e.y, '#b48cf0', 48, 300); burst(e.x, e.y, '#efe2ff', 20, 200); rumble(8, .3);
@@ -386,7 +387,7 @@ function handleEvent(e) {
     case 'elite': audio.play('eliteDrone', 1); bannerQueue.push({ text: t(e.bonus ? 'hint.eliteBonus' : 'hint.elite', { affix: eliteLabel(e) }), time: 3.6, elite: true }); break;
     case 'clear': audio.play('portal'); toast(t('toast.clear')); break;
     case 'upgrade': if (e.reason === 'start') { $('title-screen').hidden = true; $('touch-controls').hidden = false; syncGear(); } clearInput(); audio.play('upgrade'); openUpgrade(e.choices); break;
-    case 'death': heroDeadAt = worldTime; deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathEcho = e.cause === 'echo'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
+    case 'death': heroDeadAt = worldTime; replay.until = realTime + REPLAY_AFTER; deathHeavy = !!e.heavy; deathToll = e.cause === 'toll'; deathGreat = e.cause === 'greatToll'; deathFlood = e.cause === 'flood'; deathEcho = e.cause === 'echo'; deathDebt = e.cause === 'debt'; audio.setHeartbeat(false); clearInput(); audio.play('death'); audio.setIntensity(1); recordResult(false); openResult(false); break;
     case 'win': audio.setHeartbeat(false); clearInput(); audio.play('win'); audio.setIntensity(1); recordResult(true); openResult(true); break;
   }
 }
@@ -464,7 +465,8 @@ function openVigil() { // rest point: one weapon card each, choosing one starts 
 }
 function duration(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function openResult(win) {
-  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathDebt ? 'castle.deadDebt' : deathGreat ? 'castle.deadGreatToll' : deathFlood ? 'castle.deadFlood' : deathEcho ? 'castle.deadEcho' : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KEEPER_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / ${SLICE_FLOORS}`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  openModal(`${icon(win ? 'moon' : 'sword').replace('<svg ', '<svg class="result-icon" ')}<div class="modal-eyebrow">${t(win ? 'decor.win' : 'decor.lose')}</div><h2 id="modal-title">${t(game.mode === 'castle' && win ? 'castle.sliceTitle' : win ? 'result.winTitle' : 'result.loseTitle')}</h2><p>${game.mode === 'castle' ? t(win ? (kingResult === 'won' ? 'castle.kingFallen' : 'castle.sliceEnd') : deathDebt ? 'castle.deadDebt' : deathGreat ? 'castle.deadGreatToll' : deathFlood ? 'castle.deadFlood' : deathEcho ? 'castle.deadEcho' : deathToll ? 'castle.deadToll' : game.floor === KING_FLOOR ? 'castle.deadKing' : deathHeavy ? 'castle.deadHeavy' : 'castle.dead') : t(win ? 'result.winText' : 'result.loseText')}${game.mode === 'endless' ? ` ${t('result.bestFloor', { n: records.bestFloor })}` : ''}</p>${win ? '' : `<figure class="death-replay"><canvas id="death-replay" aria-hidden="true"></canvas><figcaption>${t('result.replay')}</figcaption></figure>`}${game.mode === 'castle' && lastFight && (win || game.floor === WARDEN_FLOOR || game.floor === KEEPER_FLOOR || game.floor === KING_FLOOR) ? `<p class="fight-line">${t(lastFightKing ? 'castle.fightLineKing' : 'castle.fightLine', { time: duration(lastFight.time), gained: Math.round(lastFight.gained), taken: Math.round(lastFight.taken), breaks: lastFight.breaks })}</p>` : ''}${game.mode === 'endless' && game.floor > startBestFloor ? `<p class="new-record">${t('result.newRecord')}</p>` : ''}<div class="result-stats"><div><strong>${game.mode === 'endless' ? game.floor : game.mode === 'castle' ? (game.floor === KING_FLOOR ? game.floor : `${game.floor} / ${SLICE_FLOORS}`) : `${roman[game.stage]} / V`}</strong><span>${t(game.mode === 'endless' || game.mode === 'castle' ? 'result.floor' : 'result.deepest')}</span></div><div><strong>${game.kills}</strong><span>${t('result.kills')}</span></div><div><strong>${duration(game.elapsed)}</strong><span>${t('result.time')}</span></div><div><strong>${game.relics.length}</strong><span>${t('result.relics')}</span></div></div>${game.mode === 'castle' && win ? `<p class="throne-note" id="throne-note">${t('castle.throneNote')}</p>` : ''}<div class="modal-buttons"><button class="primary-button" data-command="restart">${icon('sword')}${t(game.mode === 'castle' ? (win ? 'castle.newDescent' : game.floor === KING_FLOOR ? 'castle.toSlice' : 'castle.toVigil') : 'result.again')}</button>${game.mode === 'castle' && win ? `<button class="secondary-button throne-button" data-command="throne" aria-describedby="throne-note">${icon('moon')}${t('castle.throne')}</button>` : ''}<button class="secondary-button" data-command="title">${t('result.title')}</button></div>`, win ? 'won' : 'dead', false);
+  if (!win) playReplay();
 }
 // Puts the HUD back to a fresh run's stage I (shared by the title and 'Play again').
 function resetHud() {
@@ -689,6 +691,7 @@ function drawEffects(dt) {
       ctx.restore();
     } else if (fx.type === 'snap') { // the broken altar's glow line to a trap fades out
       ctx.save(); ctx.globalAlpha = (1 - progress) * .8; ctx.strokeStyle = '#ff8a9a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(fx.x), fx.y); ctx.lineTo(Math.round(fx.x + (fx.x2 - fx.x) * (1 - progress)), fx.y); ctx.stroke(); ctx.restore();
+    } else if (fx.type === 'bossFall') { ctx.save(); ctx.globalAlpha = Math.min(1, fx.life / .5); drawBossFall(ctx, fx.kind, fx.x, fx.y, fx.dir, fx.max - fx.life); ctx.restore();
     } else if (fx.type === 'gateLift') { // bars ghost upward out of the floor slot
       ctx.save(); ctx.globalAlpha = (1 - progress) * .8; drawGate(ctx, fx.x, FLOOR, 44, 150, progress * progress * 190); ctx.restore();
     } else if (fx.type === 'wardenWake') { // floor 10 entrance: a portcullis falls shut at the arena mouth, holds, then fades (the real wall is already there)
@@ -1000,6 +1003,36 @@ function slowScale(dt) {
   audio.setSlow?.(slowK);
   return scale;
 }
+// Death replay: the last seconds of the screen, kept at half size, played slowly on the death screen so the killing blow can be read.
+const REPLAY_FPS = 15, REPLAY_SECONDS = 3, REPLAY_AFTER = .8, REPLAY_SPEED = .35, REPLAY_HOLD = 1.2, replay = { frames: [], at: 0, count: 0, timer: 0, until: 0, last: '' };
+function recordReplay(rdt) {
+  if (game.state === 'playing' && ['dead', 'won', 'title'].includes(replay.last)) replay.count = 0; // a new life: drop the previous one's frames
+  replay.last = game.state;
+  if (!(game.state === 'playing' || (game.state === 'dead' && realTime < replay.until)) || (replay.timer -= rdt) > 0) return;
+  replay.timer = 1 / REPLAY_FPS;
+  const w = canvas.width >> 1, h = canvas.height >> 1, max = REPLAY_FPS * REPLAY_SECONDS;
+  let f = replay.frames[replay.at];
+  if (!f || f.width !== w || f.height !== h) { f = replay.frames[replay.at] = document.createElement('canvas'); f.width = w; f.height = h; }
+  f.getContext('2d').drawImage(canvas, 0, 0, w, h);
+  replay.at = (replay.at + 1) % max; replay.count = Math.min(max, replay.count + 1);
+}
+function playReplay() {
+  const view = $('death-replay'); if (!view || !replay.count) { view?.closest('figure')?.remove(); return; }
+  const out = view.getContext('2d'), max = REPLAY_FPS * REPLAY_SECONDS; let list = [], t = 0, prev = 0;
+  const step = now => {
+    if (!view.isConnected) return; // the death screen closed
+    const dt = prev ? Math.min(.1, (now - prev) / 1000) : 0; prev = now;
+    if (realTime >= replay.until) { // recording has stopped: loop the clip slowly, then hold on the last frame
+      if (!list.length || t >= list.length / REPLAY_FPS / REPLAY_SPEED + REPLAY_HOLD) { list = Array.from({ length: replay.count }, (_, n) => replay.frames[(replay.at - replay.count + n + max) % max]); t = 0; }
+      t += dt;
+    }
+    const f = list.length ? list[Math.min(list.length - 1, Math.floor(t * REPLAY_FPS * REPLAY_SPEED))] : replay.frames[(replay.at - 1 + max) % max];
+    if (view.width !== f.width || view.height !== f.height) { view.width = f.width; view.height = f.height; }
+    out.drawImage(f, 0, 0);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function tick(now) {
   const rdt = Math.min((now - (lastTime || now)) / 1000, 1 / 30); lastTime = now; realTime += rdt;
   if (pendingSlow) { startSlow(pendingSlow.e); pendingSlow = null; }
@@ -1019,7 +1052,7 @@ function tick(now) {
   pumpBanner();
   if (pendingToast && announceTime <= 0) { toast(pendingToast); pendingToast = ''; }
   if (toastTime > 0) { toastTime -= rdt; if (toastTime <= 0) $('toast').classList.remove('show'); }
-  render(dt); hudTimer -= rdt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
+  render(dt); recordReplay(rdt); hudTimer -= rdt; if (hudTimer <= 0) { updateHud(); hudTimer = .08; }
   requestAnimationFrame(tick);
 }
 game = new Game(handleEvent); applyLanguage(); updateHud(); requestAnimationFrame(tick);
