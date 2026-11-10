@@ -1733,7 +1733,8 @@ function belfryWarn(ctx, e, time) {
   if (w.kind === 'plummet') { warnCircles(ctx, w.circles, '255,74,60', '#ff4a3c', p, time); ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2); ctx.stroke(); }
   else if (w.kind === 'rake') { ctx.save(); ctx.globalAlpha = .1 + .15 * p; ctx.lineWidth = 40; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); ctx.restore(); /* the swept body, 40 px wide */ ctx.setLineDash(WARN_DASH); ctx.globalAlpha = .6 + .4 * p; ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2 - 29); ctx.stroke(); }
   else if (w.box) {
-    const b = w.box; ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
+    const inset = w.kind === 'swingout' ? 14 : 0, b = { x: w.box.x + inset, y: w.box.y, w: w.box.w - 2 * inset, h: w.box.h }; // the swingout is decided by the hero's centre: the drawn edge is inset by the hero half-width, so a hero sprite touching the box is hit
+    ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
   }
   ctx.restore();
 }

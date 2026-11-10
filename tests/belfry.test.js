@@ -373,3 +373,9 @@ test('pendulum swingout geometry is exact: the hero centre at 69 and 201 px is s
   };
   assert.equal(lost(69), 0); assert.equal(lost(201), 0); assert.ok(lost(71) > 0); assert.ok(lost(199) > 0);
 });
+
+test('a stone gargoyle that takes a posture break is no longer stone while stunned, so the riposte lands in full', () => {
+  const { game, e } = bel('gargoyle', 400, 700); advance(game, .4); assert.equal(e.stone, true);
+  e.poise = 1; game.damageEnemy(e, 10, 1, false, false, false, 17); assert.ok(e.stun > 0, 'posture broke');
+  advance(game, .1); assert.ok(e.stun > 0); assert.equal(e.stone, false, 'stone is off during the stun'); const hp0 = e.hp; game.damageEnemy(e, 100, 1, false, false, false, 17); assert.ok(hp0 - e.hp > 20, 'no x0.2 clink on a staggered gargoyle');
+});
