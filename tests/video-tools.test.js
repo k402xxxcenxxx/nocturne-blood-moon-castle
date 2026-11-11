@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bestLoop, cutEdges, isChroma, keepLargeShapes, medianCut, spritePixels } from '../tools/video-to-assets.mjs';
-import { heroPose, HERO_HURT, wardenPose, kingPose } from '../art.js';
+import { heroPose, HERO_HURT, wardenPose, kingPose, skeletonPose } from '../art.js';
 
 test('the chroma key removes magenta and its fringe but keeps the cape, hair and outline', () => {
   for (const bg of [[255, 0, 255], [200, 20, 220], [150, 40, 160]]) assert.ok(isChroma(...bg), bg.join());
@@ -83,6 +83,17 @@ test('Warden poses follow its state: tells hold the wind-up, aliases share rows,
   assert.equal(pose({ stun: 1, superArmor: 0 }).name, 'stun'); assert.equal(pose({ stun: 1, superArmor: 50 }).name, 'idle');
   assert.ok(pose({ travel: .3 }).frame >= 3); // the charge run plays the strike frames
   assert.equal(pose({ hp: 0 }).name, 'death');
+});
+
+test('Skeleton poses: a tell holds its wind-up, the blow plays after it, guard and backstep have their own rows', () => {
+  const anims = { idle: { frames: 4, fps: 4 }, walk: { frames: 6, fps: 9 }, guard: { frames: 2 }, backstep: { frames: 2 }, hurt: { frames: 3 }, slash: { frames: 7, windup: 3, strike: 5 }, stepcut: { frames: 6, windup: 3, strike: 5 }, rising: { frames: 6, windup: 2, strike: 5 } };
+  const e = { hp: 40 }, pose = (state, t) => skeletonPose(Object.assign(e, { tell: 0, recover: 0, cutT: 0, gT: 0, bsT: 0, stepT: 0, stun: 0, vx: 0 }, state), t, anims);
+  assert.equal(pose({}, 0).name, 'idle'); assert.equal(pose({ vx: 60 }, 0).name, 'walk');
+  assert.deepEqual(pose({ tell: .4, move: 'slash' }, 1), { name: 'slash', frame: 0 });
+  assert.deepEqual(pose({ tell: .01, move: 'slash' }, 1.44), { name: 'slash', frame: 2 }); // the last wind-up frame, never the blow
+  assert.deepEqual(pose({ recover: .45 }, 1.46), { name: 'slash', frame: 3 }); assert.equal(pose({ recover: .1 }, 1.9).frame, 6); // the blow, then the follow-through held
+  assert.equal(pose({ tell: .4, move: 'counter' }, 3).name, 'slash'); assert.equal(pose({ tell: .4, move: 'stepcut' }, 4).name, 'stepcut'); assert.equal(pose({ cutT: .1 }, 4.5).frame, 3);
+  assert.equal(pose({ gT: .5 }, 5).name, 'guard'); assert.equal(pose({ bsT: .2 }, 6).name, 'backstep'); assert.equal(pose({ stun: .3 }, 7).name, 'hurt');
 });
 
 test('King poses: the descent arc shows the leap, a string waits in the guard idle, judgement shares the roar', () => {
