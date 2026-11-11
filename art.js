@@ -1470,7 +1470,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1); if (kg && ks.q < 1) ctx.translate(Math.round(ks.ox * (e.dir === -1 ? -1 : 1)), Math.round(ks.oy)); // descent leap arc
   if (hold && !calm) ctx.translate(Math.round(Math.sin(time * 70) * 1.5), 0); // held wind-up trembles
   const sk = e.type === 'skeleton' && !boss && !!bossImage('skeleton'); // #83: the sprite carries its own poses, so the code-drawn leans below are skipped
-  if (sk) { if (e.husk) ctx.filter = 'sepia(1) saturate(5) hue-rotate(-35deg)'; } // shortcut: husks lose their red tint where ctx.filter is unsupported (older Safari), bake a husk row if that matters
+  if (sk) { if (e.husk) ctx.filter = 'sepia(1) saturate(5) hue-rotate(-35deg)'; else if (e.gT !== undefined) ctx.filter = 'sepia(.7) saturate(2.2) brightness(1.1)'; } // shortcut: husks lose their red tint where ctx.filter is unsupported (older Safari), bake a husk row if that matters
   else if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
   else if (slump && e.type !== 'spear' && e.type !== 'bat') { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward (the spearman leans in its own pose, the bat flutters)
   else if (e.recoilT > 0) ctx.rotate(-.28); // priest recoil: leans away from the hero
@@ -1481,7 +1481,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.tell > 0 && ov) ctx.rotate(-.1); // overhead: leans back under the raised blade
   else if (e.tell > 0 && lk === 'turnswipe') ctx.rotate(-.06); // turnswipe: shoulders already coming round
   const white = e.flash > 0 ? '#fff0d0' : null;
-  if (e.husk) { let t0 = huskT.get(e); if (t0 === undefined) { t0 = time; huskT.set(e, t0); } const hq = Math.min(1, (time - t0) / .6); if (hq < 1) { ctx.beginPath(); ctx.rect(-40, -e.h - 20, 80, e.h + 20); ctx.clip(); ctx.translate(0, Math.round((1 - hq * hq) * e.h)); } } // a husk climbs out of its pool
+  if (e.husk) { let t0 = huskT.get(e); if (t0 === undefined) { t0 = time; huskT.set(e, t0); } const hq = Math.min(1, (time - t0) / .6); if (hq < 1) { ctx.beginPath(); ctx.rect(sk ? -50 : -40, -e.h - 20, sk ? 140 : 80, e.h + 20); ctx.clip(); ctx.translate(0, Math.round((1 - hq * hq) * e.h)); } } // a husk climbs out of its pool
   if (e.blinkT > 0) { const bq = 1 - e.blinkT / .4; ctx.globalAlpha = calm ? .5 : .25 + .45 * Math.abs(Math.sin(time * 30)); ctx.scale(1 - .35 * bq, 1 + .1 * bq); } // mage blink: flickers and thins out
   if (wd) wardenBody(ctx, e, time, white, wpw, whold, calm, wturn ? -Math.cos(Math.PI * wk) : 1);
   else if (kg) kingBody(ctx, e, time, white, wpw, whold, calm, ks);
@@ -1494,6 +1494,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.type === 'gargoyle' || e.type === 'pendulum') belfryBody(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else if (!sk || !bossSprite('skeleton', ctx, skeletonPose(e, time), time, white, false, calm, 1, skTip)) skeleton(ctx, e, time, white);
+  if (sk) ctx.filter = 'none'; // keep the husk/apex tint off the riposte crack and glint
   if (e.riposte && e.stun > 0) { // posture broken: gold crack down the body and a pulsing outline until the riposte lands
     ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-8, -e.h); ctx.lineTo(0, -e.h * .75); ctx.lineTo(-7, -e.h * .55); ctx.lineTo(3, -e.h * .35); ctx.lineTo(-3, -e.h * .1); ctx.stroke();
     ctx.globalAlpha = calm ? .8 : .5 + .4 * Math.sin(time * 16); ctx.strokeStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(0, -e.h / 2, 24, e.h / 2 + 4, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
@@ -1502,7 +1503,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     rect(ctx, '#ffffff', g[0] - r, g[1] - 1, 2 * r, 2); rect(ctx, '#ffffff', g[0] - 1, g[1] - r, 2, 2 * r); line(ctx, '#ffffff', g[0] - r * .6, g[1] - r * .6, g[0] + r * .6, g[1] + r * .6, 1); line(ctx, '#ffffff', g[0] - r * .6, g[1] + r * .6, g[0] + r * .6, g[1] - r * .6, 1); circle(ctx, '#ffffff', g[0], g[1], 4); }
   ctx.restore();
   if (wb && e.hp > 0) { ctx.save(); ctx.translate(x, y); wardenShell(ctx, e, time, calm); ctx.restore(); if (wturn) wardenTurnArrow(ctx, x, y, wk, time); }
-  if (e.move === 'counter' && e.tell > 0 && e.type !== 'skeleton') { const q = Math.min(1, 1 - e.tell / .45), r = Math.round(36 - 20 * q), rx = Math.round(x + (e.dir === -1 ? -1 : 1) * 24), ry = y - 40; ctx.save(); ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 4; ctx.globalAlpha = .75 + .25 * q; ctx.beginPath(); ctx.arc(rx, ry, r, 0, 7); ctx.stroke(); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(rx, ry, 20, 0, 7); ctx.stroke(); ctx.restore(); } // ring closes onto the raised shield: a pale-blue shove cue, unlike the red slash / bash
+  if (e.move === 'counter' && e.tell > 0 && (e.type !== 'skeleton' || sk)) { const q = Math.min(1, 1 - e.tell / .45), r = Math.round(36 - 20 * q), rx = Math.round(x + (e.dir === -1 ? -1 : 1) * 24), ry = y - 40; ctx.save(); ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 4; ctx.globalAlpha = .75 + .25 * q; ctx.beginPath(); ctx.arc(rx, ry, r, 0, 7); ctx.stroke(); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(rx, ry, 20, 0, 7); ctx.stroke(); ctx.restore(); } // ring closes onto the raised shield: a pale-blue shove cue, unlike the red slash / bash
 }
 const KN_TIP = [-50, -72]; // the great swing's blade tip at the hold
 const GLINT_TIP = { skeleton: [0, -85], shield: [24, -40], knight: [55, -59], spear: [110, -30], bat: [0, -14], priest: [10, -92], mage: [18, -70] }; // weapon tip in local (facing +x) coordinates
