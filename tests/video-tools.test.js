@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bestLoop, cutEdges, isChroma, keepLargeShapes, medianCut, spritePixels } from '../tools/video-to-assets.mjs';
-import { heroPose, HERO_HURT, wardenPose, kingPose, skeletonPose } from '../art.js';
+import { heroPose, HERO_HURT, wardenPose, kingPose, skeletonPose, enemyPose } from '../art.js';
 
 test('the chroma key removes magenta and its fringe but keeps the cape, hair and outline', () => {
   for (const bg of [[255, 0, 255], [200, 20, 220], [150, 40, 160]]) assert.ok(isChroma(...bg), bg.join());
@@ -94,6 +94,18 @@ test('Skeleton poses: a tell holds its wind-up, the blow plays after it, guard a
   assert.deepEqual(pose({ recover: .45 }, 1.46), { name: 'slash', frame: 3 }); assert.equal(pose({ recover: .1 }, 1.9).frame, 6); // the blow, then the follow-through held
   assert.equal(pose({ tell: .4, move: 'counter' }, 3).name, 'slash'); assert.equal(pose({ tell: .4, move: 'stepcut' }, 4).name, 'stepcut'); assert.equal(pose({ cutT: .1 }, 4.5).frame, 3);
   assert.equal(pose({ gT: .5 }, 5).name, 'guard'); assert.equal(pose({ bsT: .2 }, 6).name, 'backstep'); assert.equal(pose({ stun: .3 }, 7).name, 'hurt');
+});
+
+test('Regular enemy poses pick the row for their state from the real sheets (#83)', () => {
+  const pose = (kind, state, slump = false) => enemyPose(kind, { hp: 40, ...state }, 0, slump).name;
+  assert.equal(pose('shield', { tell: .4, move: 'rimstrike' }), 'rim'); assert.equal(pose('shield', { tell: .4, heavy: true }), 'smash'); assert.equal(pose('shield', { tell: .4 }), 'bash');
+  assert.equal(pose('shield', { guardBreak: 1 }), 'broken'); assert.equal(pose('shield', { callT: .3 }), 'call'); assert.equal(pose('shield', { braceT: .3 }), 'brace');
+  assert.equal(pose('spear', { tell: .4, move: 'sweep' }), 'sweep'); assert.equal(pose('spear', { tell: .4, move: 'plant' }), 'thrust'); assert.equal(pose('spear', { gT: .3 }), 'whirl');
+  assert.equal(pose('mage', { tell: .4 }), 'bolt'); assert.equal(pose('mage', { tell: .4, heavy: true }), 'ray'); assert.equal(pose('mage', {}, true), 'down');
+  assert.equal(pose('priest', { tell: .4, blessRadius: 90 }), 'bless'); assert.equal(pose('priest', { tell: .4, heavy: true }), 'rite'); assert.equal(pose('priest', { recoilT: .2 }), 'recoil');
+  assert.equal(pose('bat', {}), 'fly'); assert.equal(pose('bat', { tell: .4, dartT: .2 }), 'dart'); assert.equal(pose('bat', { tell: .4 }), 'coil'); assert.equal(pose('bat', { upT: .3 }), 'flutter');
+  assert.equal(pose('knight', { tell: .4, heavy: true }), 'great'); assert.equal(pose('knight', { tell: .4, warn: { kind: 'turnswipe' } }), 'turn'); assert.equal(pose('knight', { tell: .4, warn: { kind: 'overhead' } }), 'overhead'); assert.equal(pose('knight', { tell: .4 }), 'slash'); assert.equal(pose('knight', { parryT: .3 }), 'parry');
+  for (const kind of ['shield', 'spear', 'mage', 'priest', 'knight']) { assert.equal(pose(kind, {}), 'idle'); assert.equal(pose(kind, { vx: 50 }), 'walk'); assert.equal(pose(kind, { stun: .2 }), kind === 'shield' ? 'broken' : 'hurt'); }
 });
 
 test('King poses: the descent arc shows the leap, a string waits in the guard idle, judgement shares the roar', () => {

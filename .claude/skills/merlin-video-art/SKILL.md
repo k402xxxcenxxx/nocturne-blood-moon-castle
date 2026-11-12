@@ -34,6 +34,8 @@ Needs a local session with Claude in Chrome connected and Merlin signed in. Clou
 7. A clip takes a few minutes. Read the URL with `[...document.querySelectorAll('video')].map(v => v.currentSrc)`; the file is public on `storage.googleapis.com`. Fetch it with curl (no browser download) into `docs/art-bible/raw/<name>.mp4`.
 8. Record the credits, the prompt and the result in `docs/art-log.md`.
 
+Learned on #83: several clips can generate at once, one chat per browser tab, but keep each chat open until its video appears. A chat that was navigated away from while generating and then fetched again only ever offers a signed vendor URL, which the browser tool will not hand over (still true two days later). A chat that stayed open and ended in "network error" is fine: reload it once the clip is done and the video has its `storage.googleapis.com` URL. The placeholder message must ask for a video ("Generate a 5 second video that animates this ..."); one that mentions a sprite sheet can make Merlin draw an image instead and spend credits. When Merlin writes a line of text above the card, the card and its chips sit about 16 px lower: always check that the card reads 1:1, 480p, audio on and 200 before clicking Generate.
+
 ## Prompt template
 
 ```text

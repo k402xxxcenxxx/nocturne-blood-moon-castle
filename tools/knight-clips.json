@@ -1,0 +1,18 @@
+{
+ "name": "knight", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 80, "colors": 24,
+ "clips": {
+  "loco": { "file": "knight-loco.mp4", "size": 640, "heroHeight": 293, "feet": [270, 467] },
+  "combat": { "file": "knight-combat.mp4", "size": 640, "heroHeight": 293, "feet": [270, 467] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5], "fps": 4 },
+  "walk": { "clip": "loco", "from": 0.7, "to": 1.4, "frames": 6, "fps": 8, "loop": true, "minGap": 6 },
+  "parry": { "clip": "loco", "times": [1.875, 2.25], "fps": 4 },
+  "turn": { "clip": "loco", "times": [3.0, 3.25, 3.5], "windup": 3, "strike": 3, "fps": 12 },
+  "hurt": { "clip": "loco", "times": [4.25, 4.375], "fps": 8 },
+  "slash": { "clip": "combat", "times": [0.125, 0.25, 0.5, 0.75], "windup": 2, "strike": 3, "fps": 12 },
+  "overhead": { "clip": "combat", "times": [1.125, 1.25, 1.5, 2.0, 2.125, 2.375], "windup": 3, "strike": 5, "fps": 12 },
+  "great": { "clip": "combat", "times": [2.875, 3.125, 3.375, 3.625, 3.75], "windup": 3, "strike": 5, "fps": 12 },
+  "death": { "clip": "combat", "times": [4.0, 4.125, 4.25, 4.5], "fps": 8 }
+ }
+}

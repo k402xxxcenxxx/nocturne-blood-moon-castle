@@ -1,0 +1,17 @@
+{
+ "name": "spear", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 60, "colors": 24,
+ "clips": {
+  "loco": { "file": "spear-loco.mp4", "size": 640, "heroHeight": 165, "feet": [178, 439] },
+  "combat": { "file": "spear-combat.mp4", "size": 640, "heroHeight": 165, "feet": [178, 439] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5, 0.75], "fps": 4 },
+  "walk": { "clip": "loco", "from": 0.9, "to": 2.0, "frames": 6, "fps": 9, "loop": true, "minGap": 8 },
+  "whirl": { "clip": "loco", "times": [2.5, 2.625, 2.75, 2.875], "fps": 14 },
+  "hurt": { "clip": "loco", "times": [4.125, 4.25], "fps": 8 },
+  "thrust": { "clip": "combat", "times": [0.125, 0.25, 0.5, 1.125, 1.25, 1.5], "windup": 3, "strike": 5, "fps": 12 },
+  "sweep": { "clip": "combat", "times": [2.25, 2.5, 2.75, 2.875], "windup": 2, "strike": 3, "fps": 12 },
+  "lift": { "clip": "combat", "times": [2.875, 3.125, 3.25], "windup": 1, "strike": 3, "fps": 12 },
+  "death": { "clip": "combat", "times": [4.25, 4.5], "fps": 8 }
+ }
+}

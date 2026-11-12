@@ -3,6 +3,12 @@ import { heroSheets } from './assets/hero-sheets.js';
 import wardenSheet from './assets/warden-sheet.js';
 import kingSheet from './assets/king-sheet.js';
 import skeletonSheet from './assets/skeleton-sheet.js';
+import shieldSheet from './assets/shield-sheet.js';
+import spearSheet from './assets/spear-sheet.js';
+import mageSheet from './assets/mage-sheet.js';
+import priestSheet from './assets/priest-sheet.js';
+import batSheet from './assets/bat-sheet.js';
+import knightSheet from './assets/knight-sheet.js';
 const palettes = [
   { sky: '#10101e', glow: '#42304d', stone: '#34323a', mortar: '#1d1b26', trim: '#847461', light: '#c9ad7b', accent: '#a24043' },
   { sky: '#111b20', glow: '#314039', stone: '#2c3030', mortar: '#1a2225', trim: '#84754e', light: '#c4aa66', accent: '#567a73' },
@@ -824,20 +830,36 @@ const BOSS = {
   king: { sheet: kingSheet, image: null, rows: { string: 'idle', judgement: 'roar', judgementB: 'roar', bloodMoon: 'roar', crownGuard: 'guard', guardHold: 'guard', longNight: 'ritual' },
     tip: { idle: [90, -10], walk: [90, -10], slash: [-60, -150], turnslash: [-110, -60], slam: [-30, -190], charge: [-120, -30], volley: [90, -90], ritual: [20, -10], raise: [40, -150], descent: [60, -20], leap: [0, -10], roar: [60, -200], guard: [20, -200], stun: [90, -5] } },
   skeleton: { sheet: skeletonSheet, image: null, rows: {}, tip: { idle: [38, -30], slash: [-28, -40], stepcut: [28, -22], rising: [36, -6] } }, // #83: regular enemies share the boss sprite plumbing
+  shield: { sheet: shieldSheet, image: null, rows: {}, tip: { idle: [0, 0] } }, spear: { sheet: spearSheet, image: null, rows: {}, tip: { idle: [0, 0] } },
+  mage: { sheet: mageSheet, image: null, rows: {}, tip: { idle: [0, 0] } }, priest: { sheet: priestSheet, image: null, rows: {}, tip: { idle: [0, 0] } }, bat: { sheet: batSheet, image: null, rows: {}, tip: { idle: [0, 0] } }, knight: { sheet: knightSheet, image: null, rows: {}, tip: { idle: [0, 0] } },
 }, bossSince = new WeakMap(), skSince = new WeakMap(), skTip = [0, 0];
-// #83: which sheet frame a skeleton shows. A tell holds on the last wind-up frame; the blow and its follow-through play once the tell ends.
-export function skeletonPose(e, time, anims = skeletonSheet.anims) {
-  let s = skSince.get(e); if (!s) skSince.set(e, s = { key: '', t0: 0, row: 'slash' });
+// #83: state -> sheet row for each regular enemy; the first match wins. [row, how]: 'w' a tell (holds on the last wind-up frame), 'o' plays once and holds, 'l' loops.
+const POSE = {
+  skeleton: e => e.stun > 0 ? ['hurt', 'o'] : e.gT > 0 ? ['guard', 'o'] : e.stepT > 0 || e.bsT > 0 ? ['backstep', 'o'] : e.tell > 0 ? [e.move === 'stepcut' || e.move === 'rising' ? e.move : 'slash', 'w'] : null,
+  shield: e => e.guardBreak > 0 || e.stun > 0 ? ['broken', 'o'] : e.callT > 0 ? ['call', 'o'] : e.tell > 0 ? [e.move === 'rimstrike' ? 'rim' : e.move === 'counter' ? 'brace' : e.heavy ? 'smash' : 'bash', 'w'] : e.braceT > 0 ? ['brace', 'o'] : null,
+  spear: e => e.stun > 0 ? ['hurt', 'o'] : e.gT > 0 || (e.tell > 0 && e.heavy && e.heavyKind === 'spin') ? ['whirl', 'l'] : e.tell > 0 ? [e.move === 'sweep' || e.move === 'lift' ? e.move : 'thrust', 'w'] : null,
+  knight: e => e.stun > 0 ? ['hurt', 'o'] : e.parryT > 0 ? ['parry', 'o'] : e.tell > 0 ? [e.heavy ? 'great' : e.warn?.kind === 'turnswipe' ? 'turn' : e.warn?.kind === 'overhead' ? 'overhead' : 'slash', 'w'] : null,
+  mage: (e, slump) => e.stun > 0 ? ['hurt', 'o'] : e.tell > 0 ? [e.heavy ? 'ray' : 'bolt', 'w'] : slump ? ['down', 'o'] : null,
+  priest: (e, slump) => e.stun > 0 ? ['hurt', 'o'] : e.recoilT > 0 ? ['recoil', 'o'] : e.tell > 0 ? [e.heavy ? 'rite' : e.blessRadius > 0 ? 'bless' : 'bolt', 'w'] : slump ? ['down', 'o'] : null,
+  bat: (e, slump) => e.stun > 0 ? ['hurt', 'o'] : e.tell > 0 ? [e.dartT > 0 ? 'dart' : 'coil', 'w'] : e.strikeT > 0 ? ['swoop', 'o'] : e.crossT > 0 ? ['glide', 'o'] : slump || e.upT > 0 ? ['flutter', 'l'] : null,
+};
+// Which sheet frame a regular enemy shows. After a tell the blow and its follow-through play, when the row has them.
+export function enemyPose(kind, e, time, slump = false, anims = BOSS[kind].sheet.anims) {
+  let s = skSince.get(e); if (!s) skSince.set(e, s = { key: '', t0: 0, row: '' });
   const since = key => { if (s.key !== key) { s.key = key; s.t0 = time; } return time - s.t0; };
   const once = (name, k, count = anims[name].frames, from = 0) => ({ name, frame: from + Math.min(count - 1, Math.floor(Math.max(0, k) * count)) });
-  if (e.stun > 0) return once('hurt', since('hurt') / .3);
-  if (e.gT > 0) return once('guard', since('guard') / .2);
-  if (e.stepT > 0 || e.bsT > 0) return once('backstep', since('back') / .22);
-  if (e.tell > 0) { s.row = e.move === 'stepcut' || e.move === 'rising' ? e.move : 'slash'; return once(s.row, since('tell' + s.row) / .3, anims[s.row].windup); }
-  if (e.cutT > 0 || e.strikeT > 0 || e.recover > 0) { const { windup, strike, frames } = anims[s.row], el = since('hit'); return el < .15 ? once(s.row, el / .15, strike - windup, windup) : once(s.row, (el - .15) / .3, frames - strike, strike); }
+  const loop = name => ({ name, frame: Math.floor(time * anims[name].fps) % anims[name].frames });
+  const r = POSE[kind](e, slump);
+  if (r) { const [row, how] = r; if (how === 'l') return loop(row); if (how === 'o') return once(row, since(row) / .2); s.row = row; return once(row, since('tell' + row) / .3, anims[row].windup ?? anims[row].frames); }
+  const a = anims[s.row], wu = a ? a.windup ?? a.strike : 0;
+  if (a && (e.cutT > 0 || e.strikeT > 0 || e.recover > 0 || e.turn > 0) && (a.strike > wu || a.frames > a.strike)) { // the blow, then the follow-through held
+    const el = since('hit'); if (a.strike > wu && (el < .15 || a.frames === a.strike)) return once(s.row, el / .15, a.strike - wu, wu);
+    return once(s.row, (el - .15) / .3, a.frames - a.strike, a.strike);
+  }
   s.key = '';
-  return Math.abs(e.vx || 0) > 5 ? { name: 'walk', frame: Math.floor(time * anims.walk.fps) % anims.walk.frames } : { name: 'idle', frame: Math.floor(time * anims.idle.fps) % anims.idle.frames };
+  return loop(kind === 'bat' ? 'fly' : Math.abs(e.vx || 0) > 5 ? 'walk' : 'idle');
 }
+export const skeletonPose = (e, time, anims) => enemyPose('skeleton', e, time, false, anims);
 function bossPose(e, time, pw, anims, rows) {
   const once = (name, k, count = anims[name].frames, from = 0) => ({ name, frame: from + Math.min(count - 1, Math.floor(Math.max(0, k) * count)) });
   const since = key => { let s = bossSince.get(e); if (!s || s.key !== key) { s = { key, t0: time }; bossSince.set(e, s); } return time - s.t0; }; // one clock per boss, restarted when the pose changes
@@ -1468,7 +1490,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
     ctx.restore(); }
   ctx.save(); ctx.translate(x, y); ctx.scale(e.dir === -1 ? -1 : 1, 1); if (kg && ks.q < 1) ctx.translate(Math.round(ks.ox * (e.dir === -1 ? -1 : 1)), Math.round(ks.oy)); // descent leap arc
   if (hold && !calm) ctx.translate(Math.round(Math.sin(time * 70) * 1.5), 0); // held wind-up trembles
-  const sk = e.type === 'skeleton' && !boss && !!bossImage('skeleton'); // #83: the sprite carries its own poses, so the code-drawn leans below are skipped
+  const sk = !boss && !!BOSS[e.type] && !!bossImage(e.type); // #83: the sprite carries its own poses, so the code-drawn leans below are skipped
   if (sk) { if (e.husk) ctx.filter = 'sepia(1) saturate(5) hue-rotate(-35deg)'; } // shortcut: husks lose their red tint where ctx.filter is unsupported (older Safari), bake a husk row if that matters
   else if (windup) { ctx.rotate(-.14 * pw); ctx.scale(1 + .06 * pw, 1 + .06 * pw); } // rears back, swelling
   else if (slump && e.type !== 'spear' && e.type !== 'bat') { ctx.rotate(.3); ctx.scale(1, .85); } // slumped forward (the spearman leans in its own pose, the bat flutters)
@@ -1485,18 +1507,19 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (wd) wardenBody(ctx, e, time, white, wpw, whold, calm, wturn ? -Math.cos(Math.PI * wk) : 1);
   else if (kg) kingBody(ctx, e, time, white, wpw, whold, calm, ks);
   else if (boss) { if (!bossSprite('king', ctx, kingPose(e, time, e.tell > 0 ? Math.min(1, 1 - e.tell / (tellMax.get(e.warn) || e.tell || 1)) : 0), time, white, false, calm, 1, kingTip)) { if (e.travel > 0) ctx.rotate(.2); /* charge lean, forward in local x */ ctx.scale(1.35, 1.35); knight(ctx, e, time, white, true); } } // the normal run's King shares the castle King's sheet
+  else if (sk && bossSprite(e.type, ctx, enemyPose(e.type, e, time, slump), time, white, false, calm, 1, skTip)) { /* #83: drawn from its sheet */ }
   else if (e.type === 'bat') bat(ctx, e, time, white);
   else if (e.type === 'shield') shieldBearer(ctx, e, time, white);
   else if (e.type === 'spear') spearman(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
   else if (e.type === 'priest') priest(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
-  else if (!sk || !bossSprite('skeleton', ctx, skeletonPose(e, time), time, white, false, calm, 1, skTip)) skeleton(ctx, e, time, white);
+  else skeleton(ctx, e, time, white);
   if (e.riposte && e.stun > 0) { // posture broken: gold crack down the body and a pulsing outline until the riposte lands
     ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-8, -e.h); ctx.lineTo(0, -e.h * .75); ctx.lineTo(-7, -e.h * .55); ctx.lineTo(3, -e.h * .35); ctx.lineTo(-3, -e.h * .1); ctx.stroke();
     ctx.globalAlpha = calm ? .8 : .5 + .4 * Math.sin(time * 16); ctx.strokeStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(0, -e.h / 2, 24, e.h / 2 + 4, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
   }
-  if (e.glint > 0) { const g = kg ? kingTip : wd ? wardenTip : sk ? skTip : kn && heavy ? KN_TIP : GLINT_TIP[e.type] || [10, -50], k = e.glint / .1, r = Math.round(10 + 16 * k); // release cue: one bright star on the weapon, 0.1 s
+  if (e.glint > 0) { const g = kg ? kingTip : wd ? wardenTip : sk && e.type === 'skeleton' ? skTip : kn && heavy ? KN_TIP : GLINT_TIP[e.type] || [10, -50], k = e.glint / .1, r = Math.round(10 + 16 * k); // release cue: one bright star on the weapon, 0.1 s
     rect(ctx, '#ffffff', g[0] - r, g[1] - 1, 2 * r, 2); rect(ctx, '#ffffff', g[0] - 1, g[1] - r, 2, 2 * r); line(ctx, '#ffffff', g[0] - r * .6, g[1] - r * .6, g[0] + r * .6, g[1] + r * .6, 1); line(ctx, '#ffffff', g[0] - r * .6, g[1] + r * .6, g[0] + r * .6, g[1] - r * .6, 1); circle(ctx, '#ffffff', g[0], g[1], 4); }
   ctx.restore();
   if (wb && e.hp > 0) { ctx.save(); ctx.translate(x, y); wardenShell(ctx, e, time, calm); ctx.restore(); if (wturn) wardenTurnArrow(ctx, x, y, wk, time); }
