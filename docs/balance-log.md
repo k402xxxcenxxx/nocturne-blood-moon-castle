@@ -121,3 +121,20 @@ Findings: (1) the first cell showed 25-35% plummet deaths and 11-23 stalled runs
 | mix pendulum,spear | 100 / 100 / 100 | 76 / 92 / 94 |
 
 Full floors 12-13 (expert, 30 seeds): floor 12 clears 70 / 87 / 90%, floor 13 (reached by 21 / 26 / 27 runs) clears 81 / 88 / 100%. The gargoyle average cells rose from 76 / 74 / 85 to 97 / 100 / 100: the old plummet ring could sit on a moving platform's height and the gargoyle's rake started into i-frames; both now follow the rules, which removed hits the bot could not read. The spear column of the pendulum is unchanged (the bot rarely has a frenzy in a 1v1, so the new frenzy swingout is only covered by its test); the pair `pendulum,spear` with the Greatsword (76%) is the weakest pendulum cell. Weakest cell overall remains gargoyle+skeleton on the average bot (40-49%).
+
+## Belfry cast: Clockwork Sentinel and Chime Acolyte (#69 PR 4)
+`node tools/bot-run.mjs --duel 1 --type <t> --floor 14|15 --tier 4 --seeds 100 --weapon <w> --skill <expert|average>` (through the Windows `process.argv[1]` shim; 100 blood, floor-1 room, heavy / twin / spear). Stat levers: none (D3); every number is the first draft in the issue. Cells show the win rate, the mean win time and the fairness audit (hits the bot could not have reacted to); every audit is 0 of N.
+
+| Cell | Expert win % | Expert time (s) | Average win % | Average time (s) |
+| --- | --- | --- | --- | --- |
+| Sentinel 1v1 (floor 14) | 100 / 100 / 100 | 9.7 / 10.4 / 10.0 | 100 / 100 / 100 | 9.9 / 14.6 / 11.2 |
+| Acolyte 1v1 (floor 15) | 100 / 100 / 100 | 7.9 / 10.7 / 10.0 | 100 / 100 / 100 | 8.7 / 14.3 / 12.0 |
+| mix sentinel,skeleton (14) | 100 / 100 / 100 | 19.2 / 17.1 / 22.1 | 60 / 70 / 51 | 31.7 / 38.4 / 45.7 |
+| mix acolyte,skeleton (15) | 97 / 100 / 100 | 20.9 / 20.3 / 20.6 | 52 / 48 / 61 | 33.8 / 46.1 / 45.3 |
+| mix sentinel,acolyte (15) | 100 / 100 / 100 | 18.2 / 22.2 / 24.4 | 88 / 98 / 98 | 26.2 / 31.3 / 31.1 |
+| mix sentinel,pendulum (15) | 100 / 100 / 100 | 17.3 / 17.3 / 17.0 | 100 / 100 / 100 | 20.1 / 24.5 / 23.3 |
+| mix acolyte,gargoyle (15) | 100 / 100 / 92 | 17.7 / 20.7 / 19.0 | 93 / 97 / 99 | 28.1 / 30.9 / 29.5 |
+
+Full floors 14-15 (expert, 30 seeds, floor 14 started cold at 100 blood): floor 14 clears 100 / 93 / 97% (heavy / twin / spear), floor 15 (reached by 30 / 28 / 29 runs) clears 80 / 89 / 97%. Deaths are a handful of single gearsaw, rush, cleave and greatswing hits; no timeouts.
+
+Findings: (1) The two new types alone are not threats to the bot: it takes 0.0-0.3 hits per Sentinel fight (it jams the key 1.9 times per fight, going round the Sentinel while it rewinds) and about 0.1 per Acolyte fight. They are dangerous in company: the average bot loses 40-50% against a skeleton partner, like the Gargoyle (the apex skeleton is the strongest regular). (2) The first Acolyte run showed 3.1 chime hits per fight. The chime hit test was a growing disc, so a hero who jumped it and landed inside the wave was hit as it landed. It is now a 20 px front, hit as the front passes, which fixed it (jump timing matters; the test `acolyte chime` lands a hero behind the front). (3) A bot stall in the full floors (a perched gargoyle, the hero held at 223 px with the +40 hysteresis of the lure, outside the real 240 px rake range) existed since PR 3 and showed up as 1 timeout in 30 on floor 14; the exit threshold is now `rake + 20` (average gargoyle+skeleton cell 43 / 40 / 49 -> 45 / 44 / 52). (4) Matchup intent is only partly visible. Sentinel: the Greatsword is the fastest (average 9.9 s against 14.6 s for Twin Blades), as intended; the Spear is not countered (11.2 s), because the bot's Spear dash reaches the key anyway. Acolyte: Twin Blades is meant to be favored and the Greatsword countered, but a 1v1 has no ally to rewind, and the bot never interrupts the chant on purpose; with a skeleton partner the Greatsword is the weakest expert cell (97%), the other weapons win 100%.

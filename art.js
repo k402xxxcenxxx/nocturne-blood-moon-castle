@@ -1400,7 +1400,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   if (e.tell > 0) { ctx.save(); ctx.strokeStyle = '#e7746666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 1, boss ? (e.king ? 84 : 70) : 29, boss ? 8 : 4, 0, 0, 7); ctx.stroke(); ctx.restore(); }
   if (e.tell > 0 && e.poiseHit > 0 && !e.warn && !e.thrustBox && !heavy && !boss && (e.type === 'skeleton' || e.type === 'shield')) { const rx = x + (e.dir === -1 ? -1 : 1) * (e.type === 'shield' ? 70 : 82); ctx.save(); ctx.fillStyle = '#ff6a5c'; ctx.fillRect(Math.min(x, rx), y - 3, Math.abs(rx - x), 3); ctx.fillRect(rx - 1, y - 16, 3, 16); ctx.restore(); } // provoked poke from afar: the slash's real reach on the floor, so a whiff reads as out of range
   if (boss) drawBossWarn(ctx, e, time);
-  if (e.type === 'gargoyle' || e.type === 'pendulum') belfryWarn(ctx, e, time);
+  if (isBelfry(e)) belfryWarn(ctx, e, time);
   if (e.add && !boss && e.hp > 0) { ctx.save(); ctx.fillStyle = '#13111b'; ctx.fillRect(x - 7, y + 6, 14, 9); ctx.fillStyle = '#8d93a2'; for (let i = 0; i < 4; i++) ctx.fillRect(x - 5 + i * 3, y + 7, 1, 7); ctx.fillRect(x - 6, y + 9, 12, 1); ctx.restore(); } // gate guard: a small portcullis mark under the feet
   if (!boss && e.tell > 0 && e.warn?.lines) { // Prism: the three real bolt paths (band = orb width 14, dashed core, tip dot)
     const wl = e.warn, pp = Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(wl) || e.tell))); ctx.save();
@@ -1474,7 +1474,7 @@ export function drawEnemy(ctx, e = {}, time = 0, calm = false) {
   else if (e.type === 'spear') spearman(ctx, e, time, white);
   else if (e.type === 'knight') knight(ctx, e, time, white);
   else if (e.type === 'priest') priest(ctx, e, time, white);
-  else if (e.type === 'gargoyle' || e.type === 'pendulum') belfryBody(ctx, e, time, white);
+  else if (isBelfry(e)) belfryBody(ctx, e, time, white);
   else if (e.type === 'mage') mage(ctx, e, time, white);
   else skeleton(ctx, e, time, white);
   if (e.riposte && e.stun > 0) { // posture broken: gold crack down the body and a pulsing outline until the riposte lands
@@ -1710,6 +1710,7 @@ export function drawEchoBoxes(ctx, echo, time, calm) {
 }
 
 // --- Belfry cast (#69 PR 3): code-drawn placeholders for the Gargoyle and the Pendulum Blade; the technical artist may replace them. ---
+const isBelfry = e => e.type === 'gargoyle' || e.type === 'pendulum' || e.type === 'sentinel' || e.type === 'acolyte'; // #69: the Belfry cast drawn by the two functions below
 function belfryBody(ctx, e, time, white) {
   const k = e.type === 'gargoyle' ? 0 : 1; ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#13111b';
   if (k === 0) { // winged stone figure: grey and cracked while it is stone, warm eyes when it moves
@@ -1719,15 +1720,32 @@ function belfryBody(ctx, e, time, white) {
     ctx.beginPath(); ctx.moveTo(-5, -46); ctx.lineTo(-8, -56); ctx.lineTo(-1, -48); ctx.moveTo(4, -48); ctx.lineTo(10, -56); ctx.lineTo(9, -45); ctx.fill(); ctx.stroke(); // horns
     ctx.fillStyle = stone ? '#2a2a30' : '#ffb347'; ctx.fillRect(1, -40, 4, 3); ctx.fillRect(7, -40, 3, 3); // eyes
     if (stone) { ctx.strokeStyle = '#4a4c54'; ctx.beginPath(); ctx.moveTo(-2, -30); ctx.lineTo(2, -22); ctx.lineTo(-1, -14); ctx.stroke(); }
-  } else { // robed swordsman with a ticking bob on its back
+  } else if (e.type === 'pendulum') { // robed swordsman with a ticking bob on its back
     ctx.fillStyle = white || '#4b4a5e'; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-10, -34); ctx.lineTo(-4, -44); ctx.lineTo(8, -44); ctx.lineTo(12, -34); ctx.lineTo(14, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = white || '#c9b27a'; ctx.beginPath(); ctx.arc(1, -52, 8, 0, 7); ctx.fill(); ctx.stroke(); // head
     const sw = Math.sin(time * Math.PI / .6 + (e.bt0 || 0)) * .5; ctx.save(); ctx.translate(-12, -46); ctx.rotate(sw); ctx.strokeStyle = '#8d8a7a'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke(); ctx.fillStyle = '#d4a93c'; ctx.beginPath(); ctx.arc(0, 24, 5, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); // pendulum bob
     const high = e.move === 'tock' || (e.heavy && e.heavyKind === 'swingout'); ctx.strokeStyle = '#d9dfe8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(10, -26); ctx.lineTo(40, high ? -58 : -14); ctx.stroke(); // blade
+  } else if (e.type === 'sentinel') { // brass automaton: a wound key on its back with one pip per wind; slumped and dull when run down
+    const down = e.wind <= 0, sl = down && e.recover > 0 ? 7 : 0, rew = e.rwT > 0; ctx.translate(0, sl * .4);
+    ctx.fillStyle = white || (down ? '#7a6a48' : '#b08a3c'); ctx.fillRect(-13, -44 + sl, 27, 44 - sl); ctx.strokeRect(-13, -44 + sl, 27, 44 - sl);
+    ctx.fillStyle = white || '#8a6f34'; ctx.fillRect(-8, -56 + sl, 18, 12); ctx.strokeRect(-8, -56 + sl, 18, 12); ctx.fillStyle = down ? '#2a2a30' : '#ffb347'; ctx.fillRect(3, -52 + sl, 5, 3);
+    ctx.save(); ctx.translate(-17, -30 + sl); ctx.rotate(rew ? time * 9 : 0); ctx.strokeStyle = '#d9c27a'; ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); ctx.moveTo(0, -7); ctx.lineTo(0, 7); ctx.stroke(); ctx.restore(); // the key
+    for (let i = 0; i < SENTINEL_PIPS; i++) { ctx.fillStyle = i < e.wind ? '#ffd36e' : '#3a3428'; ctx.fillRect(-26 + i * 6, -64 + sl, 4, 4); } // winds left
+    ctx.fillStyle = white || '#6f6a60'; ctx.fillRect(14, -30 + sl, e.move === 'piston' ? 40 : 14, 8); ctx.strokeRect(14, -30 + sl, e.move === 'piston' ? 40 : 14, 8); // piston arm
+    if (e.move === 'backgear') { ctx.fillStyle = '#d9c27a'; ctx.beginPath(); ctx.arc(-34, -28, 11, 0, 7); ctx.fill(); ctx.stroke(); } // a gear spins out of its back
+  } else { // chime acolyte: a robed bell-keeper with a clock-hand halo that spins while it chants
+    ctx.fillStyle = white || '#3f5a6b'; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-9, -36); ctx.lineTo(-3, -44); ctx.lineTo(7, -44); ctx.lineTo(11, -36); ctx.lineTo(13, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = white || '#d8c9a4'; ctx.beginPath(); ctx.arc(2, -52, 7, 0, 7); ctx.fill(); ctx.stroke();
+    const chant = e.blessRadius > 0 && e.tell > 0, a = time * (chant ? 8 : 1.5); ctx.strokeStyle = chant ? '#9fd8ff' : '#7aa0b3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(2, -68, 9, 0, 7); ctx.moveTo(2, -68); ctx.lineTo(2 + Math.sin(a) * 7, -68 - Math.cos(a) * 7); ctx.moveTo(2, -68); ctx.lineTo(2 + Math.sin(a / 12) * 5, -68 - Math.cos(a / 12) * 5); ctx.stroke(); // halo
+    ctx.fillStyle = white || '#c9a24a'; ctx.beginPath(); ctx.moveTo(10, -26); ctx.lineTo(24, -26); ctx.lineTo(27, -12); ctx.lineTo(7, -12); ctx.closePath(); ctx.fill(); ctx.stroke(); // hand bell
   }
   ctx.restore();
 }
+const SENTINEL_PIPS = 3;
 function belfryWarn(ctx, e, time) {
+  if (e.type === 'acolyte' && e.blessRadius > 0 && e.tell > 0 && e.blessTarget) { // rewind: a clock-hand circle on the ally it will restore (the cast has no armor: any hit cancels it)
+    const o = e.blessTarget, cx = o.x, cy = o.y - o.h * .5, p = Math.max(0, Math.min(1, 1 - e.tell)); ctx.save(); ctx.strokeStyle = '#9fd8ff'; ctx.lineWidth = 2; ctx.globalAlpha = .55 + .35 * p; ctx.beginPath(); ctx.arc(cx, cy, 30, 0, 7); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(-p * 6.283) * 26, cy - Math.cos(-p * 6.283) * 26); ctx.stroke(); ctx.restore();
+  }
   const w = e.warn, tl = e.tell > 0, strike = e.strikeT > 0; if (!w || !(tl || strike)) return;
   const p = tl ? Math.max(0, Math.min(1, 1 - e.tell / (tellMax.get(w) || e.tell))) : 1, hot = .18 + .4 * p; ctx.save(); ctx.strokeStyle = '#ff4a3c'; ctx.lineWidth = e.heavy ? 3 : 2; ctx.fillStyle = `rgba(255,74,60,${hot})`;
   if (w.kind === 'plummet') { warnCircles(ctx, w.circles, '255,74,60', '#ff4a3c', p, time); ctx.setLineDash(WARN_DASH); ctx.beginPath(); ctx.moveTo(w.line.x1, w.line.y1 - 29); ctx.lineTo(w.line.x2, w.line.y2); ctx.stroke(); }
@@ -1735,6 +1753,8 @@ function belfryWarn(ctx, e, time) {
   else if (w.box) {
     const inset = w.kind === 'swingout' ? 14 : 0, b = { x: w.box.x + inset, y: w.box.y, w: w.box.w - 2 * inset, h: w.box.h }; // the swingout is decided by the hero's centre: the drawn edge is inset by the hero half-width, so a hero sprite touching the box is hit
     ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h);
+    if (w.saw && strike) { const s = w.saw, cx = s.x + s.w / 2, cy = s.y + s.h / 2; ctx.fillStyle = '#c9ced8'; ctx.beginPath(); for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8 + time * 20, r = i % 2 ? s.w / 2 - 4 : s.w / 2; ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.stroke(); } // the rolling saw
+    if (w.kind === 'chime' && strike && e.ringR > 0) { ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3; ctx.beginPath(); for (const sd of [-1, 1]) { ctx.moveTo(e.x + sd * e.ringR, w.box.y); ctx.lineTo(e.x + sd * e.ringR, w.box.y + w.box.h); } ctx.stroke(); } // the ring front
   }
   ctx.restore();
 }

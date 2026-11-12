@@ -277,6 +277,7 @@ function handleEvent(e) {
     case 'enemyCross': audio.play('batWing', 1); burst(e.x, e.y, '#8a7aa8', 5, 70); effects.push({ type: 'crossArc', x: e.x, y: e.y, toX: e.toX, life: e.duration, max: e.duration }); break; // bat crossover: the flight arc and the wing flicks are the only cue (no `!`); audio adds the wing sound
     case 'apexStep': burst(e.x - e.dir * 6, FLOOR, '#b3a68f', 6, 90, -e.dir); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 36, life: .25, max: .25 }); break; // backstep: a small scrape of dust at the heels
     case 'apexGuard': if (e.blocked) { effects.push({ type: 'impact', x: e.x, y: e.y, life: .14, max: .14, dir: 0, color: '#e8f6ff', s: .7 }); burst(e.x, e.y, '#cfe3f2', 8, 200); } break; // block spark (the guard stance itself is drawn on the body)
+    case 'gearClink': // a frontal hit on a wound sentinel: the gears take the posture damage (#69)
     case 'stoneClink': audio.play('block', .5); burst(e.x, e.y, '#c9c9c9', 6, 160, 0, 2); break; // a hit off a watched gargoyle (#69)
     case 'shellBreak': rumble(5, .16); audio.play('stagger', .7); burst(e.x, e.y, '#bdbdbd', 18, 260); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .35, max: .35, color: '#d8d8d8', r: 60 }); break; // the stone shell cracks
     case 'apexCrush': rumble(5, .16); burst(e.x, e.y, '#ffd36e', 16, 240); burst(e.x, e.y, '#ffffff', 6, 150, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .35, max: .35, color: '#ffd36e', r: 70 }); break; // guard broken: the gold opening ring
@@ -289,6 +290,10 @@ function handleEvent(e) {
       else if (e.kind === 'brace') { effects.push({ type: 'wardBreak', x: e.x, y: e.y - 6, life: .2, max: .2, color: '#cfe3f2', r: 24 }); burst(e.x, FLOOR - 4, '#b3a68f', 4, 60); }
       else if (e.kind === 'petrify' || e.kind === 'wake') { burst(e.x, e.y, e.kind === 'petrify' ? '#9a9a9a' : '#9ff0ff', 6, 70, 0, 2); } // gargoyle (#69): stone crackle / eyes glow
       else if (e.kind === 'reperch') { burst(e.x, e.y, '#8d8d8d', 6, 100, 0, 2); }
+      else if (e.kind === 'rundown') { burst(e.x, e.y, '#cfd6dc', 10, 60, 0, 2); effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 40, life: .35, max: .35 }); } // sentinel (#69): the last wind spent, steam and a slump
+      else if (e.kind === 'rewind') { burst(e.x, e.y, e.done ? '#ffd36e' : '#d9c27a', e.done ? 8 : 3, e.done ? 120 : 50, 0, 2); if (e.done) effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .25, max: .25, color: '#ffd36e', r: 30 }); } // the key spins; the pips refill
+      else if (e.kind === 'jam') { rumble(4, .1); audio.play('stagger', .5); burst(e.x, e.y, '#ffd36e', 12, 200, 0, 3); effects.push({ type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#ffffff', r: 36 }); } // the key jams from behind
+      else if (e.kind === 'chant') { burst(e.x, e.y, '#9fd8ff', 4, 50, 0, 2); burst(e.tx, e.ty, '#9fd8ff', 4, 40, 0, 2); } // acolyte (#69): the rewind chant begins
       else if (e.kind === 'backstep') { effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 28, life: .2, max: .2 }); burst(e.x, FLOOR - 4, '#b3a68f', 4, 70); } // pendulum
       else if (e.kind === 'interpose') { effects.push({ type: 'dust', x: e.x, y: FLOOR, radius: 34, life: .22, max: .22 }); burst(e.x, FLOOR - 4, '#b3a68f', 5, 80); }
       break; }
@@ -367,7 +372,8 @@ function handleEvent(e) {
       break;
     case 'trapWarn': if (Math.abs(e.x - game.player.x) < 600) audio.play('trapWarn'); break;
     case 'trapActive': if (Math.abs(e.x - game.player.x) < 600) audio.play(e.kind === 'pillar' ? 'pillarGush' : e.kind === 'gears' ? 'gearGrind' : 'spikeClang'); burst(e.x, e.y - e.h / 2, e.kind === 'pillar' ? '#c9627f' : '#cfd6e6', 6, 90); break;
-    case 'enemyBuff': audio.play(e.posture ? 'hierophant' : 'bless', .8); if (e.targets?.length === 1) audio.play('blessPick', .7); // one ally named (a targeted bless)
+    case 'enemyBuff': if (e.rewind) for (const o of e.targets) { effects.push({ type: 'wardBreak', x: o.x, y: o.y, life: .4, max: .4, color: '#9fd8ff', r: 44 }); burst(o.x, o.y, '#9fd8ff', 10, 90, 0, 2); } // Chime Acolyte rewind (#69): a pale ring on the restored ally
+      audio.play(e.posture ? 'hierophant' : 'bless', .8); if (e.targets?.length === 1) audio.play('blessPick', .7); // one ally named (a targeted bless)
       if (e.posture) for (const o of e.targets) { effects.push({ type: 'postureBless', x: o.x, y: o.y, life: .7, max: .7 }); burst(o.x, o.y, '#9fd8ff', 6, 70, 0, 2); } break; // Hierophant: a pale-blue shield ring and rising chevrons on each ally whose posture refilled
     case 'enemyBlink': effects.push({ type: 'ringIn', x: e.x, y: e.y, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }, { type: 'ringIn', x: e.toX, y: e.toY, life: e.duration, max: e.duration, color: '#cdb8ff', r: 60 }); burst(e.x, e.y, '#cdb8ff', 6, 60); burst(e.toX, e.toY, '#cdb8ff', 6, 60); break;
     case 'enemyBlinked': effects.push({ type: 'wardBreak', x: e.fromX, y: e.y, life: .3, max: .3, color: '#cdb8ff', r: 50 }, { type: 'wardBreak', x: e.x, y: e.y, life: .3, max: .3, color: '#e4d8ff', r: 60 }); burst(e.fromX, e.y, '#cdb8ff', 10, 120); burst(e.x, e.y, '#e4d8ff', 10, 120); break;

@@ -1,7 +1,7 @@
 // Test bot (#52): plays the hero from the full game state, but through the same input object a human produces
 // ({ left, right, jump, attack, dash, magic }) and under human limits. Pure logic: no DOM, Canvas, Audio or storage, so it runs in Node.
 // It reads only the current state (never future game.rand() rolls). Used by tools/bot-run.mjs, tests/bot.test.js and game.js (?test, key B).
-import { FLOOR, WEAPONS, SKILL_MIN } from './core.js';
+import { FLOOR, WEAPONS, SKILL_MIN, sawRect } from './core.js';
 
 export const REACTION_DELAY = .18; // s before the bot reacts to a new tell, strike, projectile or enemy
 export const MAX_PRESSES_PER_SECOND = 8; // rising edges of any button, in any sliding second
@@ -76,6 +76,11 @@ function hitTime(e, px, py) {
       }
       return Infinity;
     }
+    if (w.kind === 'gearsaw') { // Clockwork Sentinel (#69): the saw rolls the drawn box; sample its rect along the roll (it can already be rolling)
+      const striking = e.strikeT > 0, roll = e.strikeMax || .6, k0 = striking ? 1 - e.strikeT / roll : 0, base = striking ? 0 : e.tell;
+      for (let k = k0; k < 1.02; k += .02) if (rectHit(px, py, sawRect(w, Math.min(1, k)))) return base + (k - k0) * roll;
+      return Infinity;
+    }
     if (w.kind === 'ray') return w.box && rectHit(px, py, w.box) ? Math.max(0, e.tell) : Infinity; // mage ray: a 0.15 s contact window after the tell (a jump clears the 16 px line)
     if (w.kind === 'rite') { const c = w.circles[0]; return e.tell > 0 && Math.abs(px - c.x) < c.r + 14 && py > c.y - c.r ? e.tell : Infinity; } // priest rite: a ground disc, walk out of it
     return e.tell > 0 && w.box && rectHit(px, py, w.box) ? e.tell : Infinity;
@@ -83,7 +88,14 @@ function hitTime(e, px, py) {
   if (e.move === 'stepcut' && w?.box) return rectHit(px, py, w.box, 4) ? (e.cutT > 0 ? e.cutT : e.tell + .15) : Infinity; // castle skeleton lunge: tell, then a 0.15 s step
   if (e.move === 'overhead' && w?.box) return rectHit(px, py, w.box) ? e.tell : Infinity; // knight overhead: steps during the tell, lands at its end
   if ((e.move === 'counter' || e.move === 'rising' || e.move === 'rimstrike' || e.move === 'shove') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) && (e.move !== 'rising' || py < e.y - 40) ? e.tell : Infinity; // castle shield shove and rim strike, apex skeleton counter and rising slash: the drawn box
-  if ((e.move === 'tick' || e.move === 'tock' || e.move === 'rake') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // Belfry (#69): the drawn box (the rake's is the box round its whole glide line)
+  if (e.move === 'chime' && w?.box) { // Chime Acolyte (#69): the drawn box during the tell, then a ring growing to its edge over the strike
+    if (e.tell > 0) return rectHit(px, py, w.box) ? e.tell : Infinity;
+    if (!(e.strikeT > 0) || e.struck) return Infinity;
+    const roll = e.strikeMax || .4, k0 = 1 - e.strikeT / roll;
+    for (let k = k0; k < 1.02; k += .02) { const r = w.box.w / 2 * Math.min(1, k); if (rectHit(px, py, { x: e.x + r - 20, y: w.box.y, w: 20, h: w.box.h }) || rectHit(px, py, { x: e.x - r, y: w.box.y, w: 20, h: w.box.h })) return (k - k0) * roll; } // the front is 20 px thick
+    return Infinity;
+  }
+  if ((e.move === 'tick' || e.move === 'tock' || e.move === 'rake' || e.move === 'piston' || e.move === 'backgear') && w?.box) return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; // Belfry (#69): the drawn box (the rake's is the box round its whole glide line)
   if (e.move === 'lift' && w?.box) { return e.tell > 0 && rectHit(px, py, w.box) ? e.tell : Infinity; } // spearman lift: a column centred on the landing, 0-170 px above its feet
   if (e.move === 'plant' && w?.box) return rectHit(px, py, w.box) && !e.plantHit ? (e.tell > 0 ? e.tell : .01) : Infinity; // planted spear: the tip box is live for 1.2 s after the tell
   if (!(e.tell > 0) || e.heavy) return Infinity;
@@ -351,7 +363,7 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         else if (e && e.type === 'skeleton' && !e.heavy && e.move !== 'stepcut' && !dashReady && p.grounded && t <= .38 + jit(e) && t >= .18) { o.jump = true; o.urgent = true; } // slash, counter or chain with no dash and no room: the 77 px hit height is cleared 0.17-0.57 s after the press
         else if (e && e.move === 'stepcut' && !dashReady && p.grounded && t <= JUMP_AT + jit(e) && t >= .19) { o.jump = true; o.urgent = true; } // castle lunge with the dash down: airborne above its 70 px box from 0.16 to 0.58 s after the press, so a jump at 0.2-0.4 s before contact clears it
         else if (e && e.move === 'plant' && p.grounded && t <= .45) { o.jump = true; o.urgent = true; o.dir = dirAway(e); } // a planted spear with no time to walk clear: jump and steer out of the box in the air (it stays live 1.2 s)
-        else if (e && (e.move === 'sweep' || e.move === 'tick' || e.warn?.kind === 'ray' || (e.type === 'spear' && e.warn?.kind === 'thrust' && !dashReady && t >= .2)) && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
+        else if (e && (e.move === 'sweep' || e.move === 'tick' || e.move === 'chime' || e.warn?.kind === 'gearsaw' || e.warn?.kind === 'ray' || (e.type === 'spear' && e.warn?.kind === 'thrust' && !dashReady && t >= .2)) && p.grounded && t <= .36 + jit(e)) { o.jump = true; o.urgent = true; } // the spearman's sweep (30 px) and the mage's ray (16 px line, 440 long) leave no room to walk out: jump them, airborne through the contact
       }
     }
     // --- offence and navigation when nothing is about to land
@@ -361,7 +373,8 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
       const pool = punish.length ? punish : known;
       const target = pool.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       let goal = null, tol = 16;
-      const swing = known.find(e => canHit(e) && !blockedBy(e) && !(e.parryT > 0 && api.reacts(e, now)) && hitTime(e, p.x, p.y) === Infinity); // a knight's raised parry pose is baited, not hit
+      const keyOpen = e => e.type === 'sentinel' && e.rwT > 0 && e.tell <= 0 && e.strikeT <= 0; // its key is exposed from behind while it rewinds
+      const swing = known.find(e => canHit(e) && !blockedBy(e) && !(keyOpen(e) && (p.x - e.x) * e.dir > 0) && !(e.parryT > 0 && api.reacts(e, now)) && hitTime(e, p.x, p.y) === Infinity); // a knight's raised parry pose is baited, not hit
       const planted = foes.some(e => e.plantT > 0 || e.move === 'plant'); // a planted spear stops an assault dash: no chain dashes while one is down
       const lane = fw === 'spear' && !planted && target && target.punishable && target.recover > 0 && p.dash <= 0 && !p.plunge && p.grounded && target && !blockedBy(target) && Math.abs(target.x - p.x) > 35 && Math.abs(target.x - p.x) < 125 && Math.abs(target.y - p.y) < 40 && p.x + Math.sign(target.x - p.x) * 131 > lo && p.x + Math.sign(target.x - p.x) * 131 < hi;
       if (lane) { o.dash = true; o.dir = Math.sign(target.x - p.x); } // chain assault dashes through the pack (each burns 6 blood)
@@ -370,9 +383,11 @@ export function createBot({ decide: decider, skill: skillName = 'expert', seed =
         const dx = target.x - p.x, face = Math.sign(dx) || p.dir, spacing = Math.max(50, p.reach - 22);
         if (target.type === 'gargoyle' && target.y < p.y - 50 && !target.punishable && !target.heavy && !(target.rpT > 0)) { // a perched gargoyle is stone while watched and out of reach: turn away and let it rake (it lands in reach, punishable)
           const away = Math.sign(p.x - target.x) || 1;
-          const gap = Math.abs(p.x - target.x), rake = Math.sqrt(Math.max(900, 220 * 220 - (p.y - target.y) ** 2)); if (gap <= rake) luring = true; else if (gap > rake + 40) luring = false; // rake range: 240 px along the line // hysteresis: a step away must not send the bot back in
+          const gap = Math.abs(p.x - target.x), rake = Math.sqrt(Math.max(900, 220 * 220 - (p.y - target.y) ** 2)); if (gap <= rake) luring = true; else if (gap > rake + 20) luring = false; // rake range: 240 px along the line // hysteresis: a step away must not send the bot back in; rake + 20 never passes the core's real range (+40 let a hero wait forever at 223 px of a perched gargoyle, #69 PR 4)
           if (!luring) { goal = target.x + away * Math.max(30, rake - 25); tol = 10; } else if (p.dir !== away) o.dir = away; // close in to rake range (240 px along the line), then face away
-        } else if (blockedBy(target) && !target.heavy) { // frontal block: Eclipse breaks the guard, otherwise walk or dash round to its back
+        } else if (keyOpen(target) && Math.abs(dx) < 260 && (p.x - target.x) * target.dir > 0) { goal = target.x - target.dir * 45; tol = 6; // a rewinding sentinel: go round to the key and jam it (a frontal hit would do nothing)
+        } else if (keyOpen(target) && (p.x - target.x) * target.dir < 0 && p.dir !== face) o.dir = face;
+        else if (blockedBy(target) && !target.heavy) { // frontal block: Eclipse breaks the guard, otherwise walk or dash round to its back
           if (canCast && castle && p.blood >= 90 && Math.abs(dx) < 190) o.magic = true;
           else if (dashReady && Math.abs(dx) < 120 && Math.abs(dx) > 30) { o.dash = true; o.dir = face; }
           else { const b = blocker(target); goal = b.x - b.dir * 50; tol = 10; } // round to the back of the shield that blocks
