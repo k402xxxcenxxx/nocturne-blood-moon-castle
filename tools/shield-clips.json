@@ -1,0 +1,18 @@
+{
+ "name": "shield", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 69, "colors": 24,
+ "clips": {
+  "loco": { "file": "shield-loco.mp4", "size": 640, "heroHeight": 251, "feet": [310, 459] },
+  "combat": { "file": "shield-combat.mp4", "size": 640, "heroHeight": 251, "feet": [310, 459] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5, 0.75], "fps": 4 },
+  "walk": { "clip": "loco", "from": 1.0, "to": 1.75, "frames": 6, "fps": 8, "loop": true, "minGap": 6 },
+  "brace": { "clip": "loco", "times": [1.875, 2.25], "fps": 4 },
+  "call": { "clip": "loco", "times": [3.0, 3.25], "fps": 4 },
+  "broken": { "clip": "loco", "times": [4.25, 4.5], "fps": 4 },
+  "bash": { "clip": "combat", "times": [0.125, 0.25, 0.5, 0.875, 1.0], "windup": 3, "strike": 4, "fps": 12 },
+  "smash": { "clip": "combat", "times": [1.75, 2.0, 2.375, 2.5], "windup": 2, "strike": 3, "fps": 12 },
+  "rim": { "clip": "combat", "times": [3.0, 3.125, 3.375], "windup": 1, "strike": 3, "fps": 12 },
+  "death": { "clip": "combat", "times": [4.125, 4.25, 4.5], "fps": 8 }
+ }
+}

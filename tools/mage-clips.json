@@ -1,0 +1,16 @@
+{
+ "name": "mage", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 74, "colors": 24,
+ "clips": {
+  "loco": { "file": "mage-loco.mp4", "size": 640, "heroHeight": 269, "feet": [305, 463] },
+  "cast": { "file": "mage-cast.mp4", "size": 640, "heroHeight": 269, "feet": [305, 463] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.25, 0.5, 0.75], "fps": 4 },
+  "walk": { "clip": "loco", "times": [1.25, 1.5, 1.75], "fps": 6 },
+  "hurt": { "clip": "loco", "times": [2.5, 2.625], "fps": 8 },
+  "bolt": { "clip": "cast", "times": [0.25, 0.375, 0.75], "windup": 3, "strike": 3, "fps": 12 },
+  "ray": { "clip": "cast", "times": [2.0, 2.125, 2.5], "windup": 3, "strike": 3, "fps": 12 },
+  "down": { "clip": "cast", "times": [3.125, 3.25, 3.5], "fps": 8 },
+  "death": { "clip": "loco", "times": [3.75, 3.875, 4.0, 4.125, 4.5], "fps": 8 }
+ }
+}

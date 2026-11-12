@@ -1,0 +1,18 @@
+{
+ "name": "priest", "raw": "../docs/art-bible/raw", "out": "../assets", "height": 63, "colors": 24,
+ "clips": {
+  "loco": { "file": "priest-loco.mp4", "size": 640, "heroHeight": 229, "feet": [298, 451] },
+  "cast": { "file": "priest-cast.mp4", "size": 640, "heroHeight": 229, "feet": [298, 451] }
+ },
+ "anims": {
+  "idle": { "clip": "loco", "times": [0.0, 0.125, 0.25, 0.375], "fps": 4 },
+  "walk": { "clip": "loco", "from": 0.5, "to": 1.7, "frames": 6, "fps": 8, "loop": true, "minGap": 8 },
+  "recoil": { "clip": "loco", "times": [1.875, 2.125], "fps": 4 },
+  "hurt": { "clip": "loco", "times": [2.75, 2.875], "fps": 8 },
+  "bolt": { "clip": "cast", "times": [0.125, 0.25, 0.5], "windup": 3, "strike": 3, "fps": 12 },
+  "bless": { "clip": "cast", "times": [1.75, 1.875, 2.125], "windup": 3, "strike": 3, "fps": 12 },
+  "rite": { "clip": "cast", "times": [3.125, 3.25, 3.75], "windup": 3, "strike": 3, "fps": 12 },
+  "down": { "clip": "cast", "times": [4.375, 4.625, 4.875], "fps": 8 },
+  "death": { "clip": "loco", "times": [3.875, 4.0, 4.25], "fps": 8 }
+ }
+}
