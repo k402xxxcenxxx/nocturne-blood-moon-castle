@@ -22,7 +22,7 @@ The visual source of truth for every generated asset. Maintained by the Technica
 | Asset | Logical size | Generated at | Notes |
 | --- | --- | --- | --- |
 | Hero frame | 68 px head to toe (body is 28×58 world units) | 480p video | One sheet per weapon, 32 shared colors each. Cell and origin are in `assets/hero*-sheet.js` |
-| Regular enemy frame | *TBD* (27×58; bat 27×28) | *TBD* | |
+| Regular enemy frame | Skeleton: 62 px head to toe (body is 27×58; bat 27×28). Others *TBD* | 480p video | One sheet per enemy, 24 colors; variants are tinted in code |
 | Boss frame | *TBD* (64×102) | *TBD* | |
 | Stage background layer | *TBD* (view is 960–1500 × 540) | *TBD* | Floor line at y = 438 |
 | UI element | *TBD* | *TBD* | No text inside |
@@ -49,6 +49,7 @@ Every approved image that other assets must match. Attach the relevant anchors t
 | Hero video first frame | `docs/art-bible/anchors/hero-video-first-frame.png` | First frame of every rapier clip |
 | Gate Warden first frame | `docs/art-bible/anchors/warden-first-frame.png` | First frame of every Warden clip (#81). Three-quarter side view facing right, body about 42% of the frame |
 | Fallen King first frame | `docs/art-bible/anchors/king-first-frame.png` | First frame of every King clip (#81). Three-quarter side view facing right, greatsword low and forward |
+| Skeleton first frame | `docs/art-bible/anchors/skeleton-first-frame.png` | First frame of every skeleton clip (#83), and the style and scale reference for the other regular enemies. Body about 35% of the frame |
 | Weapon first frames | `docs/art-bible/anchors/hero-heavy-first-frame.png`, `hero-twin-first-frame.png`, `hero-spear-first-frame.png` | First frame of every clip of that weapon. Heavy and spear are shifted left so the weapon stays in frame |
 
 ## Pose guides
