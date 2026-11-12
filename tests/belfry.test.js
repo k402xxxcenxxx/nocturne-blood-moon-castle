@@ -587,7 +587,7 @@ test('acolyte knell: a hero standing still draws a 1.0 s bell column 60 px wide,
   const w = start(); advance(w.game, 1.05); assert.ok(w.e.recover > .9 && w.e.punishable, 'kneeling 1.0 s');
   const dashed = bel('acolyte', 450, 700, 15); Object.assign(dashed.player, { dash: .2, dashCd: 2, dir: 1 }); dashed.game.snaps = []; dashed.e.cd = 0; until(dashed.game, () => dashed.e.heavy, 1.5); assert.ok(dashed.e.warn.box.x + 30 > 450 + 100, 'a spent dash: aimed at the landing, not at the hero');
   const raised = bel('acolyte', 450, 700, 15); const pl = raised.game.makePlatform(380, FLOOR - 100, 160, 'x', 'y'); raised.game.platforms.push(pl); Object.assign(raised.player, { x: 450, y: pl.y }); raised.e.cd = 0; until(raised.game, () => raised.e.heavy, 1.5); assert.equal(raised.e.warn.box.y, pl.y - 220, 'the column stands on the platform the hero stands on');
-  const moving = bel('acolyte', 450, 700, 15); const mp = moving.game.makePlatform(380, FLOOR - 100, 160, 'x', 'y'); mp.moving = true; moving.game.platforms.push(mp); Object.assign(moving.player, { x: 450, y: mp.y }); moving.e.cd = 0; until(moving.game, () => moving.e.heavy, 1.5); assert.equal(moving.e.warn.box.y, FLOOR - 220, 'a moving platform is no surface: the column rises from the ground');
+  const moving = bel('acolyte', 450, 700, 15); const mp = moving.game.makePlatform(380, FLOOR - 100, 160, 'x', 'y'); mp.moving = true; moving.game.platforms.push(mp); Object.assign(moving.player, { x: 450, y: mp.y }); moving.e.cd = 0; until(moving.game, () => moving.e.heavy, 1.5); assert.equal(moving.e.warn.box.y, mp.y - 220, 'a hero level with a moving platform gets a column standing on its top at the tell (fixed in the world, as drawn)');
 });
 
 test('Stopped Hour: a sentinel\'s rewind, tell and contact wait; the resume grace pushes an imminent piston to 0.45 s; an awake hero can still jam the key in the Hour (the stun counts in enemy time)', () => {
@@ -601,4 +601,40 @@ test('Stopped Hour: a sentinel\'s rewind, tell and contact wait; the resume grac
 test('sentinel: no tell starts whose contact falls inside the hero i-frames (piston 0.5 s, backgear 0.5 s)', () => {
   const front = bel('sentinel', 610, 700, 14); front.e.cd = 0; front.player.invulnerable = .8; advance(front.game, .2); assert.equal(front.e.tell, 0, 'piston'); advance(front.game, .25); assert.equal(front.e.move, 'piston', 'once the i-frames are under 0.5 s');
   const back = bel('sentinel', 760, 700, 14); back.e.cd = 0; back.player.invulnerable = .8; advance(back.game, .2); assert.equal(back.e.tell, 0, 'backgear');
+});
+
+// QA (#69 PR 4): regression tests for bugs found in the playtest. They fail until the engineer fixes them.
+test('QA knell: the bell column rises from the top of the platform the hero stands on, moving platforms included (not from the floor under it)', () => {
+  const c = bel('acolyte', 800, 600, 15); Object.assign(c.e, { cd: 0, blessCd: 99 });
+  const pl = c.game.makePlatform(700, FLOOR - 110, 200, 'x', 'y', 'x'); c.game.platforms.push(pl);
+  Object.assign(c.player, { y: pl.y, vy: 0, grounded: true, plat: pl });
+  until(c.game, () => c.e.tell > 0 && c.e.heavyKind === 'knell', 2);
+  assert.equal(c.e.warn.column.y0, pl.y, 'the column base is the platform top, not the floor (currently FLOOR)');
+});
+
+test('QA knell: a hero who rises through a dash onto a platform gets a column from that platform top, not from the floor under it', () => {
+  const c = bel('acolyte', 560, 400, 15); Object.assign(c.e, { cd: 0, blessCd: 99 });
+  const pl = c.game.makePlatform(700, FLOOR - 120, 200, 'x', 'y'); c.game.platforms.push(pl);
+  Object.assign(c.player, { x: 620, y: FLOOR - 70, vy: -300, grounded: false, dash: .3, dashCd: 1, dir: 1 });
+  until(c.game, () => c.e.warn?.column, 1);
+  assert.equal(c.e.warn.column.y0, pl.y, 'the column base is the platform top (currently FLOOR)');
+});
+
+test('QA piston: a sentinel on a moving platform stays on the spot its warning was drawn at during the 0.5 s tell (the box does not come off it)', () => {
+  const c = bel('sentinel', 705, 600, 14); c.e.cd = 0;
+  const pl = c.game.makePlatform(560, FLOOR - 110, 300, 'x', 'y', 'x'); c.game.platforms.push(pl);
+  Object.assign(c.e, { plat: pl, y: pl.y }); Object.assign(c.player, { y: pl.y, vy: 0, grounded: true, plat: pl });
+  until(c.game, () => c.e.tell > 0 && c.e.move === 'piston', 2);
+  const x0 = c.e.x; advance(c.game, .45);
+  assert.ok(Math.abs(c.e.x - x0) < 1, `the sentinel drifted ${(c.e.x - x0).toFixed(1)} px off its warned box`);
+});
+
+test('QA sentinel: a last wind spent on a gearsaw that a posture break cuts short still runs down (the 1.6 s rundown), it does not rewind at once', () => {
+  const c = bel('sentinel', 700, 600, 14); Object.assign(c.e, { cd: 0, wind: 1 });
+  until(c.game, () => c.e.heavy && c.e.heavyKind === 'gearsaw', 2);
+  assert.equal(c.e.wind, 0, 'the last wind is spent when the saw is wound');
+  const n = c.events.length; // the rundown cue fires in the same call that cuts the saw, so the slice starts before it
+  c.game.damageEnemy(c.e, 1, c.e.dir, false, false, false, 9999); // a posture break from behind cancels the saw
+  assert.ok(c.e.recover >= 1.6 + 1.4, 'the 1.6 s slump follows the 1.5 s stun'); advance(c.game, 3);
+  assert.ok(c.events.slice(n).some(ev => ev.type === 'brainStep' && ev.enemy === 'sentinel' && ev.kind === 'rundown'), 'a rundown after the cut-short saw');
 });

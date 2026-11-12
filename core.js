@@ -1198,6 +1198,7 @@ export class Game {
   // An attack in progress: wind-up, strike, the skeleton's backstep and lunge, or a boss charge.
   attacking(e) { return e.tell > 0 || e.strikeT > 0 || e.stepT > 0 || e.cutT > 0 || e.travel > 0 || e.plantT > 0; }
   cancelAttack(e) {
+    const was = e.tell > 0 || e.strikeT > 0;
     if (e.heavy) e.heavyCd = HEAVY_CD; // a cancelled heavy cools down like a landed one; its token frees on the next update
     if (e.blessRadius) { e.blessCd = 2.5; if (e.blessTarget !== undefined) e.blessTarget = null; }
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
@@ -1205,12 +1206,14 @@ export class Game {
     e.heavy = false; e.heavyKind = ''; e.strikeT = 0; e.stepT = 0; e.cutT = 0; e.glint = 0; e.glinted = false; e.delayed = false;
     if (e.crossT !== undefined) Object.assign(e, { crossT: 0, dartT: 0, blinkT: 0, recoilT: 0, bmT: 0, plantT: 0, parryT: 0, parried: false }); // castle-only movement states (crossover, dart, blink, recoil)
     if (e.type === 'sentinel' || e.type === 'acolyte') e.struck = false; // a cut-short saw or ring leaves no stale flag
+    if (was && e.type === 'sentinel' && e.wind <= 0 && !(e.rwT > 0)) this.sentinelRest(e, 0); // the last wind was spent: a cut-short attack still runs down
     if (e.type === 'gargoyle') { Object.assign(e, { rpT: 0, rp: null, afterRake: false }); this.landGargoyle(e); } // a cancelled glide or flight drops to the surface below
   }
   stagger(e) {
     const cancelled = this.attacking(e), castle = this.mode === 'castle' && e.type !== 'boss';
     this.cancelAttack(e); e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : castle ? STAGGER_STUN : 1;
+    if (e.type === 'sentinel' && e.recover > 0) e.recover += e.stun; // recovery counts down through the stun: the rundown starts after it
     e.riposte = castle; // the first sword hit during this stun is a riposte
     e.armor = e.stun + (e.type === 'boss' ? .6 : 1.2); // counts down with the stun, so 1.2 s (boss 0.6 s) of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
@@ -1281,7 +1284,8 @@ export class Game {
   groundEnemy(e, dt) {
     const p = this.player, near = Math.abs(p.x - e.x) < 560, calm = e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0);
     e.jumpCd = Math.max(0, e.jumpCd - dt); e.dropT = Math.max(0, e.dropT - dt);
-    if (e.plat && e.vy === 0) { if (this.platforms.includes(e.plat)) { e.x = clamp(e.x + (e.plat.dx || 0), 30, this.worldWidth - 40); e.y = e.plat.y; } else e.plat = null; }
+    // a sentinel holds its place in the world during a tell, so its drawn box stays on it
+    if (e.plat && e.vy === 0) { if (this.platforms.includes(e.plat)) { e.x = clamp(e.x + (e.type === 'sentinel' && e.tell > 0 ? 0 : e.plat.dx || 0), 30, this.worldWidth - 40); e.y = e.plat.y; } else e.plat = null; }
     if (calm && near && e.vy === 0) {
       if (e.plat && p.y - e.y > 60) { e.dropT = .4; e.plat = null; e.vy = 1; } // hero clearly below: step off through the platform
       else if (p.grounded && e.y - p.y > 50 && e.jumpCd <= 0) {
@@ -2178,6 +2182,16 @@ export class Game {
     const chance = e.elite ? ELITE_DELAY : this.floor >= 18 ? .5 : this.floor >= 15 ? .3 : 0;
     return e.nextDelay = !!chance && this.floor > BELFRY_FIRST[kind] && this.rand() < chance;
   }
+  // Where the bell's foot stands, for a hero at the snapshot s and a column at x. A grounded hero's own platform (a moving one only while the hero is level with it: the column then stays where it was drawn), the highest static platform below it otherwise; an airborne hero (a dash in the air) is judged by where it will come down: the highest static platform within 130 px above its feet that spans x.
+  bellSurface(x, s) {
+    let best = null;
+    for (const pl of this.platforms) {
+      if (!(x > pl.x && x < pl.x + pl.w)) continue;
+      const ok = s.grounded ? pl.y >= s.y - 6 && (!pl.moving || Math.abs(pl.y - s.y) <= 8) : !pl.moving && pl.y >= s.y - 130;
+      if (ok && (!best || pl.y < best.y)) best = pl;
+    }
+    return best;
+  }
   startBackgear(e) { // a gear spins out of its back: a box 10-80 px behind it, fixed at tell start (a wind is spent unless it is rewinding)
     const f = e.dir, [a, b, h] = SENTINEL.backBox;
     Object.assign(e, { tell: SENTINEL.backTell, move: 'backgear', cd: .4, vx: 0, warn: { kind: 'backgear', box: { x: Math.min(e.x - f * a, e.x - f * b), y: e.y - h, w: b - a, h } } });
@@ -2190,15 +2204,17 @@ export class Game {
     if (this.cowerStart(e, s, d, toward)) return true;
     // rundown over: it winds its own key for 1.0 s, facing front. A hero who gets behind it (and strikes the key) jams it; two of the last three rewinds raised a hero at the key, so then a backgear answers the first one.
     if (e.wind <= 0 && !(e.rwT > 0)) { e.rwT = SENTINEL.rewind; e.rwActed = false; e.keyTry = false; this.emit('brainStep', { enemy: 'sentinel', kind: 'rewind', x: e.x - e.dir * 12, y: e.y - e.h * .6 }); }
+    const yMover = e.plat?.move?.axis === 'y';
     if (e.rwT > 0) {
       if (behind) e.keyTry = true;
-      if (behind && !e.rwActed && e.keyLog.reduce((a, b) => a + b, 0) >= SENTINEL.keyHabit && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { e.rwActed = true; this.startBackgear(e); return true; }
+      if (behind && !yMover && !e.rwActed && e.keyLog.reduce((a, b) => a + b, 0) >= SENTINEL.keyHabit && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { e.rwActed = true; this.startBackgear(e); return true; }
       e.vx = 0;
       if ((e.rwT -= dt) <= 0) { e.rwT = 0; e.wind = e.jammed ? SENTINEL.jamWinds : SENTINEL.winds; e.jammed = false; this.keyDone(e, e.keyTry); e.keyTry = false; this.emit('brainStep', { enemy: 'sentinel', kind: 'rewind', done: true, winds: e.wind, x: e.x - e.dir * 12, y: e.y - e.h * .6 }); }
       return true;
     }
+    // a platform that rises and falls would lift the sentinel off its drawn box: no piston or backgear from it (an x mover is held still during the tell, see groundEnemy)
     // backgear (row 2): the hero is behind it within 90 px
-    if (behind && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { this.startBackgear(e); return true; } // the gear spins out of its back, toward the hero; the facing stays
+    if (behind && !yMover && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { this.startBackgear(e); return true; } // the gear spins out of its back, toward the hero; the facing stays
     // gearsaw (rows 1 and 3): the last wind goes on it when the hero is within 200 px; a spent dash draws it at the landing
     if (near && e.heavyCd <= 0 && !e.heavy && !e.plat?.moving) {
       const dashSpent = s.dash > 0 || s.dashCd > 0, pre = e.wind === 1 && d <= SENTINEL.sawNear;
@@ -2212,12 +2228,12 @@ export class Game {
       }
     }
     // piston: a hero in front inside the hold ring (kept for the last wind: that one is the saw's)
-    if (front && d <= SENTINEL.hold && near && e.cd <= 0 && e.wind >= 2 && this.canStrike(e, SENTINEL.pistonTell)) {
+    if (front && !yMover && d <= SENTINEL.hold && near && e.cd <= 0 && e.wind >= 2 && this.canStrike(e, SENTINEL.pistonTell)) {
       const f = e.dir, [a, b, h] = SENTINEL.pistonBox;
       Object.assign(e, { tell: SENTINEL.pistonTell, move: 'piston', cd: .4, vx: 0, warn: { kind: 'piston', box: { x: Math.min(e.x + f * a, e.x + f * b), y: e.y - h, w: b - a, h } } });
       e.wind--; return true;
     }
-    walk(d > SENTINEL.hold + 10 ? toward * e.speed : 0); // the wall steps in to the hold ring when the hero waits outside it
+    walk(d > SENTINEL.hold ? toward * e.speed : 0); // the wall steps in to the hold ring when the hero waits outside it
     return true;
   }
   // --- Chime Acolyte (#69 PR 4): the time-keeper. Rewinds its allies, rings the floor, tolls a bell on the hero's spot. ---
@@ -2266,7 +2282,7 @@ export class Game {
     if (e.heavyCd <= 0 && !e.heavy && d <= ACOLYTE.knellRange) {
       const dashSpent = s.dash > 0 || s.dashCd > 0, still = s.grounded && Math.abs(s.vx) < 25;
       if (still || dashSpent) {
-        const delay = this.belfryDelay(e, 'knell'), cx = clamp(dashSpent ? this.landing(s, HEAVY.acolyte.tell + (delay ? DELAY_EXTRA : 0)) : s.x, 40, W - 40), sp = this.surfaceAt(cx, s.y), sy = sp ? sp.y : FLOOR; // the surface under the bell: solid ground only
+        const delay = this.belfryDelay(e, 'knell'), cx = clamp(dashSpent ? this.landing(s, HEAVY.acolyte.tell + (delay ? DELAY_EXTRA : 0)) : s.x, 40, W - 40), sp = this.bellSurface(cx, s), sy = sp ? sp.y : FLOOR; // the surface under the bell, fixed at tell start
         e.dir = toward;
         if (this.startBrainHeavy(e, 'knell', { x: cx - ACOLYTE.knellW / 2, y: sy - ACOLYTE.knellHigh, w: ACOLYTE.knellW, h: ACOLYTE.knellHigh }, HEAVY.acolyte.tell, { column: { x: cx, y0: sy, y1: sy - ACOLYTE.knellHigh }, ...(delay ? { delay: true } : {}) })) { e.nextDelay = undefined; e.vx = 0; e.cd = Math.max(e.cd, 1.2); return true; }
       }
