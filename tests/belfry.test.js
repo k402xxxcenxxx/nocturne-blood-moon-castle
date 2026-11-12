@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Game, KEEPER_FLOOR, SLICE_FLOORS, BELFRY_FROM, CASTLE_PICKS, clamp, WARDEN_HP, ASSAULT_BURN, FLOOR, WARDEN_FLOOR, KING_FLOOR, KING_ARMOR, KING_HP, TITHE_RESTORE, LEDGE_TIME, DESCENT_RADIUS, POOL_GAIN as POOL_PAY, ARMOR_MAX, ARMOR_LOCK, BREAK_STUN, FRENZY_CHIP, POOL_GAIN, GLINT_LEAD, RELICS, STAGES, BUILD_POOL, BLOOD_MAX, SLICE_POOL, HEAVY_DAMAGE, HEAVY_CD, ATTACK_TOKENS, STAGGER_STUN, STARVED, APEX_REACT, APEX_PROFILES, apexProfile, CASTLE_HP_MUL, floorScale } from '../core.js';
-import { HOUR_PERIOD, HOUR_WARN, STILL, STILL_GRACE, ECHO_DELAY, ECHO_DAMAGE } from '../core.js';
+import { HOUR_PERIOD, HOUR_WARN, STILL, STILL_GRACE, ECHO_DELAY, ECHO_DAMAGE, sawRect } from '../core.js';
 import { SEEDS, advance, boss, castle, castleFloorsHash, enemy, evs, hit, hourTypes, hp, kingBrainArena, modesHash, ranged, toll, until, warden, wardenBrainArena } from './helpers.js';
 
 // --- Situational slow motion (#53): the events and the read-only threat query ---
@@ -57,6 +57,7 @@ test('belfry frame: castle floors 1-10 replay bit-for-bit (the golden is from ma
   assert.equal(castleFloorsHash(), '271f98ecc1bfcfce'); // re-recorded when the greatsword got its wind-up: the hash replays one heavy run
 });
 
+const BELFRY_TEACHING = [12, 13, 14, 15];
 test('belfry frame: floors 1-20 in order, rooms, required guards, portals, relic picks, the Vigils and the slice end', () => {
   const events = [], game = new Game(e => events.push(e), 42, 'castle'); game.start(); assert.equal(game.vigil, 1); game.setWeapon('spear'); assert.equal(game.descend(), true);
   const picks = [], vigils = [];
@@ -74,7 +75,7 @@ test('belfry frame: floors 1-20 in order, rooms, required guards, portals, relic
     }
     const belfry = f >= BELFRY_FROM; assert.equal(game.stage, belfry ? 2 : 0, `stage index on ${f}`);
     assert.equal(game.enemies.filter(e => e.required).length, 2, 'the last two are the required guards'); assert.equal(game.chests.length, 0, 'no chests');
-    const expected = f <= 3 ? 5 : f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6; assert.equal(game.enemies.length, expected + (f >= 8 && f !== 12 && f !== 13 ? 1 : 0), `floor ${f}: the plan plus the bonus elite from floor 8 (none on the Gargoyle and Pendulum teaching floors 12-13)`);
+    const expected = f <= 3 ? 5 : f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6; assert.equal(game.enemies.length, expected + (f >= 8 && !BELFRY_TEACHING.includes(f) ? 1 : 0), `floor ${f}: the plan plus the bonus elite from floor 8 (none on the Belfry teaching floors 12-15)`);
     assert.equal(game.portalOpen, false); clear(); assert.equal(game.portalOpen, true, `the portal opens on ${f}`);
     game.finishStage();
     if (CASTLE_PICKS.includes(f)) { assert.equal(game.state, 'upgrade', `a relic pick after ${f}`); picks.push(f); game.chooseRelic(game.choices[0].id); } else assert.equal(game.state, 'playing', `no pick after ${f}`);
@@ -97,7 +98,7 @@ test('belfry frame: a death on floors 11-20 returns to the second Vigil with the
 
 test('belfry frame: leaveKing returns to floor 20, the Belfry placeholder cast is built from existing enemies with brains, and Normal and Endless never see any of it', () => {
   const g = new Game(() => {}, 4, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.challengeKing = Game.prototype.challengeKing; g.state = 'sliceEnd'; assert.equal(g.challengeKing(), true); g.state = 'dead'; assert.equal(g.leaveKing(false), true); assert.equal(g.floor, KEEPER_FLOOR); assert.equal(g.state, 'sliceEnd');
-  const types = new Set(); for (let seed = 1; seed <= 12; seed++) for (const f of [11, 14, 17, 19]) { const b = new Game(() => {}, seed, 'castle'); b.start(); b.setWeapon('spear'); b.descend(); b.loadFloor(f); for (const e of b.enemies) types.add(e.type); const ranged = b.enemies.filter(e => e.type === 'priest' || e.type === 'mage').length; assert.ok(ranged <= 2, `at most 2 ranged on ${f}`); assert.ok(b.enemies.some(e => e.type === 'bat')); }
+  const types = new Set(); for (let seed = 1; seed <= 12; seed++) for (const f of [11, 17, 19]) { const b = new Game(() => {}, seed, 'castle'); b.start(); b.setWeapon('spear'); b.descend(); b.loadFloor(f); for (const e of b.enemies) types.add(e.type); const ranged = b.enemies.filter(e => e.type === 'priest' || e.type === 'mage').length; assert.ok(ranged <= 2, `at most 2 ranged on ${f}`); assert.ok(b.enemies.some(e => e.type === 'bat')); }
   assert.ok([...types].every(t => ['skeleton', 'shield', 'spear', 'knight', 'bat', 'priest', 'mage'].includes(t)), [...types].join());
   assert.equal(modesHash(), '51cf5fb532e28223', 'Normal and Endless replay bit-for-bit (golden from main before #69)');
 });
@@ -433,4 +434,207 @@ test('a stunned perched gargoyle is not knocked off its platform edge', () => {
 test('pendulum: a stunned pendulum drops a held tell whose contact would now land inside the hero i-frames', () => {
   const { game, player, e } = bel('pendulum', 800, 700, 13); e.bt0 = game.time - .7; Object.assign(e, { tell: .5, move: 'tick', dir: 1, warn: { kind: 'tick', box: { x: 710, y: e.y - 40, w: 140, h: 40 } }, cd: 99 });
   player.invulnerable = 1.5; e.stun = .3; advance(game, .05); assert.equal(e.tell, 0, 'cancelled'); assert.equal(e.warn, null);
+});
+
+// --- Clockwork Sentinel and Chime Acolyte (#69 PR 4) ---
+const pw = game => game.player.w / 2;
+
+test('floors 14-15: two Sentinels (the first gate guard is one), one Acolyte that is never a guard, a Gargoyle in slot 1 of floor 15, at most 2 of any new type, no elites', () => {
+  for (const seed of SEEDS) {
+    const mk = f => { const g = new Game(() => {}, seed, 'castle'); g.start(); g.setWeapon('spear'); g.descend(); g.loadFloor(f); return g; }, g14 = mk(14), g15 = mk(15);
+    for (const g of [g14, g15]) { assert.equal(g.enemies.length, 6); assert.ok(!g.enemies.some(e => e.elite), 'floors 11-16 have no elites'); assert.ok(g.enemies.filter(e => e.required).every(e => e.type !== 'gargoyle' && e.type !== 'acolyte'), 'never a guard'); for (const t of ['gargoyle', 'pendulum', 'sentinel']) assert.ok(g.enemies.filter(e => e.type === t).length <= 2, t); }
+    assert.equal(g14.enemies.filter(e => e.type === 'sentinel').length, 2); assert.equal(g14.enemies[4].type, 'sentinel'); assert.ok(g14.enemies[4].required, 'the first gate guard');
+    assert.ok(g14.enemies.every(e => ['sentinel', 'gargoyle', 'pendulum', 'skeleton', 'spear', 'bat'].includes(e.type)));
+    assert.equal(g15.enemies.filter(e => e.type === 'acolyte').length, 1); assert.equal(g15.enemies[1].type, 'gargoyle');
+    assert.ok(g15.enemies.every(e => ['acolyte', 'gargoyle', 'pendulum', 'sentinel', 'skeleton', 'shield', 'spear', 'knight'].includes(e.type)));
+    for (const e of [...g14.enemies, ...g15.enemies].filter(e => e.type === 'gargoyle')) assert.ok(e.plat && !e.plat.moving, 'perched on a static platform');
+    const s = g14.enemies.find(e => e.type === 'sentinel'), a = g15.enemies.find(e => e.type === 'acolyte');
+    assert.equal(s.wind, 3); assert.equal(s.maxHp, Math.round((80 + 4 * 12) * 5.3)); assert.equal(s.maxPoise, 90); assert.equal(s.speed, 50); assert.equal(a.maxHp, Math.round((48 + 4 * 12) * 5.3)); assert.equal(a.maxPoise, 42); assert.equal(a.speed, 65);
+  }
+});
+
+test('sentinel wound key: while a wind remains it never flinches, frontal hits deal no posture, hits from behind do; with 0 winds it flinches like anyone', () => {
+  const { game, events, e } = bel('sentinel', 600, 700, 14); // facing left, the hero on its left
+  game.damageEnemy(e, 10, 1, false, false, false, 17); assert.equal(e.poise, 90, 'frontal: the gears take it'); assert.equal(e.stun, 0); assert.equal(e.vx, 0); assert.equal(evs(events, 'gearClink').length, 1);
+  game.damageEnemy(e, 10, -1, false, false, false, 17); assert.equal(e.poise, 73, 'from behind: normal posture'); assert.equal(e.stun, 0, 'still no flinch'); assert.equal(e.vx, 0, 'no knockback');
+  const ec = bel('sentinel', 600, 700, 14); ec.game.damageEnemy(ec.e, 10, 1, false, false, true, 17, true); assert.equal(ec.e.stun, 0, 'not even an Eclipse flinches it');
+  e.wind = 0; game.damageEnemy(e, 10, 1, false, false, false, 17); assert.equal(e.poise, 56, 'no wind: frontal posture lands'); assert.ok(e.stun > 0, 'and it flinches'); assert.equal(evs(events, 'gearClink').length, 1);
+});
+
+test('sentinel piston: a 0.5 s tell, a box 10-100 px x 70 in front fixed at tell start, one wind spent, a punishable recovery; both box edges are exact', () => {
+  const run = (dx, nearEdge) => {
+    const { game, player, events, e } = bel('sentinel', 610, 700, 14); e.cd = 0;
+    until(game, () => e.tell > 0, 1); assert.equal(e.move, 'piston', 'starts'); assert.ok(Math.abs(e.tell - .5) < .02); assert.equal(e.wind, 2); assert.equal(e.heavy, false);
+    const b = e.warn.box; assert.deepEqual([b.x, b.y, b.w, b.h], [600, FLOOR - 70, 90, 70]);
+    assert.ok(evs(events, 'enemyTell').some(t => t.enemy === 'sentinel' && t.kind === 'piston'));
+    player.x = nearEdge ? e.x - 10 + pw(game) + dx : e.x - 100 - pw(game) + dx; advance(game, e.tell - .06); assert.equal(evs(events, 'hurt').length, 0, 'nothing before the contact');
+    advance(game, .1); return { hurts: evs(events, 'hurt').length, e };
+  };
+  assert.equal(run(.5, false).hurts, 1, 'far edge: hit'); assert.equal(run(-.5, false).hurts, 0, 'far edge: just out');
+  assert.equal(run(-.5, true).hurts, 1, 'near edge: hit'); assert.equal(run(.5, true).hurts, 0, 'near edge: just out');
+  const r = run(.5, false); assert.ok(r.e.recover > 0 && r.e.punishable, 'a punishable recovery');
+  const jump = bel('sentinel', 610, 700, 14); jump.e.cd = 0; until(jump.game, () => jump.e.tell > 0, 1); advance(jump.game, jump.e.tell - .06); Object.assign(jump.player, { y: FLOOR - 75, x: 650, vy: 0 }); advance(jump.game, .1); assert.equal(evs(jump.events, 'hurt').length, 0, 'a hero 75 px up clears the 70 px box'); assert.ok(jump.e.recover > 0, 'the contact happened');
+});
+
+test('sentinel rundown, rewind and jam: the last wind ends in a 1.6 s punishable slump (x2 posture, +2 blood); then a 1.0 s rewind; a sword hit on the key from behind jams it (1.5 s stun, riposte, next rewind only 2 winds)', () => {
+  const { game, player, events, e } = bel('sentinel', 610, 700, 14); e.cd = 0; e.wind = 1; player.invulnerable = 0;
+  until(game, () => e.heavy, 1); assert.equal(e.heavyKind, 'gearsaw', 'the last wind goes on the saw (row 1)'); assert.equal(e.wind, 0); player.x = 100; // out of the path
+  until(game, () => e.recover > 1.5, 3); assert.ok(Math.abs(e.recover - 1.6) < .03 && e.punishable, 'rundown'); assert.ok(evs(events, 'brainStep').some(b => b.enemy === 'sentinel' && b.kind === 'rundown'));
+  const p0 = e.poise; game.damageEnemy(e, 5, 1, false, false, false, 17); assert.equal(p0 - e.poise, 34, 'posture x2 in the slump'); assert.equal(e.stun, 0, 'no flinch in recovery');
+  const b0 = player.blood; Object.assign(player, { x: e.x - 60, dir: 1 }); game.attack(); advance(game, .35); assert.ok(player.blood - b0 >= 2, 'a punish pays +2 blood');
+  until(game, () => e.rwT > 0, 3); assert.equal(e.wind, 0); assert.ok(evs(events, 'brainStep').some(b => b.enemy === 'sentinel' && b.kind === 'rewind'));
+  advance(game, .5); assert.equal(e.wind, 0, 'still winding'); game.damageEnemy(e, 5, 1, false, false, false, 5); assert.equal(e.rwT > 0, true, 'a frontal hit does not jam it');
+  game.damageEnemy(e, 5, -1, false, false, false, 5); // from behind
+  assert.ok(e.stun >= 1.4 && e.riposte, 'jammed: a 1.5 s stun with the riposte armed'); assert.equal(e.rwT, 0); assert.ok(evs(events, 'brainStep').some(b => b.kind === 'jam'));
+  until(game, () => e.wind > 0, 5); assert.equal(e.wind, 2, 'the next rewind gives only 2 winds');
+  e.wind = 0; until(game, () => e.wind > 0, 4); assert.equal(e.wind, 3, 'unjammed: 3 again');
+});
+
+test('sentinel key habit: a hero behind it during a rewind draws a backgear only after 2 of the last 3 rewinds went for the key, and the backgear tell cannot be jammed', () => {
+  const mk = () => { const t = bel('sentinel', 760, 700, 14); Object.assign(t.e, { wind: 0, cd: 0 }); return t; }; // the hero 60 px behind the left-facing sentinel
+  const plain = mk(); advance(plain.game, .5); assert.ok(plain.e.rwT > 0 && plain.e.move === '', 'no habit: it only winds');
+  const habit = mk(); habit.e.keyLog = [1, 0, 1]; until(habit.game, () => habit.e.tell > 0, 1); assert.equal(habit.e.move, 'backgear'); assert.equal(habit.e.wind, 0, 'a rewinding sentinel spends no wind');
+  const w = habit.e.warn.box; assert.deepEqual([w.x, w.w, w.h], [710, 70, 70], 'behind it: 10-80 px');
+  const stun0 = habit.e.stun; habit.game.damageEnemy(habit.e, 5, -1, false, false, false, 5); assert.equal(habit.e.stun, stun0, 'the tell has armor: no jam'); assert.equal(habit.e.rwT > 0, true);
+  habit.e.cd = 99; advance(habit.game, 2.5); assert.equal(habit.e.wind, 3, 'the rewind resumes after the backgear and completes');
+});
+
+test('sentinel backgear (row 2): a hero behind it within 90 px draws a 0.5 s box behind it; its edge is exact and a hero in front is safe', () => {
+  const run = (dx, front) => {
+    const { game, player, events, e } = bel('sentinel', 760, 700, 14); e.cd = 0;
+    until(game, () => e.tell > 0, 1); assert.equal(e.move, 'backgear'); assert.equal(e.wind, 2);
+    player.x = front ? 650 : e.x + 80 + pw(game) + dx; advance(game, e.tell + .05); return evs(events, 'hurt').length;
+  };
+  assert.equal(run(-.5, false), 1, 'inside 80'); assert.equal(run(.5, false), 0, 'beyond 80'); assert.equal(run(0, true), 0, 'in front of it');
+});
+
+test('sentinel gearsaw: a 0.9 s tell with a glint 0.4 s before contact, a saw 44 x 44 rolls the whole 200 px box over 0.6 s and hits once for 100; a jump clears it; the edges are exact', () => {
+  const start = (floor = 14) => { const t = bel('sentinel', 560, 700, floor); t.e.cd = 0; t.e.wind = 1; until(t.game, () => t.e.heavy, 1); return t; };
+  const t = start(); const { game, e, events } = t; assert.equal(e.heavyKind, 'gearsaw'); assert.ok(Math.abs(e.tell - .9) < .02); assert.equal(e.delayed, false);
+  const b = e.warn.box; assert.deepEqual([b.x, b.w, b.h], [490, 200, 44], 'the drawn path: 10-210 px in front, 44 tall'); assert.equal(e.warn.dir, -1);
+  advance(game, .45); assert.equal(evs(events, 'enemyGlint').length, 0); advance(game, .1); assert.equal(evs(events, 'enemyGlint').length, 1, 'glint 0.4 s before contact'); advance(game, .4); assert.ok(e.strikeT > 0, 'rolling');
+  for (let k = 0; k <= 1; k += .25) { const r = sawRect(e.warn, k); assert.ok(r.x >= b.x - 1e-9 && r.x + r.w <= b.x + b.w + 1e-9 && r.w === 44, 'inside the box'); }
+  assert.deepEqual([sawRect(e.warn, 0).x, sawRect(e.warn, 1).x], [646, 490], 'starts at the sentinel, ends 200 px out');
+  const run = (x, y = FLOOR) => { const s = start(); Object.assign(s.player, { x, invulnerable: 0 }); for (let i = 0; i < 190; i++) { if (y !== FLOOR) Object.assign(s.player, { y, vy: 0 }); s.game.update(1 / 120, {}); } return evs(s.events, 'hurt'); }; // a pinned y stands for a hero held in the air
+  const far = run(490 - pw(t.game) + .5), farOut = run(490 - pw(t.game) - .5), near = run(700 - 10 + pw(t.game) - .5);
+  assert.equal(far.length, 1, 'far edge hit'); assert.equal(far[0].heavy, true); assert.equal(far[0].amount, 100); assert.equal(farOut.length, 0, 'far edge out'); assert.equal(near.length, 1, 'near edge (10 px) hit');
+  assert.equal(run(600, FLOOR - 47).length, 0, 'a hero 47 px up clears the 44 px saw'); assert.equal(run(600, FLOOR - 41).length, 1, 'but not 41 px');
+  const hit = start(); hit.player.x = 600; advance(hit.game, 1.7); assert.equal(evs(hit.events, 'hurt').length, 1, 'once'); assert.ok(hit.e.recover > 0 || hit.e.recover === 0); assert.equal(hit.e.struck, false, 'a saw leaves no stale struck flag');
+});
+
+test('sentinel gearsaw (row 3): a spent dash draws it at the landing even with winds to spare; it starts only once its earliest contact clears the hero i-frames; never from a moving platform, clipped to a static one', () => {
+  const dashed = bel('sentinel', 560, 700, 14); dashed.e.cd = 0; dashed.player.dashCd = 2; dashed.game.snaps = []; until(dashed.game, () => dashed.e.heavy, 1); assert.equal(dashed.e.heavyKind, 'gearsaw'); assert.equal(dashed.e.wind, 2, 'one spent');
+  const plain = bel('sentinel', 560, 700, 14); plain.e.cd = 99; plain.e.cd = 0; plain.e.wind = 3; plain.player.x = 520; advance(plain.game, .5); assert.ok(!plain.e.heavy, 'no dash, many winds: no saw');
+  const iframes = bel('sentinel', 560, 700, 14); Object.assign(iframes.e, { cd: 0, wind: 1 }); iframes.player.invulnerable = 1.2; advance(iframes.game, .2); assert.ok(!iframes.e.heavy, 'a contact 0.9 s away falls inside 1.2 s of i-frames');
+  advance(iframes.game, .3); assert.ok(iframes.e.heavy, 'it starts once the i-frames are under the 0.9 s tell');
+  const moving = bel('sentinel', 560, 700, 14); const pl = moving.game.makePlatform(500, FLOOR - 60, 400, 'x', 'y'); pl.moving = true; moving.game.platforms.push(pl); Object.assign(moving.e, { cd: 0, wind: 1, plat: pl, y: pl.y }); moving.player.y = pl.y; advance(moving.game, .4); assert.ok(!moving.e.heavy, 'the saw path is solid ground only');
+  const edge = bel('sentinel', 560, 700, 14); const st = edge.game.makePlatform(560, FLOOR - 60, 200, 'x', 'y'); edge.game.platforms.push(st); Object.assign(edge.e, { cd: 0, wind: 1, plat: st, y: st.y, x: 700 }); Object.assign(edge.player, { x: 600, y: st.y }); until(edge.game, () => edge.e.heavy, 1); assert.ok(edge.e.heavy && edge.e.warn.box.x >= 560 - 1e-9, 'the path ends at the platform edge');
+});
+
+test('Belfry heavies are delayed only after the floor they are first met on: the saw from floor 15, the bell from 16; 30% on 15-17, 50% from 18', () => {
+  const saw = (floor, r) => { const t = bel('sentinel', 560, 700, floor); t.game.rand = () => r; Object.assign(t.e, { cd: 0, wind: 1 }); until(t.game, () => t.e.heavy, 1); return t.e; };
+  assert.equal(saw(14, 0).delayed, false, 'never on the floor it is taught'); assert.equal(saw(15, .29).delayed, true); assert.equal(saw(15, .31).delayed, false); assert.equal(saw(17, .29).delayed, true); assert.equal(saw(18, .45).delayed, true); assert.equal(saw(18, .55).delayed, false);
+  assert.ok(Math.abs(saw(15, .1).tell - 1.3) < .02, '0.9 s + 0.4 s');
+  const bell = (floor, r) => { const t = bel('acolyte', 450, 700, floor); t.game.rand = () => r; t.e.cd = 0; until(t.game, () => t.e.heavy, 1.5); assert.equal(t.e.heavyKind, 'knell'); return t.e; };
+  assert.equal(bell(15, 0).delayed, false, 'the bell is taught on 15'); assert.equal(bell(16, .1).delayed, true); assert.equal(bell(16, .9).delayed, false); assert.ok(Math.abs(bell(16, .1).tell - 1.4) < .02);
+});
+
+const pin = (s, y, frames) => { for (let i = 0; i < frames; i++) { Object.assign(s.player, { y, vy: 0 }); s.game.update(1 / 120, {}); } }; // a pinned y stands for a hero held in the air
+const ally = (game, x, hp = 100) => { const a = enemy(game, x, { hp }); Object.assign(a, { cd: 99, maxHp: hp }); return a; };
+
+test('acolyte rewind: the ally that lost the most HP in the last 3 s is chanted over for 1.0 s without a token; it regains the loss, at most 40% of its max HP, and a cooldown of 8 s starts', () => {
+  const { game, events, e } = bel('acolyte', 450, 700, 15); e.heavyCd = 99; const a = ally(game, 780), b = ally(game, 760); advance(game, .3); const pz = a.poise;
+  game.damageEnemy(a, 70, 1, false, false, false, 30); game.damageEnemy(b, 20, 1, false, false, false, 0); const hpA = a.hp, hpB = b.hp; assert.ok(a.poise < pz, 'the ally lost posture too');
+  until(game, () => e.blessRadius > 0, 1); assert.equal(e.blessTarget, a, 'the biggest loss'); assert.ok(Math.abs(e.tell - 1) < .02); assert.equal(e.token, '', 'a support cast takes no token'); assert.ok(evs(events, 'brainStep').some(s => s.enemy === 'acolyte' && s.kind === 'chant'));
+  advance(game, 1.05); assert.equal(a.hp, hpA + 40, 'capped at 40% of its max HP'); assert.equal(a.poise, pz, 'and the posture it lost'); assert.equal(b.hp, hpB, 'the other ally is untouched'); assert.ok(e.blessCd > 7.5 && e.blessCd <= 8); const buff = evs(events, 'enemyBuff').find(x => x.rewind); assert.ok(buff && buff.hp === 40);
+  const small = bel('acolyte', 450, 700, 15); small.e.heavyCd = 99; const c = ally(small.game, 780); advance(small.game, .3); small.game.damageEnemy(c, 25, 1, false, false, false, 0); const hpC = c.hp; until(small.game, () => small.e.blessRadius > 0, 1); advance(small.game, 1.05); assert.equal(c.hp, hpC + 25, 'under the cap: the whole loss');
+  advance(small.game, .3); assert.equal(c.hp, 100, 'and the same loss is not rewound twice'); assert.equal(small.e.blessRadius, 0);
+});
+
+test('acolyte rewind: any hit on the acolyte cancels the chant (2.5 s cooldown), a thrown wave too; a dead ally is not raised and a stun is not ended', () => {
+  const mk = () => { const t = bel('acolyte', 450, 700, 15); t.e.heavyCd = 99; t.a = ally(t.game, 780); advance(t.game, .3); t.game.damageEnemy(t.a, 50, 1, false, false, false, 0); t.hp = t.a.hp; until(t.game, () => t.e.blessRadius > 0, 1); advance(t.game, .3); return t; };
+  for (const shot of [false, true]) { const t = mk(); t.game.damageEnemy(t.e, 1, 1, false, false, false, 0, false, 1, shot); assert.equal(t.e.blessRadius, 0, shot ? 'a thrown wave' : 'a sword hit'); assert.equal(t.e.tell, 0); assert.ok(t.e.blessCd > 2.3 && t.e.blessCd <= 2.5); advance(t.game, 1.2); assert.equal(t.a.hp, t.hp, 'nothing was rewound'); }
+  const dead = mk(); dead.a.hp = 0; advance(dead.game, .8); assert.equal(dead.a.hp, 0, 'never brings back a dead ally');
+  const stunned = mk(); Object.assign(stunned.a, { stun: 5, riposte: true }); advance(stunned.game, .8); assert.ok(stunned.a.hp > stunned.hp, 'it still heals'); assert.ok(stunned.a.stun > 4, 'the stun stands'); assert.equal(stunned.a.riposte, true, 'the riposte stays the hero\'s reward');
+});
+
+test('acolyte rewind shares its one-at-a-time slot with the priest\'s bless; its history ages only in enemy time (frozen in the Hour)', () => {
+  const { game, e } = bel('acolyte', 450, 700, 15); e.heavyCd = 99; const a = ally(game, 780), priest = enemy(game, 800, { type: 'priest' }); Object.assign(priest, { cd: 99, tell: .8, blessRadius: 250, blessTarget: a });
+  advance(game, .3); game.damageEnemy(a, 50, 1, false, false, false, 0); priest.tell = .8; priest.blessCd = 9; advance(game, .3); assert.equal(e.blessRadius, 0, 'the priest is casting');
+  const hist = a.hist.length; e.blessCd = 99; toll(game, 50); advance(game, STILL - .1); assert.equal(a.hist.length, hist, 'no sample in the Stopped Hour');
+});
+
+test('acolyte chime: a 0.6 s tell, a wave 30 px tall out to 160 px each way over 0.4 s hits once as its front passes; the edge is exact, a jump over the front clears it, a hero landing behind it is safe; then a punishable recovery and a 100 px backstep', () => {
+  const start = () => { const t = bel('acolyte', 640, 700, 15); t.e.cd = 0; until(t.game, () => t.e.tell > 0, 1); return t; };
+  const t = start(); assert.equal(t.e.move, 'chime'); assert.ok(Math.abs(t.e.tell - .6) < .02); assert.deepEqual([t.e.warn.box.x, t.e.warn.box.w, t.e.warn.box.h], [540, 320, 30]); assert.ok(evs(t.events, 'enemyTell').some(x => x.enemy === 'acolyte' && x.kind === 'chime'));
+  const run = (x, tick = 1.2) => { const s = start(); s.player.x = x; advance(s.game, tick); return s; };
+  assert.equal(evs(run(700 - 160 - pw(t.game) + .5).events, 'hurt').length, 1, 'far edge: hit'); assert.equal(evs(run(700 - 160 - pw(t.game) - .5).events, 'hurt').length, 0, 'far edge: out');
+  assert.equal(evs(run(700 + 160 + pw(t.game) - .5).events, 'hurt').length, 1, 'the ring goes both ways'); assert.equal(evs(run(700 + 160 + pw(t.game) + .5).events, 'hurt').length, 0);
+  const far = start(); far.player.x = 560; advance(far.game, far.e.tell + .1); assert.equal(evs(far.events, 'hurt').length, 0, 'the ring has not reached 140 px yet'); advance(far.game, .35); assert.equal(evs(far.events, 'hurt').length, 1, 'it arrives within 0.4 s, once'); advance(far.game, .5); assert.equal(evs(far.events, 'hurt').length, 1);
+  const j = start(); j.player.x = 600; pin(j, FLOOR - 36, 140); assert.equal(evs(j.events, 'hurt').length, 0, 'a hero 36 px up clears the 30 px ring'); const g = start(); g.player.x = 600; pin(g, FLOOR - 25, 140); assert.equal(evs(g.events, 'hurt').length, 1, 'but not 25 px');
+  const late = start(); late.player.x = 600; pin(late, FLOOR - 40, Math.round((late.e.tell + .32) * 120)); assert.ok(late.e.ringR > 114, 'the front has passed 100 px'); advance(late.game, .5); assert.equal(evs(late.events, 'hurt').length, 0, 'held above the front while it passed, then landing inside the wave: safe');
+  const e = far.e; assert.ok(e.x > 700 + 90 && e.recover > 0 && e.punishable, `backstep away from the hero: x ${e.x}`); assert.ok(evs(far.events, 'brainStep').some(s => s.enemy === 'acolyte' && s.kind === 'backstep'));
+  const iframes = bel('acolyte', 640, 700, 15); iframes.e.cd = 0; iframes.player.invulnerable = .9; advance(iframes.game, .2); assert.notEqual(iframes.e.move, 'chime', 'its earliest contact (0.6 s) falls inside 0.9 s of i-frames'); advance(iframes.game, .1); assert.equal(iframes.e.heavy, true, 'the 1.0 s bell clears them: the hero stands still');
+});
+
+test('acolyte knell: a hero standing still draws a 1.0 s bell column 60 px wide, 220 tall, fixed at the tell start; walk out and it hits nothing, stay and it hits once for 100; the edges are exact', () => {
+  const start = (floor = 15) => { const t = bel('acolyte', 450, 700, floor); t.e.cd = 0; until(t.game, () => t.e.heavy, 1.5); return t; };
+  const t = start(); const { e, events, game } = t; assert.equal(e.heavyKind, 'knell'); assert.ok(Math.abs(e.tell - 1) < .02); const b = e.warn.box; assert.deepEqual([b.x, b.w, b.y, b.h], [420, 60, FLOOR - 220, 220]);
+  advance(game, .5); assert.equal(evs(events, 'enemyGlint').length, 0); advance(game, .15); assert.equal(evs(events, 'enemyGlint').length, 1, 'glint 0.4 s before contact'); assert.deepEqual(e.warn.box, b, 'fixed');
+  const run = (x, y = FLOOR) => { const s = start(); s.player.x = x; if (y !== FLOOR) pin(s, y, 160); else advance(s.game, 1.3); return evs(s.events, 'hurt'); };
+  assert.equal(run(450).length, 1); assert.equal(run(450)[0].amount, 100); assert.equal(run(480 + pw(game) - .5).length, 1, 'right edge'); assert.equal(run(480 + pw(game) + .5).length, 0); assert.equal(run(420 - pw(game) + .5).length, 1, 'left edge'); assert.equal(run(420 - pw(game) - .5).length, 0, 'walk out');
+  assert.equal(run(450, FLOOR - 225).length, 0, 'above 220 px'); assert.equal(run(450, FLOOR - 210).length, 1);
+  const w = start(); advance(w.game, 1.05); assert.ok(w.e.recover > .9 && w.e.punishable, 'kneeling 1.0 s');
+  const dashed = bel('acolyte', 450, 700, 15); Object.assign(dashed.player, { dash: .2, dashCd: 2, dir: 1 }); dashed.game.snaps = []; dashed.e.cd = 0; until(dashed.game, () => dashed.e.heavy, 1.5); assert.ok(dashed.e.warn.box.x + 30 > 450 + 100, 'a spent dash: aimed at the landing, not at the hero');
+  const raised = bel('acolyte', 450, 700, 15); const pl = raised.game.makePlatform(380, FLOOR - 100, 160, 'x', 'y'); raised.game.platforms.push(pl); Object.assign(raised.player, { x: 450, y: pl.y }); raised.e.cd = 0; until(raised.game, () => raised.e.heavy, 1.5); assert.equal(raised.e.warn.box.y, pl.y - 220, 'the column stands on the platform the hero stands on');
+  const moving = bel('acolyte', 450, 700, 15); const mp = moving.game.makePlatform(380, FLOOR - 100, 160, 'x', 'y'); mp.moving = true; moving.game.platforms.push(mp); Object.assign(moving.player, { x: 450, y: mp.y }); moving.e.cd = 0; until(moving.game, () => moving.e.heavy, 1.5); assert.equal(moving.e.warn.box.y, mp.y - 220, 'a hero level with a moving platform gets a column standing on its top at the tell (fixed in the world, as drawn)');
+});
+
+test('Stopped Hour: a sentinel\'s rewind, tell and contact wait; the resume grace pushes an imminent piston to 0.45 s; an awake hero can still jam the key in the Hour (the stun counts in enemy time)', () => {
+  const a = bel('sentinel', 610, 700, 14); Object.assign(a.e, { wind: 0, rwT: .8, cd: 99 }); toll(a.game, 50); const r0 = a.e.rwT; advance(a.game, STILL - .1); assert.ok(a.game.hour.still > 0 && r0 > 0 && a.e.rwT === r0, 'the rewind waits');
+  const b = bel('sentinel', 610, 700, 14); Object.assign(b.e, { tell: .1, move: 'piston', cd: 99, warn: { kind: 'piston', box: { x: 600, y: FLOOR - 70, w: 90, h: 70 } } }); toll(b.game, 50); while (b.game.hour.still > 0) b.game.update(1 / 120, {}); assert.ok(b.e.tell >= STILL_GRACE - 1 / 120 - 1e-9, `tell ${b.e.tell}`);
+  const c = bel('sentinel', 760, 700, 14); Object.assign(c.e, { wind: 0, rwT: .8, cd: 99 }); toll(c.game, 150); assert.equal(c.game.hour.awake, true); c.game.damageEnemy(c.e, 5, -1, false, false, false, 5); advance(c.game, STILL - .1); assert.ok(c.e.stun > 1.4 && c.e.riposte, 'jammed in the Hour, the stun still full');
+  const s = bel('sentinel', 560, 700, 14); Object.assign(s.e, { cd: 0, wind: 1 }); until(s.game, () => s.e.heavy, 1); s.player.x = 520; advance(s.game, s.e.tell + .15); assert.ok(s.e.strikeT > .1 && evs(s.events, 'hurt').length === 0, 'the saw is mid-roll, not yet at the hero'); toll(s.game, 50); advance(s.game, .1); const sk = s.e.strikeT; assert.ok(sk > 0 && s.game.hour.still > 0); advance(s.game, STILL - .3); assert.ok(s.game.hour.still > 0 && s.e.strikeT === sk, 'the saw stops where it is'); while (s.game.hour.still > 0) s.game.update(1 / 120, {}); advance(s.game, .1); assert.equal(evs(s.events, 'hurt').length, 0, 'nothing hurts in the grace'); assert.equal(s.e.struck, false, 'and the hit is not spent on it');
+  const h = bel('sentinel', 610, 700, 14); Object.assign(h.e, { tell: .5, move: 'piston', cd: 99, warn: { kind: 'piston', box: { x: 600, y: FLOOR - 70, w: 90, h: 70 } } }); h.game.freeze = .3; advance(h.game, .3); assert.ok(Math.abs(h.e.tell - .5) < 1e-9, 'hit-stop holds every tell');
+});
+
+test('sentinel: no tell starts whose contact falls inside the hero i-frames (piston 0.5 s, backgear 0.5 s)', () => {
+  const front = bel('sentinel', 610, 700, 14); front.e.cd = 0; front.player.invulnerable = .8; advance(front.game, .2); assert.equal(front.e.tell, 0, 'piston'); advance(front.game, .25); assert.equal(front.e.move, 'piston', 'once the i-frames are under 0.5 s');
+  const back = bel('sentinel', 760, 700, 14); back.e.cd = 0; back.player.invulnerable = .8; advance(back.game, .2); assert.equal(back.e.tell, 0, 'backgear');
+});
+
+// QA (#69 PR 4): regression tests for bugs found in the playtest. They fail until the engineer fixes them.
+test('QA knell: the bell column rises from the top of the platform the hero stands on, moving platforms included (not from the floor under it)', () => {
+  const c = bel('acolyte', 800, 600, 15); Object.assign(c.e, { cd: 0, blessCd: 99 });
+  const pl = c.game.makePlatform(700, FLOOR - 110, 200, 'x', 'y', 'x'); c.game.platforms.push(pl);
+  Object.assign(c.player, { y: pl.y, vy: 0, grounded: true, plat: pl });
+  until(c.game, () => c.e.tell > 0 && c.e.heavyKind === 'knell', 2);
+  assert.equal(c.e.warn.column.y0, pl.y, 'the column base is the platform top, not the floor (currently FLOOR)');
+});
+
+test('QA knell: a hero who rises through a dash onto a platform gets a column from that platform top, not from the floor under it', () => {
+  const c = bel('acolyte', 560, 400, 15); Object.assign(c.e, { cd: 0, blessCd: 99 });
+  const pl = c.game.makePlatform(700, FLOOR - 120, 200, 'x', 'y'); c.game.platforms.push(pl);
+  Object.assign(c.player, { x: 620, y: FLOOR - 70, vy: -300, grounded: false, dash: .3, dashCd: 1, dir: 1 });
+  until(c.game, () => c.e.warn?.column, 1);
+  assert.equal(c.e.warn.column.y0, pl.y, 'the column base is the platform top (currently FLOOR)');
+});
+
+test('QA piston: a sentinel on a moving platform stays on the spot its warning was drawn at during the 0.5 s tell (the box does not come off it)', () => {
+  const c = bel('sentinel', 705, 600, 14); c.e.cd = 0;
+  const pl = c.game.makePlatform(560, FLOOR - 110, 300, 'x', 'y', 'x'); c.game.platforms.push(pl);
+  Object.assign(c.e, { plat: pl, y: pl.y }); Object.assign(c.player, { y: pl.y, vy: 0, grounded: true, plat: pl });
+  until(c.game, () => c.e.tell > 0 && c.e.move === 'piston', 2);
+  const x0 = c.e.x; advance(c.game, .45);
+  assert.ok(Math.abs(c.e.x - x0) < 1, `the sentinel drifted ${(c.e.x - x0).toFixed(1)} px off its warned box`);
+});
+
+test('QA sentinel: a last wind spent on a gearsaw that a posture break cuts short still runs down (the 1.6 s rundown), it does not rewind at once', () => {
+  const c = bel('sentinel', 700, 600, 14); Object.assign(c.e, { cd: 0, wind: 1 });
+  until(c.game, () => c.e.heavy && c.e.heavyKind === 'gearsaw', 2);
+  assert.equal(c.e.wind, 0, 'the last wind is spent when the saw is wound');
+  const n = c.events.length; // the rundown cue fires in the same call that cuts the saw, so the slice starts before it
+  c.game.damageEnemy(c.e, 1, c.e.dir, false, false, false, 9999); // a posture break from behind cancels the saw
+  assert.ok(c.e.recover >= 1.6 + 1.4, 'the 1.6 s slump follows the 1.5 s stun'); advance(c.game, 3);
+  assert.ok(c.events.slice(n).some(ev => ev.type === 'brainStep' && ev.enemy === 'sentinel' && ev.kind === 'rundown'), 'a rundown after the cut-short saw');
 });

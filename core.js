@@ -101,7 +101,7 @@ const KING_MOVES = { // a 'string' is the second hit of a slash string: its bran
   raise: { tell: RAISE.tell, recover: RAISE.recover }, judgement: { tell: JUDGE.tell, recover: 0, heavy: true }, judgementB: { tell: JUDGE.gapB, recover: JUDGE.recover, heavy: true }, longNight: { tell: NIGHT.tell, recover: .6 },
   bloodMoon: { tell: MOON.tell, recover: MOON.recover, heavy: true }, crownGuard: { tell: CROWN.tell, recover: 0 }, guardHold: { tell: CROWN.hold, recover: CROWN.recover },
 };
-const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14, gargoyle: 12, pendulum: 12 }; // castle light-attack damage at tier 0, +2 per tier
+const CASTLE_LIGHT = { skeleton: 10, bat: 8, shield: 12, spear: 12, knight: 14, gargoyle: 12, pendulum: 12, sentinel: 14, acolyte: 10 }; // castle light-attack damage at tier 0, +2 per tier
 // Castle heavy attacks (#47): tell and recovery in seconds, base heavy chance, and extra chances for visible hero states (highest applies).
 const HEAVY = {
   skeleton: { kind: 'cleave', tell: .85, recover: 1, base: .1, reads: { whiff: .8, dashSpent: .5 } },
@@ -111,19 +111,21 @@ const HEAVY = {
   knight: { kind: 'greatswing', tell: 1, recover: 1.2, base: .25, reads: { frenzy: .65, whiff: .5, dashSpent: .4 } },
   priest: { kind: 'rite', tell: 1, recover: 1, base: .25, reads: { dashSpent: .5, frenzy: .5 } },
   mage: { kind: 'ray', tell: 1, recover: 1.1, base: .3, reads: { dashSpent: .55, frenzy: .5 } },
-  gargoyle: { kind: 'plummet', tell: .95, recover: 1.1, base: 0, reads: {} }, pendulum: { kind: 'swingout', tell: 1, recover: 1.1, base: 0, reads: {} }, // Belfry types (#69): only their brains start these, so the roll fields stay 0
+  gargoyle: { kind: 'plummet', tell: .95, recover: 1.1, base: 0, reads: {} }, pendulum: { kind: 'swingout', tell: 1, recover: 1.1, base: 0, reads: {} }, sentinel: { kind: 'gearsaw', tell: .9, recover: 1, base: 0, reads: {} }, acolyte: { kind: 'knell', tell: 1, recover: 1, base: 0, reads: {} }, // Belfry types (#69): only their brains start these, so the roll fields stay 0
 };
 export const HEAVY_CD = 3, HEAVY_WHIFF = .4, LATE_READS_FLOOR = 5; // floors 1-4 (the bat lesson included) keep the base reads
 // Castle combat systems (#50 PR 1). Posture, flinch budget, attack tokens, glint and delayed heavies; all numbers are playtest starting points.
 export const ATTACK_TOKENS = 2, TOKEN_GAP = .3, STARVED = 2; // tokens for the whole field (at most 1 heavy), retake gap, s of denial after which an enemy outranks the rest
 export const STEADY = .5, POISE_REGEN_DELAY = 1.5, POISE_REGEN = .25, STAGGER_STUN = 1.5, RIPOSTE_MUL = 1.5, RIPOSTE_BLOOD = 5, GLINT_LEAD = .4, DELAY_EXTRA = .4;
+// The gearsaw's rect `k` (0..1) of the way through its roll: it starts at the end of the drawn box nearest the sentinel and ends at the far end, so every rect lies inside the box. Pure: the bot reads it too.
+export const sawRect = (w, k) => { const b = w.box, run = b.w - w.sawW; return { x: w.dir > 0 ? b.x + run * k : b.x + run * (1 - k), y: b.y, w: w.sawW, h: b.h }; };
 export const SCREEN_LEFT = 320, SCREEN_RIGHT = 560; // a tell may only start within this many px left / right of the hero
-const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40, gargoyle: 50, pendulum: 60 };
-const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5, pendulum: .5 }; // castle light-attack recovery (standing still, punishable); the priest and mage bolts have none
+const CASTLE_POISE = { skeleton: 60, bat: 30, shield: 70, spear: 55, knight: 140, priest: 45, mage: 40, gargoyle: 50, pendulum: 60, sentinel: 90, acolyte: 42 };
+const LIGHT_RECOVER = { skeleton: .45, shield: .6, bat: .5, spear: .72, knight: .5, pendulum: .5, sentinel: .45 }; // castle light-attack recovery (standing still, punishable); the priest and mage bolts have none
 const LIGHT_CD = { skeleton: 1 }; // castle light-attack cooldown overrides (s); others keep the stage-based cooldown
-const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt', gargoyle: 'rake', pendulum: 'tick' };
-const TRIGGER = { bat: 170, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460, gargoyle: 240, pendulum: 155 }; // distance at which a ready enemy asks for a token
-const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35, gargoyle: .15, pendulum: .3 }; // castle re-face delay outside attacks
+const LIGHT_KIND = { skeleton: 'slash', shield: 'bash', bat: 'swoop', spear: 'thrust', knight: 'slash', priest: 'bolt', mage: 'bolt', gargoyle: 'rake', pendulum: 'tick', sentinel: 'piston', acolyte: 'chime' };
+const TRIGGER = { bat: 170, skeleton: 80, knight: 60, shield: 70, spear: 193, priest: 460, mage: 460, gargoyle: 240, pendulum: 155, sentinel: 200, acolyte: 340 }; // distance at which a ready enemy asks for a token
+const REFACE = { bat: .15, skeleton: .15, spear: .2, shield: .25, priest: .2, mage: .2, knight: .35, gargoyle: .15, pendulum: .3, sentinel: .35, acolyte: .2 }; // castle re-face delay outside attacks
 // Castle kits of the spearman, bat and knight (#50 PR 2). Seconds and px; playtest starting points.
 const SWEEP_RANGE = 80, SWEEP_TELL = .5, SWEEP_RECOVER = .5, SWEEP_BACKOFF = 120; // spearman: a hero inside 80 draws the low sweep; without a token it backs off to 120
 const SWOOP_TELL = .45, BAT_RING = 150, BAT_DART = .25, BAT_DART_FROM = 30, BAT_DART_STOP = 10; // bat: hovers 150-170 px out without a token; a swoop from farther than 30 px first darts to 10 px in 0.25 s (tell 0.7 s)
@@ -146,7 +148,7 @@ export const apexProfile = floor => floor > ENRAGED_FLOOR ? APEX_PROFILES.enrage
 export const CASTLE_HP_MUL = 5.3; // user decision 2026-10-31: every other castle regular (shield, spear, bat, knight, priest, mage) has 5.3x its castle base health; elites keep their x1.5 on top; bosses are unchanged
 // Brains (#62 PR 1): a castle type with a BRAINS entry decides from snap() (the hero 0.12 s ago) and answers the hero's visible state. Playtest starting points.
 const PAIR = { gap: [.5, .8], cd: 4, cdLate: 3, calm: 1, from: 3, react: .3 }; // pair fairness: the second contact lands 0.5-0.8 s after the first; none within 1.0 s of a hurt hero; cooldown 4 s (3 s on floors 8-9)
-const JOINS = { shield: 3, spear: 4, bat: 5, priest: 6, knight: 8, mage: 7, gargoyle: 12, pendulum: 13 };
+const JOINS = { shield: 3, spear: 4, bat: 5, priest: 6, knight: 8, mage: 7, gargoyle: 12, pendulum: 13, sentinel: 14, acolyte: 15 };
 const BLOOD_CURSE = 3;
 const PRIEST = { recoilRange: 160 }, MAGE = { blinkRange: 160 }; // a type joins pairs from the floor after its intro
 const SHIELD = { rimTell: .45, rimRecover: .6, rimReach: 80, rimBox: [10, 70], rimCd: 1, braceT: .9, braceCd: 1.2, near: 80, gap: 60, speed: 1.3, call: .35, push: 2.2, pushSpeed: 1.5, bash: .55, bashReach: 70, rushEvery: 3 };
@@ -158,9 +160,15 @@ const KNIGHT = { parryT: .35, parryCd: 3, parryRecover: .5, parryPoise: 70, parr
 const GARGOYLE = { look: 420, stoneT: .15, wakeT: .25, near: 140, flyT: .8, flyFar: 450, stoneMul: .2, stonePoise: .25, clink: .15, shell: .8, rakeTell: .55, rakeMax: 260, rakeOver: 20, rakeGlide: .18, rakeBody: 40, rakeRecover: .5, rakeCd: 1, perchCd: 1.5, plummetNear: 120, ring: 60, cdSpawn: 1 };
 // Pendulum Blade: a beat clock (BEAT s) on the enemy; every contact lands on a tick. tick: low sweep, tock: high follow-up on a jumper, swingout: the heavy front sweep (a hero inside `inner` or beyond `outer` px is safe).
 const PENDULUM = { beat: 1.2, tickTell: [.45, .65], swingTell: [.85, 1.1], tickBox: [10, 150, 40], tockTell: .6, tockBox: [10, 150, 60, 140], tockReach: 150, tickReach: 155, recover: .5, hold: 50, holdMin: 170, back: 1.2, pivot: 130, inner: 70, outer: 200, swingHigh: 150, backDist: 60, backT: .25, backCd: 1.5, delayFrom: 15, walkIn: 60 };
-const BELFRY_TEACH = [12, 13]; // teaching floors of the new Belfry types: no elites (the final table has none on floors 11-16)
+// Clockwork Sentinel (#69 PR 4): a wound key holds 3 winds; while any remain it never flinches and frontal hits deal no posture. Each attack spends one; at 0 it slumps (rundown), winds itself (rewind) and a sword hit on the key from behind jams it.
+// piston: light box in front, backgear: light box behind it, gearsaw: the heavy: a saw (sawW x sawH) rolls along the box over `roll` s.
+const SENTINEL = { winds: 3, jamWinds: 2, hold: 110, pistonTell: .5, pistonBox: [10, 100, 70], backTell: .5, backBox: [10, 80, 70], backRecover: .5, backReach: 90, rundown: 1.6, rewind: 1, sawFrom: 10, sawLen: 200, sawW: 44, sawH: 44, roll: .6, sawNear: 200, sawMin: 60, keyMemory: 3, keyHabit: 2 };
+// Chime Acolyte: rewind (support chant: restores what an ally lost in the last `back` s, at most `cap` of its max HP), chime (a ring out to `reach` px over `ring` s, `h` tall, then a backstep), knell (the heavy: a bell column `w` wide, `high` tall at the hero's x).
+const ACOLYTE = { chant: 1, range: 360, back: 3, cap: .4, minLoss: 6, cd: 8, sample: .25, samples: 13, chimeTell: .6, reach: 160, ring: .4, h: 30, chimeRecover: .5, near: 140, step: 100, stepT: .25, knellW: 60, knellHigh: 220, band: [180, 320], knellRange: 340, ringW: 20 };
+const BELFRY_FIRST = { gearsaw: 14, knell: 15 }; // the floor each new Belfry heavy is first met on: its delayed variant (30% from floor 15, 50% from floor 18, elites 50%) only appears on later floors
+const BELFRY_TEACH = [12, 13, 14, 15]; // teaching floors of the new Belfry types: no elites (the final table has none on floors 11-16)
 const COWER = { from: 5, range: 220, dist: 50, time: .35, window: .6 }; // a frenzy starting steps idle minions within 220 px back 50 px in 0.35 s, once per frenzy
-const BRAINS = { gargoyle: (g, e, dt) => g.gargoyleThink(e, dt), pendulum: (g, e, dt) => g.pendulumThink(e, dt), priest: (g, e, dt) => g.priestThink(e, dt), mage: (g, e, dt) => g.mageThink(e, dt), bat: (g, e, dt) => g.batThink(e, dt), knight: (g, e, dt) => g.knightThink(e, dt), skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
+const BRAINS = { sentinel: (g, e, dt) => g.sentinelThink(e, dt), acolyte: (g, e, dt) => g.acolyteThink(e, dt), gargoyle: (g, e, dt) => g.gargoyleThink(e, dt), pendulum: (g, e, dt) => g.pendulumThink(e, dt), priest: (g, e, dt) => g.priestThink(e, dt), mage: (g, e, dt) => g.mageThink(e, dt), bat: (g, e, dt) => g.batThink(e, dt), knight: (g, e, dt) => g.knightThink(e, dt), skeleton: (g, e, dt) => { g.apexThink(e, dt); return true; }, shield: (g, e, dt) => g.shieldThink(e, dt), spear: (g, e, dt) => g.spearThink(e, dt) }; // a brain returns true when it acted
 const PROVOKED_REACH = 150; // a provoked ring-holder may start a light tell from this far (the slash itself still only reaches 82)
 const HOLD_RING = { skeleton: 112, shield: 100, knight: 122 }; // without a token a melee enemy waits 30-50 px outside its probe range (ring width 20)
 const HEAVY_FIRST_FLOOR = { cleave: 1, rush: 2, dive: 4, lunge: 5, greatswing: 7, rite: 5, ray: 6 }; // a heavy is only delayed on floors after the player met it
@@ -293,7 +301,7 @@ export class Game {
       for (let i = list.length; --i > 0;) { const j = Math.floor(this.rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       return list;
     }
-    if (f === 12 || f === 13) return this.belfryPlan(f);
+    if (f >= 12 && f <= 15) return this.belfryPlan(f);
     const n = f >= 17 ? 7 : f >= BELFRY_FROM ? 6 : f >= 8 ? 7 : 6, base = f >= 8 ? ['skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(n).fill('');
     for (const i of f === 4 ? [1, 3] : [1]) plan[i] = 'bat';
     if (f === 7) plan[2] = 'knight';
@@ -308,11 +316,15 @@ export class Game {
     return plan;
   }
   // Belfry rows 12-13 (#69 PR 3): floor 12 teaches the Gargoyle (slots 1 and 3, perched, never guards), floor 13 two Pendulum Blades (at most one a gate guard) and a Gargoyle in slot 1; the rest roll from the Gate's known cast.
+  // Floor 14 (#69 PR 4): two Clockwork Sentinels (the first gate guard is one), the rest from Gargoyle, Pendulum, skeleton, spearman, bat. Floor 15: one Chime Acolyte (never a guard), slot 1 a Gargoyle, the rest from Pendulum, Sentinel, skeleton, shield bearer, spearman, knight.
+  // At most 2 of any one new type, and a Gargoyle never takes a gate slot (the last two).
   belfryPlan(f) {
-    const pool = f === 12 ? ['skeleton', 'shield', 'spear', 'bat'] : ['skeleton', 'shield', 'spear'], plan = Array(6).fill(''), pick = list => list[Math.floor(this.rand() * list.length)], open = () => plan.map((t, i) => t ? -1 : i).filter(i => i >= 0);
-    plan[1] = 'gargoyle'; if (f === 12) plan[3] = 'gargoyle';
+    const pool = f === 12 ? ['skeleton', 'shield', 'spear', 'bat'] : f === 14 ? ['gargoyle', 'pendulum', 'skeleton', 'spear', 'bat'] : f === 15 ? ['pendulum', 'sentinel', 'skeleton', 'shield', 'spear', 'knight'] : ['skeleton', 'shield', 'spear'], plan = Array(6).fill(''), pick = list => list[Math.floor(this.rand() * list.length)], open = () => plan.map((t, i) => t ? -1 : i).filter(i => i >= 0);
+    if (f !== 14) plan[1] = 'gargoyle'; if (f === 12) plan[3] = 'gargoyle';
     if (f === 13) { plan[pick(open().filter(i => i < 4))] = 'pendulum'; plan[pick(open())] = 'pendulum'; }
-    for (const i of open()) plan[i] = pick(pool);
+    if (f === 14) { plan[4] = 'sentinel'; plan[pick(open())] = 'sentinel'; }
+    if (f === 15) plan[pick(open().filter(i => i < 4))] = 'acolyte';
+    for (const i of open()) plan[i] = pick(pool.filter(t => !(['gargoyle', 'pendulum', 'sentinel'].includes(t) && plan.filter(x => x === t).length >= 2) && !(t === 'gargoyle' && i >= 4)));
     return plan;
   }
   loadFloor(n) {
@@ -522,12 +534,14 @@ export class Game {
     const maxPoise = (this.mode === 'castle' && CASTLE_POISE[type]) || { skeleton: 40, bat: 22, mage: 34, shield: 60, knight: 110, boss: 120, spear: 48, priest: 42 }[type];
     const boss = type === 'boss';
     const scale = this.mode === 'endless' ? floorScale(this.floor) : { hp: 1, damage: 1 }; // combined with the per-stage scaling by multiplication
-    const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'gargoyle' ? 50 : type === 'pendulum' ? 60 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
-    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : type === 'gargoyle' ? 90 : type === 'pendulum' ? 65 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
+    const hp = Math.round((boss ? 900 : (type === 'knight' ? 65 : type === 'shield' ? (this.mode === 'castle' ? 60 : 55) : type === 'spear' ? 53 : type === 'priest' ? 54 : type === 'gargoyle' ? 50 : type === 'pendulum' ? 60 : type === 'sentinel' ? 80 : type === 'acolyte' ? 48 : type === 'bat' ? 27 : this.mode === 'castle' ? 55 : 43) + stage * 12) * scale.hp);
+    this.enemies.push({ type, x, y: type === 'bat' ? FLOOR - 95 : FLOOR, baseY: FLOOR - 95, w: boss ? 64 : 27, h: boss ? 102 : type === 'bat' ? 28 : 58, vx: 0, dir: -1, hp, maxHp: hp, damage: (boss ? 22 : this.mode === 'castle' && CASTLE_LIGHT[type] ? CASTLE_LIGHT[type] + stage * 2 : 8 + stage * 2.5) * scale.damage, speed: boss ? 75 : type === 'bat' ? 115 : type === 'knight' ? 57 : type === 'shield' ? 50 : type === 'spear' ? 77 : type === 'priest' ? 67 : type === 'gargoyle' ? 90 : type === 'pendulum' ? 65 : type === 'sentinel' ? 50 : type === 'acolyte' ? 65 : 72, cd: 1 + this.rand(), tell: 0, flash: 0, stun: 0, guardBreak: 0, blessed: 0, blessCd: 0, blessRadius: 0, vault: false, vy: 0, plat: null, jumpCd: 0, dropT: 0, jumpVx: 0, required: false, turn: 0, reface: 0, phase: this.rand() * 6, action: 0, poise: maxPoise, maxPoise, punishable: false, armor: 0, bossPhase: 1, pause: 0, recover: 0, heavy: false, heavyKind: '', heavyCd: 0, rollT: 0, strikeT: 0, travel: 0, chargeN: 0, move: '', lastMove: '', warn: null, steady: 0, poiseHit: 0, token: '', wait: 0, stepT: 0, cutT: 0, glint: 0, glinted: false, delayed: false, riposte: false, blocks: [], counterT: 0, stepRoll: 0, provoke: 0, elite: false, affix: null, seen: false, ward: 0, wardT: 0, burn: 0, burnDmg: 0, bleed: 0, bleedStacks: 0, dotT: 0, chill: 0, frozen: 0, freezeImmune: 0, frostMeter: 0, shock: 0 });
     const e = this.enemies.at(-1);
     if (this.mode === 'castle') Object.assign(e, { crossT: 0, crossCd: 0, dartT: 0, blinkT: 0, blinkCd: 0, recoilT: 0, recoilCd: 0, bounced: false, twist: '', bsT: 0, bsV: 0, bsCd: 0, gT: 0, gCd: 0, gHit: 0, mixT: 0, follows: 0, bmT: 0, bmV: 0, bmKind: '', bmThen: '', plantT: 0, plantCd: 0, plantHit: false, pbCd: 0, vaultCd: 0, spinCd: 0, jabCd: 0, parryT: 0, parryCd: 0, chargeCd: 0, parried: false, aim: null, blessTarget: null, upT: 0, fluttCd: 0, braceT: 0, braceCd: 0, callT: 0, pushT: 0, interposing: false, interposeFor: null, cowered: false }); // bat crossover and dart timers; mage blink, priest recoil, elite twist state
     if (type === 'gargoyle') Object.assign(e, { stone: false, look: 0, away: 0, rpT: 0, rp: null, rpCd: 0, afterRake: false }); // Belfry state lives only on its own types, so every other enemy keeps its shape
     if (type === 'pendulum') Object.assign(e, { bt0: e.phase, backAt: 0, beats: [] });
+    if (type === 'sentinel') Object.assign(e, { wind: SENTINEL.winds, rwT: 0, jammed: false, keyTry: false, keyLog: [], rwActed: false, nextDelay: undefined });
+    if (type === 'acolyte') Object.assign(e, { nextDelay: undefined });
     if (this.mode === 'castle' && type === 'skeleton' && this.apex) { // apex stats (round 2): tougher, harder-hitting, faster
       const prof = apexProfile(this.floor);
       e.hp = e.maxHp = Math.round(e.hp * prof.hp); e.damage *= prof.dmg; e.poise = e.maxPoise = Math.round(e.maxPoise * prof.poise); e.speed *= prof.speed;
@@ -963,6 +977,9 @@ export class Game {
     }
     if (warden) { poiseDamage = 0; if (e.breakStun > 0) amount = Math.round(amount * BREAK_MUL); }
     if (e.type === 'spear' && this.mode === 'castle' && !eclipse && !shot) (e.tipHits ||= []).push(this.time); // sword hits taken (the spin counts them)
+    const wound = e.type === 'sentinel' && e.wind > 0 && this.mode === 'castle' && this.brainOn(e); // wound key: never flinches; the gears take frontal posture damage
+    if (wound && dir * e.dir < 0 && poiseDamage > 0) { poiseDamage = 0; this.emit('gearClink', { x: e.x + e.dir * e.w / 2, y: e.y - e.h * .55, enemy: 'sentinel' }); }
+    const jam = e.type === 'sentinel' && e.rwT > 0 && !this.attacking(e) && dir * e.dir > 0 && !shot && !eclipse && e.hp > 0 && this.mode === 'castle' && this.brainOn(e); // a sword hit on the key from behind while it rewinds
     const through = this.absorb(e, amount), absorbed = amount - through;
     e.hp -= through; e.flash = .14;
     // Castle (#50): every minion attack (not a priest's bless) has hyper armor from tell start; posture damage still lands at x0.5. Before: heavy wind-up and strike only.
@@ -973,7 +990,7 @@ export class Game {
       e.poise -= poiseDamage * (blocked ? .25 : 1) * (castle && winding ? .5 : 1) * (e.punishable ? 2 : 1);
       e.poiseHit = POISE_REGEN_DELAY; e.provoke = POISE_REGEN_DELAY;
     }
-    const broken = e.hp > 0 && e.poise <= 0 && !warden;
+    const broken = e.hp > 0 && (e.poise <= 0 || jam) && !warden;
     // The boss deliberately keeps its warning but still takes a 0.08 s hit stun (see the stun line below).
     const keepsTell = (e.type === 'knight' || e.type === 'boss') && e.tell > 0 && !broken && !(eclipse && e.type !== 'boss'); // light hits don't interrupt heavy enemies
     const hold = castle && !eclipse && (e.recover > 0 || e.steady > 0 || e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0 || e.bmT > 0 || e.twist === 'oathsworn'); // castle: no flinch during recovery, the steady window after a flinch, a crossover / blink / recoil, or ever for an Oathsworn
@@ -995,7 +1012,7 @@ export class Game {
       this.emit('block', { x: b.x + b.dir * b.w / 2, y: b.y - b.h * .55, amount, dir: b.dir });
       }
     } else {
-      const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold || warden || this.guardedHit; // Eclipse still interrupts armored non-bosses
+      const quiet = (armored && !(eclipse && e.type !== 'boss')) || hold || warden || this.guardedHit || wound; // Eclipse still interrupts armored non-bosses
       if (!quiet && (!keepsTell || e.type === 'boss')) {
         e.stun = Math.max(e.stun, e.type === 'boss' ? .08 : heavy ? .42 : .24);
         if (castle) e.steady = e.stun + STEADY;
@@ -1012,6 +1029,7 @@ export class Game {
       if (e.hp > 0 && !broken) Object.assign(e, { recover: APEX.crushRecover, punishable: true });
       this.emit('apexCrush', { x: e.x, y: e.y - e.h * .55, enemy: e.type });
     }
+    if (jam && e.hp > 0) { Object.assign(e, { rwT: 0, jammed: true }); this.keyDone(e, true); this.emit('brainStep', { enemy: 'sentinel', kind: 'jam', x: e.x - e.dir * 10, y: e.y - e.h * .6 }); }
     if (broken) this.stagger(e);
     if (warden && e.hp > 0) this.armorHit(e, eclipse);
     this.settle(e);
@@ -1180,18 +1198,22 @@ export class Game {
   // An attack in progress: wind-up, strike, the skeleton's backstep and lunge, or a boss charge.
   attacking(e) { return e.tell > 0 || e.strikeT > 0 || e.stepT > 0 || e.cutT > 0 || e.travel > 0 || e.plantT > 0; }
   cancelAttack(e) {
+    const was = e.tell > 0 || e.strikeT > 0;
     if (e.heavy) e.heavyCd = HEAVY_CD; // a cancelled heavy cools down like a landed one; its token frees on the next update
     if (e.blessRadius) { e.blessCd = 2.5; if (e.blessTarget !== undefined) e.blessTarget = null; }
     e.warn = null; e.move = ''; e.travel = 0; e.recover = 0;
     e.tell = 0; e.thrustBox = null; e.blessRadius = 0; e.punishable = false;
     e.heavy = false; e.heavyKind = ''; e.strikeT = 0; e.stepT = 0; e.cutT = 0; e.glint = 0; e.glinted = false; e.delayed = false;
     if (e.crossT !== undefined) Object.assign(e, { crossT: 0, dartT: 0, blinkT: 0, recoilT: 0, bmT: 0, plantT: 0, parryT: 0, parried: false }); // castle-only movement states (crossover, dart, blink, recoil)
+    if (e.type === 'sentinel' || e.type === 'acolyte') e.struck = false; // a cut-short saw or ring leaves no stale flag
+    if (was && e.type === 'sentinel' && e.wind <= 0 && !(e.rwT > 0)) this.sentinelRest(e, 0); // the last wind was spent: a cut-short attack still runs down
     if (e.type === 'gargoyle') { Object.assign(e, { rpT: 0, rp: null, afterRake: false }); this.landGargoyle(e); } // a cancelled glide or flight drops to the surface below
   }
   stagger(e) {
     const cancelled = this.attacking(e), castle = this.mode === 'castle' && e.type !== 'boss';
     this.cancelAttack(e); e.poise = e.maxPoise;
     e.stun = e.type === 'boss' ? .85 : castle ? STAGGER_STUN : 1;
+    if (e.type === 'sentinel' && e.recover > 0) e.recover += e.stun; // recovery counts down through the stun: the rundown starts after it
     e.riposte = castle; // the first sword hit during this stun is a riposte
     e.armor = e.stun + (e.type === 'boss' ? .6 : 1.2); // counts down with the stun, so 1.2 s (boss 0.6 s) of armor remain once it ends
     if (e.type === 'shield') e.guardBreak = Math.max(e.guardBreak, e.stun); // guard is down for the stun
@@ -1227,6 +1249,7 @@ export class Game {
     return this.enemies.filter(o => o !== e && o.hp > 0 && o.tell > 0 && Math.abs(p.x - o.x) <= 620).length < (this.stage >= 3 ? 3 : 2);
   }
   updateEnemy(e, dt) {
+    if (e.hist && (e.histT += dt) >= ACOLYTE.sample) { e.histT -= ACOLYTE.sample; e.hist.push({ hp: e.hp, poise: e.poise }); if (e.hist.length > ACOLYTE.samples) e.hist.shift(); } // the acolyte's rewind reads what an ally held ~3 s ago (enemy time: frozen in the Hour)
     e.blessed = Math.max(0, e.blessed - dt); e.blessCd = Math.max(0, e.blessCd - dt);
     this.tickStatus(e, dt);
     if (e.hp <= 0) return;
@@ -1261,7 +1284,8 @@ export class Game {
   groundEnemy(e, dt) {
     const p = this.player, near = Math.abs(p.x - e.x) < 560, calm = e.stun <= 0 && e.frozen <= 0 && !(e.tell > 0);
     e.jumpCd = Math.max(0, e.jumpCd - dt); e.dropT = Math.max(0, e.dropT - dt);
-    if (e.plat && e.vy === 0) { if (this.platforms.includes(e.plat)) { e.x = clamp(e.x + (e.plat.dx || 0), 30, this.worldWidth - 40); e.y = e.plat.y; } else e.plat = null; }
+    // a sentinel holds its place in the world during a tell, so its drawn box stays on it
+    if (e.plat && e.vy === 0) { if (this.platforms.includes(e.plat)) { e.x = clamp(e.x + (e.type === 'sentinel' && e.tell > 0 ? 0 : e.plat.dx || 0), 30, this.worldWidth - 40); e.y = e.plat.y; } else e.plat = null; }
     if (calm && near && e.vy === 0) {
       if (e.plat && p.y - e.y > 60) { e.dropT = .4; e.plat = null; e.vy = 1; } // hero clearly below: step off through the platform
       else if (p.grounded && e.y - p.y > 50 && e.jumpCd <= 0) {
@@ -1311,7 +1335,7 @@ export class Game {
     const resting = e.heavy || (e.recover > 0 && e.type !== 'boss'); // recovering from a heavy or (castle) a light attack
     // a guard cut short by a stun still starts its cooldown (gCd below)
     if (e.stun > 0) { if (e.bt0 !== undefined && e.tell > 0 && e.move !== 'tock') { e.bt0 += dt; if (this.player.invulnerable > e.tell) this.cancelAttack(e); } /* a contact that would now fall inside new hero i-frames is dropped */ /* the tell waits out the stun while the clock runs: the beat waits with it, so the contact still lands on a tick */ if (e.stone) Object.assign(e, { stone: false, look: 0, away: 0 }); /* a stunned gargoyle (posture break) is no longer stone: the riposte must land */ if (e.crossT > 0 || e.blinkT > 0 || e.recoilT > 0 || e.bmT > 0 || e.braceT > 0 || e.parryT > 0) Object.assign(e, { crossT: 0, blinkT: 0, recoilT: 0, bmT: 0, braceT: 0, parryT: 0, parried: false }); if (e.bsT > 0 || e.gT > 0) Object.assign(e, { bsT: 0, gCd: e.gT > 0 ? APEX.guardCd : e.gCd, gT: 0 }); if (resting && !e.strikeT && !(e.tell > 0) && (e.recover -= dt) <= 0) Object.assign(e, { recover: 0, heavy: false, heavyKind: '', punishable: false }); e.x = clamp(e.x + e.vx * dt, 30, this.worldWidth - 40); e.vx *= Math.exp(-dt * 8); if (e.type === 'gargoyle' && e.plat) e.x = clamp(e.x, e.plat.x + 14, e.plat.x + e.plat.w - 14); /* knockback never carries a perched gargoyle off its edge */ return; }
-    if (e.strikeT > 0) { if (e.move === 'rake') this.rakeTravel(e, dt); else this.heavyTravel(e, dt); return; }
+    if (e.strikeT > 0) { if (e.move === 'rake') this.rakeTravel(e, dt); else if (e.move === 'chime') this.chimeRing(e, dt); else this.heavyTravel(e, dt); return; }
     if (e.rpT > 0) { this.reperching(e, dt); return; }
     if (e.plantT > 0) { this.planting(e, dt); return; }
     if (e.stepT > 0 || e.cutT > 0) { this.stepcut(e, dt); return; }
@@ -1332,7 +1356,7 @@ export class Game {
     const face = dx >= 0 ? 1 : -1;
     if (e.heavy) e.reface = 0; // heavy: facing locked from wind-up to the end of recovery
     else if (castle) { // castle: facing locks at tell start; outside attacks a minion turns after its own re-face delay
-      if (e.tell > 0 || e.turn > 0) e.reface = 0;
+      if (e.tell > 0 || e.turn > 0 || e.rwT > 0) e.reface = 0; // a winding sentinel keeps its back to the hero
       else if (wasTurning || dx * e.dir >= 0) { if (wasTurning) e.dir = face; e.reface = 0; }
       else if ((e.reface += dt) >= REFACE[e.type]) { e.dir = face; e.reface = 0; }
     } else if (e.type === 'boss') { if (!(e.tell > 0 || e.travel > 0)) e.dir = face; } // boss facing is locked while warning and charging
@@ -2133,6 +2157,137 @@ export class Game {
       return true;
     }
     walk(d < hold - 10 ? -toward * e.speed * PENDULUM.back : d > hold + 10 ? toward * e.speed : 0); // out-space the hero's weapon
+    return true;
+  }
+  // --- Clockwork Sentinel (#69 PR 4): the frontline wall. A wound key holds 3 winds; each attack spends one. ---
+  keyDone(e, went) { e.keyLog.push(went ? 1 : 0); if (e.keyLog.length > SENTINEL.keyMemory) e.keyLog.shift(); } // did the hero get behind it during a rewind (the last 3)
+  // After an attack: the usual recovery, or the 1.6 s rundown when the last wind is spent (punishable either way: x2 posture, +2 blood).
+  sentinelRest(e, base) {
+    e.punishable = true;
+    if (e.wind > 0 || e.rwT > 0) { e.recover = base; return; } // a backgear thrown while rewinding has the plain recovery: the slump already happened
+    e.recover = SENTINEL.rundown; this.emit('brainStep', { enemy: 'sentinel', kind: 'rundown', x: e.x, y: e.y - e.h * .5 });
+  }
+  sawHit(e, k) { // the saw at k of its roll: it hits at most once; the resume grace waits, so no hit is spent on it
+    const w = e.warn; e.vx = 0; w.saw = sawRect(w, k);
+    if (!e.struck && this.hour.grace <= 0 && this.heavyHits(e, w.saw)) { e.struck = true; this.hurt(e.dmg, e.dir, false, true); }
+  }
+  // The saw's path along the sentinel's own surface, clipped to its platform (or the world); null when too short to roll.
+  sawBox(e, f) {
+    const lim = e.plat ? [e.plat.x, e.plat.x + e.plat.w] : [30, this.worldWidth - 30], a = clamp(e.x + f * SENTINEL.sawFrom, lim[0], lim[1]), b = clamp(e.x + f * (SENTINEL.sawFrom + SENTINEL.sawLen), lim[0], lim[1]);
+    return Math.abs(b - a) < SENTINEL.sawMin ? null : { x: Math.min(a, b), y: e.y - SENTINEL.sawH, w: Math.abs(b - a), h: SENTINEL.sawH };
+  }
+  // A Belfry heavy's delayed variant (+0.4 s, glint unchanged): elites 50%; others 30% on floors 15-17 and 50% from 18; only on floors after the heavy was first met. Rolled once per attack chance (kept until the heavy starts).
+  belfryDelay(e, kind) {
+    if (e.nextDelay !== undefined) return e.nextDelay;
+    const chance = e.elite ? ELITE_DELAY : this.floor >= 18 ? .5 : this.floor >= 15 ? .3 : 0;
+    return e.nextDelay = !!chance && this.floor > BELFRY_FIRST[kind] && this.rand() < chance;
+  }
+  // Where the bell's foot stands, for a hero at the snapshot s and a column at x. A grounded hero's own platform (a moving one only while the hero is level with it: the column then stays where it was drawn), the highest static platform below it otherwise; an airborne hero (a dash in the air) is judged by where it will come down: the highest static platform within 130 px above its feet that spans x.
+  bellSurface(x, s) {
+    let best = null;
+    for (const pl of this.platforms) {
+      if (!(x > pl.x && x < pl.x + pl.w)) continue;
+      const ok = s.grounded ? pl.y >= s.y - 6 && (!pl.moving || Math.abs(pl.y - s.y) <= 8) : !pl.moving && pl.y >= s.y - 130;
+      if (ok && (!best || pl.y < best.y)) best = pl;
+    }
+    return best;
+  }
+  startBackgear(e) { // a gear spins out of its back: a box 10-80 px behind it, fixed at tell start (a wind is spent unless it is rewinding)
+    const f = e.dir, [a, b, h] = SENTINEL.backBox;
+    Object.assign(e, { tell: SENTINEL.backTell, move: 'backgear', cd: .4, vx: 0, warn: { kind: 'backgear', box: { x: Math.min(e.x - f * a, e.x - f * b), y: e.y - h, w: b - a, h } } });
+    if (e.wind > 0) e.wind--;
+  }
+  sentinelThink(e, dt) {
+    if (!e.action) e.cd = Math.min(e.cd, 1);
+    const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 82, front = dxs * e.dir > 0, behind = dxs * e.dir < 0 && d <= SENTINEL.backReach && near;
+    const walk = v => { e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
+    if (this.cowerStart(e, s, d, toward)) return true;
+    // rundown over: it winds its own key for 1.0 s, facing front. A hero who gets behind it (and strikes the key) jams it; two of the last three rewinds raised a hero at the key, so then a backgear answers the first one.
+    if (e.wind <= 0 && !(e.rwT > 0)) { e.rwT = SENTINEL.rewind; e.rwActed = false; e.keyTry = false; this.emit('brainStep', { enemy: 'sentinel', kind: 'rewind', x: e.x - e.dir * 12, y: e.y - e.h * .6 }); }
+    const yMover = e.plat?.move?.axis === 'y';
+    if (e.rwT > 0) {
+      if (behind) e.keyTry = true;
+      if (behind && !yMover && !e.rwActed && e.keyLog.reduce((a, b) => a + b, 0) >= SENTINEL.keyHabit && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { e.rwActed = true; this.startBackgear(e); return true; }
+      e.vx = 0;
+      if ((e.rwT -= dt) <= 0) { e.rwT = 0; e.wind = e.jammed ? SENTINEL.jamWinds : SENTINEL.winds; e.jammed = false; this.keyDone(e, e.keyTry); e.keyTry = false; this.emit('brainStep', { enemy: 'sentinel', kind: 'rewind', done: true, winds: e.wind, x: e.x - e.dir * 12, y: e.y - e.h * .6 }); }
+      return true;
+    }
+    // a platform that rises and falls would lift the sentinel off its drawn box: no piston or backgear from it (an x mover is held still during the tell, see groundEnemy)
+    // backgear (row 2): the hero is behind it within 90 px
+    if (behind && !yMover && e.cd <= 0 && this.canStrike(e, SENTINEL.backTell)) { this.startBackgear(e); return true; } // the gear spins out of its back, toward the hero; the facing stays
+    // gearsaw (rows 1 and 3): the last wind goes on it when the hero is within 200 px; a spent dash draws it at the landing
+    if (near && e.heavyCd <= 0 && !e.heavy && !e.plat?.moving) {
+      const dashSpent = s.dash > 0 || s.dashCd > 0, pre = e.wind === 1 && d <= SENTINEL.sawNear;
+      if (pre || dashSpent) {
+        const delay = this.belfryDelay(e, 'gearsaw'), aimX = dashSpent ? this.landing(s, HEAVY.sentinel.tell + (delay ? DELAY_EXTRA : 0)) : s.x, f = Math.sign(aimX - e.x) || toward, reach = Math.abs(aimX - e.x);
+        const box = reach <= SENTINEL.sawFrom + SENTINEL.sawLen && (pre || reach >= 20) ? this.sawBox(e, f) : null;
+        if (box) {
+          e.dir = f;
+          if (this.startBrainHeavy(e, 'gearsaw', box, HEAVY.sentinel.tell, { dir: f, sawW: SENTINEL.sawW, ...(delay ? { delay: true } : {}) })) { e.wind--; e.nextDelay = undefined; e.vx = 0; e.cd = Math.max(e.cd, 1.2); return true; }
+        }
+      }
+    }
+    // piston: a hero in front inside the hold ring (kept for the last wind: that one is the saw's)
+    if (front && !yMover && d <= SENTINEL.hold && near && e.cd <= 0 && e.wind >= 2 && this.canStrike(e, SENTINEL.pistonTell)) {
+      const f = e.dir, [a, b, h] = SENTINEL.pistonBox;
+      Object.assign(e, { tell: SENTINEL.pistonTell, move: 'piston', cd: .4, vx: 0, warn: { kind: 'piston', box: { x: Math.min(e.x + f * a, e.x + f * b), y: e.y - h, w: b - a, h } } });
+      e.wind--; return true;
+    }
+    walk(d > SENTINEL.hold ? toward * e.speed : 0); // the wall steps in to the hold ring when the hero waits outside it
+    return true;
+  }
+  // --- Chime Acolyte (#69 PR 4): the time-keeper. Rewinds its allies, rings the floor, tolls a bell on the hero's spot. ---
+  // The chime wave leaves both ways from 0 to ACOLYTE.reach px over ACOLYTE.ring s: a front ringW px thick, so a hero is hit when the front passes (a jump over the front clears it); the drawn box (+-reach, h tall) is everything it covers. Then it steps back 100 px.
+  chimeRing(e, dt) {
+    e.vx = 0; e.strikeT = Math.max(0, e.strikeT - dt);
+    const k = 1 - e.strikeT / e.strikeMax, r = ACOLYTE.reach * k; e.ringR = r;
+    if (!e.struck && this.hour.grace <= 0 && (this.heavyHits(e, { x: e.x + r - ACOLYTE.ringW, y: e.y - ACOLYTE.h, w: ACOLYTE.ringW, h: ACOLYTE.h }) || this.heavyHits(e, { x: e.x - r, y: e.y - ACOLYTE.h, w: ACOLYTE.ringW, h: ACOLYTE.h }))) { e.struck = true; this.hurt(e.dmg, Math.sign(this.player.x - e.x) || e.dir); }
+    if (e.strikeT > 0 || this.state !== 'playing') return;
+    const away = -(Math.sign(this.snap().x - e.x) || e.dir);
+    Object.assign(e, { warn: null, move: '', struck: false, ringR: 0, recover: ACOLYTE.chimeRecover, punishable: true, cd: Math.max(e.cd, 1.5), bmT: ACOLYTE.stepT, bmV: away * ACOLYTE.step / ACOLYTE.stepT, bmKind: 'backstep', bmThen: '' });
+    e.action++;
+    this.emit('brainStep', { enemy: 'acolyte', kind: 'backstep', x: e.x, y: e.y - e.h * .5 });
+  }
+  // The chant is over: the target regains what it lost in the last 3 s (its history's oldest sample), HP capped at 40% of its max. A dead ally stays dead; a stun is untouched.
+  rewindEnd(e) {
+    const o = e.blessTarget; e.blessRadius = 0; e.blessTarget = null; e.blessCd = ACOLYTE.cd; e.cd = Math.max(e.cd, 1);
+    if (!o || o.hp <= 0 || !o.hist || Math.abs(o.x - e.x) > ACOLYTE.range + 60) return;
+    const h0 = o.hist[0], hp = clamp(h0.hp - o.hp, 0, Math.floor(o.maxHp * ACOLYTE.cap)), poise = clamp(h0.poise - o.poise, 0, o.maxPoise - o.poise);
+    o.hp = Math.min(o.maxHp, o.hp + hp); o.poise += poise; o.hist = [{ hp: o.hp, poise: o.poise }]; o.histT = 0; // the same loss cannot be rewound twice
+    this.emit('enemyBuff', { x: e.x, y: e.y - e.h * .5, targets: [{ x: o.x, y: o.y - o.h * .5 }], rewind: true, hp, poise });
+  }
+  acolyteThink(e, dt) {
+    if (!e.action) e.cd = Math.min(e.cd, 1);
+    const s = this.snap(), W = this.worldWidth, dxs = s.x - e.x, d = Math.abs(dxs), toward = dxs >= 0 ? 1 : -1, near = Math.abs(s.y - e.y) < 90;
+    const walk = v => { e.vx = v; e.x = clamp(e.x + v * dt, 30, W - 40); };
+    if (this.cowerStart(e, s, d, toward)) return true;
+    for (const o of this.enemies) if (!o.hist && o.hp > 0 && o.type !== 'boss') { o.hist = [{ hp: o.hp, poise: o.poise }]; o.histT = 0; } // every ally keeps a 3 s record from now on (sampled in enemy time)
+    // rewind (row 1): the ally that lost the most HP in the last 3 s; no token, one support cast at a time, any hit on the acolyte cancels it
+    if (e.blessCd <= 0) {
+      let pick = null, best = ACOLYTE.minLoss;
+      for (const o of this.enemies) if (o !== e && o.hp > 0 && o.type !== 'boss' && Math.abs(o.x - e.x) <= ACOLYTE.range && o.hist && o.hist[0].hp - o.hp > best) { best = o.hist[0].hp - o.hp; pick = o; }
+      if (pick && this.canWindUp(e, 'support')) {
+        Object.assign(e, { tell: ACOLYTE.chant, blessRadius: ACOLYTE.range + 60, blessTarget: pick, vx: 0, dir: Math.sign(pick.x - e.x) || e.dir });
+        this.emit('brainStep', { enemy: 'acolyte', kind: 'chant', x: e.x, y: e.y - e.h * .5, tx: pick.x, ty: pick.y - pick.h * .5 });
+        return true;
+      }
+    }
+    // chime (row 3): a hero closing in within 140 px draws the ring, then a 100 px backstep
+    if (d <= ACOLYTE.near && near && e.cd <= 0 && this.canStrike(e, ACOLYTE.chimeTell)) {
+      const box = { x: e.x - ACOLYTE.reach, y: e.y - ACOLYTE.h, w: 2 * ACOLYTE.reach, h: ACOLYTE.h };
+      Object.assign(e, { dir: toward, tell: ACOLYTE.chimeTell, move: 'chime', cd: 1.5, vx: 0, warn: { kind: 'chime', box } });
+      return true;
+    }
+    // knell (rows 2 and 4): a bell falls on the spot a still hero holds, or where a spent dash will land
+    if (e.heavyCd <= 0 && !e.heavy && d <= ACOLYTE.knellRange) {
+      const dashSpent = s.dash > 0 || s.dashCd > 0, still = s.grounded && Math.abs(s.vx) < 25;
+      if (still || dashSpent) {
+        const delay = this.belfryDelay(e, 'knell'), cx = clamp(dashSpent ? this.landing(s, HEAVY.acolyte.tell + (delay ? DELAY_EXTRA : 0)) : s.x, 40, W - 40), sp = this.bellSurface(cx, s), sy = sp ? sp.y : FLOOR; // the surface under the bell, fixed at tell start
+        e.dir = toward;
+        if (this.startBrainHeavy(e, 'knell', { x: cx - ACOLYTE.knellW / 2, y: sy - ACOLYTE.knellHigh, w: ACOLYTE.knellW, h: ACOLYTE.knellHigh }, HEAVY.acolyte.tell, { column: { x: cx, y0: sy, y1: sy - ACOLYTE.knellHigh }, ...(delay ? { delay: true } : {}) })) { e.nextDelay = undefined; e.vx = 0; e.cd = Math.max(e.cd, 1.2); return true; }
+      }
+    }
+    walk(d > ACOLYTE.band[1] ? toward * e.speed : d < ACOLYTE.band[0] ? -toward * e.speed : 0); // band 180-320
     return true;
   }
   // --- Spearman: the zoner. Owns 80-194 px, weak inside its tip. ---
@@ -3017,6 +3172,21 @@ export class Game {
       e.action++;
       return;
     }
+    if (castle && e.type === 'sentinel' && (e.move === 'piston' || e.move === 'backgear')) { // a fixed box, then a punishable recovery (the rundown after the last wind)
+      const w = e.warn, kind = e.move, hit = this.heavyHits(e, w.box);
+      Object.assign(e, { warn: null, move: '' });
+      this.sentinelRest(e, kind === 'piston' ? LIGHT_RECOVER.sentinel : SENTINEL.backRecover);
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind, area: w });
+      if (hit) this.hurt(dmg, kind === 'backgear' ? -e.dir : e.dir);
+      e.action++;
+      return;
+    }
+    if (castle && e.type === 'acolyte' && e.blessRadius) { this.rewindEnd(e); return; }
+    if (castle && e.type === 'acolyte' && e.move === 'chime') { // the ring leaves along the surface (chimeRing checks it each frame)
+      this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'chime', area: e.warn });
+      Object.assign(e, { strikeT: ACOLYTE.ring, strikeMax: ACOLYTE.ring, struck: false, dmg });
+      return;
+    }
     if (castle && e.type === 'gargoyle' && e.move === 'rake') { // the glide starts along the line fixed at tell start (rakeTravel); the hero's answer to it is noted now
       const w = e.warn;
       this.emit('enemySwing', { x: e.x, y: e.y - e.h * .5, dir: e.dir, boss: false, kind: 'rake', area: w });
@@ -3183,6 +3353,11 @@ export class Game {
       Object.assign(e, { strikeT: RAY.contact, strikeMax: RAY.contact, struck: false, from: { x: e.x, y: e.y }, dmg });
       return;
     }
+    if (e.heavyKind === 'gearsaw') { // the saw rolls along the drawn box over SENTINEL.roll s (heavyTravel checks it each frame)
+      Object.assign(e, { strikeT: SENTINEL.roll, strikeMax: SENTINEL.roll, struck: false, from: { x: e.x, y: e.y }, dmg });
+      this.sawHit(e, 0); // the saw's first rect counts at once: no dead strip at the near edge of the drawn path
+      return;
+    }
     if (e.heavyKind === 'swingout') { // the hero's centre decides: inside 70 px or beyond 200 px of the pendulum is safe
       const b = w.box;
       if (p.x >= b.x && p.x <= b.x + b.w && p.y > b.y && p.y - p.h < b.y + b.h) this.hurt(dmg, e.dir, false, true);
@@ -3219,6 +3394,8 @@ export class Game {
     if (e.heavyKind === 'ray') {
       e.vx = 0;
       if (!e.struck && this.heavyHits(e, w.box)) { e.struck = true; if (this.hurt(e.dmg, e.dir, false, true) && this.brainOn(e) && e.type === 'mage') this.hex(e.type); }
+    } else if (e.heavyKind === 'gearsaw') {
+      this.sawHit(e, k);
     } else if (e.heavyKind === 'rush') {
       e.x = e.from.x + (w.to - e.from.x) * k; e.vx = (e.x - prevX) / dt;
       if (this.collideEnemy(e, prevX, dt)) { w.to = e.x; e.strikeT = 0; } // a barricade stops the rush
@@ -3238,6 +3415,7 @@ export class Game {
     }
     if (e.follows) e.follows = 0;
     Object.assign(e, { warn: null, strikeT: 0, vx: 0, recover: HEAVY[e.type].recover, punishable: true, heavyCd: HEAVY_CD, cd: Math.max(e.cd, 1.2) });
+    if (e.type === 'sentinel') { e.struck = false; this.sentinelRest(e, e.recover); } // the last wind spent on a heavy ends in the rundown
     e.action++;
   }
   // The first 0.15 s of a dash is a perfect window: one ignored hit per dash pays MP and refreshes the thrust window.

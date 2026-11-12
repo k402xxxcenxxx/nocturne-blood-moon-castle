@@ -307,8 +307,8 @@ Floor table (skeleton; the cast rows land in the later PRs, see the proposal):
 | 11 | Belfry, 6 enemies | slot 1 bat, rolled skeleton / shield / spear / knight / priest / mage | the Stopped Hour (PR 2) |
 | 12 | 6 | slots 1 and 3 Gargoyles (perched, never guards), others skeleton / shield / spear / bat; no elites | Gargoyle (PR 3) |
 | 13 | 6, relic pick after | two Pendulum Blades (at most one a guard), slot 1 a Gargoyle, others skeleton / shield / spear; no elites | Pendulum Blade (PR 3) |
-| 14 | 6 | as 11 | Clockwork Sentinel (PR 4) |
-| 15 | 6 | as 11 | Chime Acolyte preview (PR 4) |
+| 14 | 6 | two Clockwork Sentinels (the first gate guard is one), others Gargoyle / Pendulum / skeleton / spear / bat; no elites | Clockwork Sentinel (PR 4) |
+| 15 | 6 | one Chime Acolyte (never a guard), slot 1 a Gargoyle, others Pendulum / Sentinel / skeleton / shield / spear / knight; no elites; delayed heavies 30% | Chime Acolyte preview (PR 4) |
 | 16 | 6, relic pick after | as 11 | Carillon Cantor preview (PR 5) |
 | 17 | 7 | as 11 | Bellringer preview (PR 5) |
 | 18 | 7 | as 11 | test (PR 5) |
@@ -339,6 +339,36 @@ Reads: unwatched and in range (the hero looks away or fights another enemy) -> `
 Reads: a hero inside 70 px -> a 60 px backstep on the next tick (`brainStep` `backstep`, no token); a hero walking in at 80-200 px -> `swingout`; a Spear frenzy hero (the assault dash has no i-frames) whose predicted spot at the next tick lies inside the band 75-195 px (within 360 px) draws the `swingout` timed to the dash line (`enemyHeavy` variant `assault`; the contact still lands on a tick and `canStrike` checks the i-frames at contact); the hero jumping ticks -> tock. If two of the last three contacts met a dash inside its first 0.15 s, the next swingout is delayed +0.4 s from floor 15. Stopped Hour: nothing changes while frozen; when the resume grace pushes a tick or swingout tell back, the beat clock shifts with it so the contact still lands on a tick (a tock is off the beat by design and does not shift it).
 
 Other changes in this PR: `bot.js` knows the tick, tock and rake boxes and lures a perched gargoyle (it walks into rake range and turns its back); the duel harness perches gargoyles (`game.perchOn`). Measurements are in `docs/balance-log.md`.
+
+### The Belfry cast, part 2: Clockwork Sentinel and Chime Acolyte (#69 PR 4, floors 14-15)
+
+Same framework and rules as part 1. Floors 14-15 roll their rows in `belfryPlan` (at most 2 of any new type, a Gargoyle never takes a gate slot) and skip the placeholder elites (`BELFRY_TEACH` is now 12-15). Sentinel HP 80 base (posture 90, speed 50, light 14 +2 per tier, re-face 0.35 s); Acolyte HP 48 (posture 42, speed 65, light 10 +2 per tier, re-face 0.2 s); +12 HP per tier and x5.3 like every castle regular. No stat lever beyond that (D3). The Sentinel may be a gate guard from floor 14; the Acolyte never is.
+
+**Delayed Belfry heavies** (`belfryDelay`, rolled once per attack chance and kept until the heavy starts): +0.4 s tell, glint still 0.4 s before contact. 30% on floors 15-17, 50% from 18, elites 50% (none yet), and only on floors after the heavy was first met (`BELFRY_FIRST`: gearsaw 14, knell 15), so the saw can be delayed from floor 15 and the bell from floor 16. The Pendulum keeps its own beat rule.
+
+**Clockwork Sentinel** (`sentinel`). A wound key holds `wind` 3. While `wind > 0` (and its brain is on) it never flinches or takes knockback from a hit or an Eclipse (the Eclipse still deals damage), and a frontal hit deals x0 posture damage (`gearClink`); a hit from behind deals normal posture. Every attack spends one wind when its tell starts. When the last is spent the attack's recovery becomes the 1.6 s `rundown` (punishable: posture x2, +2 blood, a posture break arms the riposte, as for any recovery). After it the Sentinel `rewind`s for 1.0 s, facing front (the re-face timer is held): a sword hit from behind while it is not mid-attack `jam`s the key (the hit is the stagger: 1.5 s stun, riposte armed) and the next rewind gives only 2 winds. A hit on the key during a backgear tell does not jam it (hyper armor). A Sentinel with 0 winds is an ordinary enemy. `brainStep` kinds: `rundown`, `rewind` (`done: true` and `winds` when the key is wound), `jam`.
+
+| Move | Kind | Tell | Area | Recovery |
+| --- | --- | --- | --- | --- |
+| `piston` | light | 0.5 s | box 10-100 px in front, 70 tall | 0.45 s |
+| `backgear` | light | 0.5 s | box 10-80 px behind it, 70 tall (the box height is not in the issue; it matches the piston) | 0.5 s |
+| `gearsaw` | heavy (100) + glint | 0.9 s | a 44 x 44 saw rolls the drawn box (10-210 px in front, 44 tall) over 0.6 s, hits once, and is checked at once when the roll starts so no strip of the box is dead; the box is clipped to the Sentinel's own static platform or the world and is never started from a moving platform | 1.0 s punishable |
+
+Reads: the hero behind it within 90 px (same height) -> `backgear`, spending a wind; `wind` 1 with the hero within 200 px -> `gearsaw` (the last wind goes on the heavy, so it runs down after a heavy; with one wind left it never throws a piston); a spent dash -> `gearsaw` aimed at `landing()` at any wind; a hero beyond the hold ring (110 px) -> it walks in to the ring (a wall, it never backs off); a hero in front inside the ring -> `piston` (only with 2 or more winds). If the hero went behind it during 2 of the last 3 rewinds (`keyLog`), a hero behind it within 90 px during a rewind draws one `backgear` (no wind: it is rewinding) and the rewind then resumes; without that habit the rewind is only a window. A sentinel holds its x during a piston or backgear tell (it does not ride an x-moving platform then, so its box stays on it) and starts neither from a platform that moves on y. A saw or any attack cut short by a posture break with 0 winds still ends in the rundown (the 1.6 s slump counts after the 1.5 s stun; the `rundown` cue fires at the cut). Stopped Hour: everything is enemy time, so the rewind and the roll freeze; the saw hits nothing during the resume grace and the hit is not spent on it; an awake hero can still jam the key (the stun counts in enemy time).
+
+**Chime Acolyte** (`acolyte`). Allies carry a record of their HP and posture every 0.25 s for 3 s (`hist`, started when the Acolyte first thinks, sampled in enemy time).
+
+| Move | Kind | Tell | Area | Recovery |
+| --- | --- | --- | --- | --- |
+| `rewind` | support, no token | 1.0 s chant | a clock-hand circle on the ally (the cast uses `blessRadius`/`blessTarget`, so it shares the priest's one-support-cast-at-a-time slot, has no armor, and any hit, even a thrown wave, cancels it: cooldown 2.5 s, otherwise 8 s). On completion the ally regains the HP it lost over the last 3 s, at most 40% of its max HP, and the posture it lost; its record is reset so the same loss is not rewound twice. A dead ally stays dead and a stun is not ended | none |
+| `chime` | light | 0.6 s | a wave leaves both ways from the Acolyte, front 20 px thick, 30 px tall, out to 160 px over 0.4 s: it hits a hero as the front passes (a hero in the air over the front is safe, one who lands behind it is safe); the drawn box is 320 x 30 | 0.5 s punishable, after a 100 px backstep away from the hero (0.25 s) |
+| `knell` | heavy (100) + glint | 1.0 s | a column 60 wide, 220 tall, centred on the snapshot hero's x (or `landing()` after a spent dash) with its foot on the surface the hero will stand on (`bellSurface`): a grounded hero's own platform, a moving one too while the hero is level with it (the column is fixed in the world at tell start, as drawn); for an airborne hero (a dash) the highest static platform within 130 px above its feet that spans the column | 1.0 s kneeling, punishable |
+
+Reads: the ally that lost the most HP in the last 3 s (more than 6) -> `rewind` (needs `blessCd` 0 and a free support slot, ally within 360 px); the hero within 140 px -> `chime`; a still hero (standing or fighting on one spot) within 340 px, or a spent dash -> `knell`; otherwise it keeps a band of 180-320 px. Events: `enemyTell` kind `chime`; `brainStep` kinds `chant` {x, y, tx, ty} and `backstep`; `enemyBuff` with `rewind: true`, `hp` and `poise` restored, `targets` = the ally; `enemyHeavy` kinds `gearsaw` (warn: `box`, `dir`, `sawW`; `warn.saw` is the live saw rect while it rolls) and `knell` (warn: `box`, `column`).
+
+Deferred: the Mainspring and Requiem elite twists (PR 5, with the other elites and the final table); matchup intent is only weakly visible in the bot cells (see `docs/balance-log.md`).
+
+Other changes in this PR: `sawRect(warn, k)` is exported for the bot; `bot.js` reads piston, backgear, the saw (sampled along its roll), the chime wave and the knell box, jumps the saw and the chime, and goes round to a rewinding Sentinel's key (a frontal hit would do nothing); its gargoyle lure hysteresis was tightened (`rake + 20`) because a hero held at 223 px of a perched gargoyle waited forever.
 
 ### The Gate Warden (floor 10)
 
